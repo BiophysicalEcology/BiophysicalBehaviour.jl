@@ -1,0 +1,4 @@
+name = "BiophysicalBehaviour"
+uuid = "17159459-d6a3-4a3d-a4c5-9872d9e70704"
+authors = ["Michael Kearney and Rafael Schouten"]
+version = "0.1.0"
