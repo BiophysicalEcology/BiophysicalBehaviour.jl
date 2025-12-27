@@ -2,3 +2,13 @@ name = "BiophysicalBehaviour"
 uuid = "17159459-d6a3-4a3d-a4c5-9872d9e70704"
 authors = ["Michael Kearney and Rafael Schouten"]
 version = "0.1.0"
+
+[deps]
+BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
+HeatExchange = "720bd838-cdd6-4aad-926b-452b962dce21"
+Microclimate = "fa5d2a79-de00-40ba-a9f4-ff140fbe07ba"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+ModelParameters = "4744a3fa-6c31-4707-899e-a3298e4618ad"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
