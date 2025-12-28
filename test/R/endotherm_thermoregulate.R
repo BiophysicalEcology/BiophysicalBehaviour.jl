@@ -123,6 +123,7 @@ endoR_input = list(
   WRITE_INPUT = 1
 )
 
+ptm <- proc.time() # Start timing
 TAs <- c(endoR_input$TA)
 endoR_out = lapply(1:length(TAs), function(x){
   endoR(
@@ -247,6 +248,7 @@ endoR_out = lapply(1:length(TAs), function(x){
     WRITE_INPUT = endoR_input$WRITE_INPUT
   )
 })
+print(proc.time() - ptm) # Stop the clock
 
 endoR_out1 <- do.call("rbind", lapply(endoR_out, data.frame)) # turn results into data frame
 treg <- endoR_out1[, grep(pattern = "treg", colnames(endoR_out1))]
@@ -268,3 +270,4 @@ write.csv(masbal, file = paste0('../data/endoR_masbal_',shape,'_',furmult,'.csv'
 file.copy("SOLVENDO.input.csv", to = "C:\\Users\\mrke\\Dropbox\\NicheMapR_Debug\\endo_source\\SOLVENDO.input.csv", overwrite = TRUE)
 file.remove("SOLVENDO.input.csv")
 treg
+enbal
