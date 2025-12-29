@@ -1,6 +1,6 @@
 library(NicheMapR)
-shape <- 4
-furmult <- 1
+for(shape in 1:4){
+  for(furmult in 0:1){
 endoR_input = list(
   TA = 40.0, # air temperature at local height (°C)
   TAREF = 40.0, # air temperature at reference height (°C)
@@ -28,7 +28,7 @@ endoR_input = list(
   
   # BEHAVIOUR
   
-  SHADE = 10.0, # shade level (%)
+  SHADE = 0.0, # shade level (%)
   FLYHR = 0, # is flight occurring this hour? (imposes forced evaporative loss)
   UNCURL = 0.1, # allows the animal to uncurl to SHAPE_B_MAX, the value being the increment SHAPE_B is increased per iteration
   TC_INC = 0.1, # turns on core temperature elevation, the value being the increment by which TC is increased per iteration
@@ -47,7 +47,7 @@ endoR_input = list(
   ANDENS = 1000.0, # kg/m3
   FATDEN = 901.0, # kg/m3
   SUBQFAT = 1, # is subcutaneous fat present? (0 is no, 1 is yes)
-  FATPCT = 10.0, # % body fat
+  FATPCT = 20.0, # % body fat
   SHAPE = shape, # shape, 1 is cylinder, 2 is sphere, 3 is plate, 4 is ellipsoid
   SHAPE_B = 1.1, # current ratio between long and short axis, must be > 1 (-)
   SHAPE_B_MAX = 5.0, # max possible ratio between long and short axis, must be > 1 (-)
@@ -266,8 +266,11 @@ write.csv(treg, file = paste0('../data/endoR_treg_',shape,'_',furmult,'.csv'))
 write.csv(morph, file = paste0('../data/endoR_morph_',shape,'_',furmult,'.csv'))
 write.csv(enbal, file = paste0('../data/endoR_enbal_',shape,'_',furmult,'.csv'))
 write.csv(masbal, file = paste0('../data/endoR_masbal_',shape,'_',furmult,'.csv'))
-
+  }
+}
 file.copy("SOLVENDO.input.csv", to = "C:\\Users\\mrke\\Dropbox\\NicheMapR_Debug\\endo_source\\SOLVENDO.input.csv", overwrite = TRUE)
 file.remove("SOLVENDO.input.csv")
 treg
 enbal
+morph
+masbal

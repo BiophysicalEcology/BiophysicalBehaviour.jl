@@ -3,3 +3,4 @@ Manifest.toml
 *.jl.mem
 .DS_Store
 .vscode/
+test/R/.Rhistory
