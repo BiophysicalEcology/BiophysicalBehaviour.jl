@@ -10,7 +10,8 @@ using DataFrames, CSV
 testdir = realpath(joinpath(dirname(pathof(BiophysicalBehaviour)), "../test"))
 
 endo_input_names = Symbol.(DataFrame(CSV.File("$testdir/data/endoR_input_names.csv"))[:, 2])
-
+shape_number =1
+furmult = 1
 # loop through all shapes with and without fur
 for shape_number in 1:4
     for furmult in 0:1
@@ -156,6 +157,7 @@ for shape_number in 1:4
             longwave_depth_fraction=endo_input.XR,
         )
         traits = Traits(
+            shape_pars,
             insulation_pars,
             conduction_pars_external,
             conduction_pars_internal,
@@ -167,7 +169,7 @@ for shape_number in 1:4
             metabolism_pars
         )
 
-        mammal = Organism(geometry, traits)
+        organism = Organism(geometry, traits)
         environment = (; environment_pars, environment_vars)
 
         model_pars = EndoModelPars(
@@ -223,221 +225,30 @@ for shape_number in 1:4
         thermoregulation_mode = endo_input.TREGMODE
         thermoregulate = Bool(endo_input.THERMOREG)
 
-        # start thermoregulation conduction_pars_external
+        Q_gen = 0.0u"W" # initialise
+        tolerance = 0.005 # fraction by which metabolic rate can go below Q_minimum
 
-        if insulation_step > 0.0 && furmult == 1 # start with erect insulation
-            insulation_depth_dorsal = insulation_depth_dorsal_max
-            insulation_depth_ventral = insulation_depth_ventral_max
-            insulation_pars = ConstructionBase.setproperties(
-                insulation_pars,
-                insulation_depth_dorsal=insulation_depth_dorsal,
-                insulation_depth_ventral=insulation_depth_ventral,
+        thermoregulation_pars = (; 
+            thermoregulation_mode, tolerance,
+            Q_minimum, Q_minimum_ref,
+            insulation_depth_dorsal, insulation_depth_ventral, 
+            insulation_depth_dorsal_max, insulation_depth_ventral_max,        
+            insulation_depth_dorsal_ref, insulation_depth_ventral_ref, insulation_step,
+            shape_b, shape_b_step, shape_b_max,
+            k_flesh, k_flesh_step, k_flesh_max,
+            T_core, T_core_step, T_core_max, T_core_ref,
+            pant, pant_step, pant_max, pant_cost, pant_multiplier,
+            skin_wetness, skin_wetness_step, skin_wetness_max)
+
+        endotherm_out = endotherm_thermoregulation_original(
+            Q_gen,
+            T_skin,
+            T_insulation,
+            organism,
+            thermoregulation_pars,
+            environment,
+            model_pars
             )
-            mean_insulation_depth = insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                    insulation_depth_ventral * radiation_pars.ventral_fraction
-            mean_fibre_diameter = fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                  fibre_diameter_ventral * radiation_pars.ventral_fraction
-            mean_fibre_density = fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                 fibre_density_ventral * radiation_pars.ventral_fraction
-            fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
-            geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-            traits = Traits(
-                insulation_pars,
-                conduction_pars_external,
-                conduction_pars_internal,
-                radiation_pars,
-                ConvectionParameters(),
-                evaporation_pars,
-                hydraulic_pars,
-                respiration_pars,
-                metabolism_pars
-            )
-            mammal = Organism(geometry, traits)
-        end
-
-        endotherm_out = solve_metabolic_rate(T_skin, T_insulation, mammal, environment, model_pars)
-
-        T_skin = endotherm_out.thermoregulation.T_skin
-        T_insulation = endotherm_out.thermoregulation.T_insulation
-        Q_gen = endotherm_out.energy_fluxes.Q_gen
-
-        @time while Q_gen < Q_minimum * 0.995
-            if thermoregulate
-                if (insulation_depth_dorsal > insulation_depth_dorsal_ref) &&
-                   (insulation_depth_ventral > insulation_depth_ventral_ref)
-                    insulation_depth_dorsal = max(insulation_depth_dorsal_ref,
-                        insulation_depth_dorsal - insulation_step * fibre_length_dorsal)
-                    insulation_depth_ventral = max(insulation_depth_ventral_ref,
-                        insulation_depth_ventral - insulation_step * fibre_length_ventral)
-                    insulation_pars = ConstructionBase.setproperties(
-                        insulation_pars,
-                        insulation_depth_dorsal=insulation_depth_dorsal,
-                        insulation_depth_ventral=insulation_depth_ventral,
-                    )
-                    mean_insulation_depth = insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                            insulation_depth_ventral * radiation_pars.ventral_fraction
-                    mean_fibre_diameter = fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                          fibre_diameter_ventral * radiation_pars.ventral_fraction
-                    mean_fibre_density = fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                         fibre_density_ventral * radiation_pars.ventral_fraction
-                    fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
-                    geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-                else
-                    insulation_depth_dorsal = insulation_depth_dorsal_ref
-                    insulation_depth_ventral = insulation_depth_ventral_ref
-                    insulation_pars = ConstructionBase.setproperties(
-                        insulation_pars,
-                        insulation_depth_dorsal=insulation_depth_dorsal,
-                        insulation_depth_ventral=insulation_depth_ventral,
-                    )
-                    mean_insulation_depth = insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                            insulation_depth_ventral * radiation_pars.ventral_fraction
-                    mean_fibre_diameter = fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                          fibre_diameter_ventral * radiation_pars.ventral_fraction
-                    mean_fibre_density = fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-                                         fibre_density_ventral * radiation_pars.ventral_fraction
-                    fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
-                    geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-                    if shape_b < shape_b_max && !(geometry.shape isa Sphere)
-                        shape_b += shape_b_step
-                        shape_pars = ConstructionBase.setproperties(
-                            shape_pars, b=shape_b
-                        )
-                        geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-                    else
-                        if !(geometry.shape isa Sphere)
-                            shape_b = shape_b_max
-                            shape_pars = ConstructionBase.setproperties(
-                                shape_pars, b=shape_b
-                            )
-                            geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-                        end
-                        if k_flesh < k_flesh_max
-                            k_flesh += k_flesh_step
-                            conduction_pars_internal = ConstructionBase.setproperties(
-                                conduction_pars_internal, k_flesh=k_flesh
-                            )
-                        else
-                            k_flesh = k_flesh_max
-                            conduction_pars_internal = ConstructionBase.setproperties(
-                                conduction_pars_internal, k_flesh=k_flesh
-                            )
-
-                            if T_core < T_core_max
-                                T_core += T_core_step
-                                metabolism_pars = ConstructionBase.setproperties(
-                                    metabolism_pars, T_core=T_core
-                                )
-                                q10mult = q10^((ustrip(u"K", (T_core - T_core_ref))) / 10)
-
-                                if (thermoregulation_mode >= 2) && (pant < pant_max)
-                                    pant += pant_step
-                                    respiration_pars = ConstructionBase.setproperties(
-                                        respiration_pars, pant=pant
-                                    )
-                                    pant_cost = ((pant - 1) / (pant_max + 1e-6 - 1)) *
-                                                (pant_multiplier - 1) * Q_minimum_ref
-
-                                    if thermoregulation_mode == 3
-                                        skin_wetness += skin_wetness_step
-                                        evaporation_pars = ConstructionBase.setproperties(
-                                            evaporation_pars, skin_wetness=skin_wetness
-                                        )
-                                        if skin_wetness > skin_wetness_max
-                                            skin_wetness = skin_wetness_max
-                                            evaporation_pars = ConstructionBase.setproperties(
-                                                evaporation_pars, skin_wetness=skin_wetness
-                                            )
-                                        end
-                                    end
-                                end
-
-                                Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
-                                metabolism_pars = ConstructionBase.setproperties(
-                                    metabolism_pars, Q_metabolism=Q_minimum
-                                )
-                            else
-                                T_core = T_core_max
-                                metabolism_pars = ConstructionBase.setproperties(
-                                    metabolism_pars, T_core=T_core
-                                )
-                                q10mult = q10^((ustrip(u"K", (T_core - T_core_ref))) / 10)
-
-                                if pant < pant_max
-                                    pant += pant_step
-                                    respiration_pars = ConstructionBase.setproperties(
-                                        respiration_pars, pant=pant
-                                    )
-                                    pant_cost = ((pant - 1) / (pant_max + 1e-6 - 1)) *
-                                                (pant_multiplier - 1) * Q_minimum_ref
-                                    Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
-                                    metabolism_pars = ConstructionBase.setproperties(
-                                        metabolism_pars, Q_metabolism=Q_minimum
-                                    )
-                                    if thermoregulation_mode == 3
-                                        skin_wetness += skin_wetness_step
-                                        evaporation_pars = ConstructionBase.setproperties(
-                                            evaporation_pars, skin_wetness=skin_wetness
-                                        )
-                                        if skin_wetness > skin_wetness_max
-                                            skin_wetness = skin_wetness_max
-                                            evaporation_pars = ConstructionBase.setproperties(
-                                                evaporation_pars, skin_wetness=skin_wetness
-                                            )
-                                        end
-                                    end
-                                else
-                                    pant = pant_max
-                                    respiration_pars = ConstructionBase.setproperties(
-                                        respiration_pars, pant=pant
-                                    )
-                                    pant_cost = ((pant - 1) / (pant_max + 1e-6 - 1)) *
-                                                (pant_multiplier - 1) * Q_minimum_ref
-
-                                    Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
-                                    metabolism_pars = ConstructionBase.setproperties(
-                                        metabolism_pars, Q_metabolism=Q_minimum
-                                    )
-                                    skin_wetness += skin_wetness_step
-                                    evaporation_pars = ConstructionBase.setproperties(
-                                        evaporation_pars, skin_wetness=skin_wetness
-                                    )
-                                    if (skin_wetness > skin_wetness_max) || (skin_wetness_step <= 0)
-                                        skin_wetness = skin_wetness_max
-                                        evaporation_pars = ConstructionBase.setproperties(
-                                            evaporation_pars, skin_wetness=skin_wetness
-                                        )
-                                        return
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-                evaporation_pars = ConstructionBase.setproperties(
-                    evaporation_pars, skin_wetness=skin_wetness
-                )
-                traits = Traits(
-                    insulation_pars,
-                    conduction_pars_external,
-                    conduction_pars_internal,
-                    radiation_pars,
-                    ConvectionParameters(),
-                    evaporation_pars,
-                    hydraulic_pars,
-                    respiration_pars,
-                    metabolism_pars
-                )
-                mammal = Organism(geometry, traits)
-                endotherm_out = solve_metabolic_rate(T_skin, T_insulation, mammal, environment, model_pars)
-                T_skin = endotherm_out.thermoregulation.T_skin
-                T_insulation = endotherm_out.thermoregulation.T_insulation
-                Q_gen = endotherm_out.energy_fluxes.Q_gen
-
-            else
-                break
-            end
-        end
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology
         energy_fluxes = endotherm_out.energy_fluxes
@@ -482,19 +293,19 @@ for shape_number in 1:4
             @test morph_output_vec.FLESH_VOL ≈ ustrip(u"m^3", morphology.volume_flesh) rtol = rtol
             @test morph_output_vec.CHAR_DIM ≈ ustrip(u"m", morphology.characteristic_dimension) rtol = rtol
             @test morph_output_vec.MASS_FAT ≈ ustrip(u"kg", morphology.fat_mass) rtol = rtol
-            if mammal.body.shape isa Cylinder
+            if organism.body.shape isa Cylinder
                 @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
                 @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
             end
-            if mammal.body.shape isa Sphere
+            if organism.body.shape isa Sphere
                 @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
                 @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
             end
-            if mammal.body.shape isa Plate
+            if organism.body.shape isa Plate
                 @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
                 @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.width_fur) rtol = rtol
             end
-            if mammal.body.shape isa Ellipsoid
+            if organism.body.shape isa Ellipsoid
                 @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.a_semi_major_fur * 2) rtol = rtol
                 @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.b_semi_minor_fur * 2) rtol = rtol
                 @test morph_output_vec.HEIGHT ≈ ustrip(u"m", morphology.c_semi_minor_fur * 2) rtol = rtol
