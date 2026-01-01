@@ -9,7 +9,7 @@ function endotherm_thermoregulation_original(
 )
     endotherm_out = nothing # initialise
 
-    (; thermoregulation_mode, tolerance,
+    (; thermoregulation_mode, tolerance, max_iterations,
         Q_minimum, Q_minimum_ref,
         insulation_depth_dorsal, insulation_depth_ventral,
         insulation_depth_dorsal_max, insulation_depth_ventral_max,
@@ -33,9 +33,16 @@ function endotherm_thermoregulation_original(
                 organism)
     end
 
+    iteration = 0
+
     # start of thermoregulation loop
     while Q_gen < Q_minimum * (1 - tolerance)
 
+        iteration =+ 1
+        if iteration > max_iterations
+            @warn "max_iterations exceeded"
+            return
+        end
         # -----------------------------------------------------------------------------
         # 1. Reduce insulation (piloerection)
         # -----------------------------------------------------------------------------        

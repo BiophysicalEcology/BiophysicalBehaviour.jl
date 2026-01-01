@@ -10,7 +10,7 @@ using DataFrames, CSV
 testdir = realpath(joinpath(dirname(pathof(BiophysicalBehaviour)), "../test"))
 
 endo_input_names = Symbol.(DataFrame(CSV.File("$testdir/data/endoR_input_names.csv"))[:, 2])
-shape_number =1
+shape_number = 1
 furmult = 1
 # loop through all shapes with and without fur
 for shape_number in 1:4
@@ -227,9 +227,10 @@ for shape_number in 1:4
 
         Q_gen = 0.0u"W" # initialise
         tolerance = 0.005 # fraction by which metabolic rate can go below Q_minimum
+        max_iterations = 1000 # maximum allowed iterations of thermoregulation loop
 
         thermoregulation_pars = (; 
-            thermoregulation_mode, tolerance,
+            thermoregulation_mode, tolerance, max_iterations,
             Q_minimum, Q_minimum_ref,
             insulation_depth_dorsal, insulation_depth_ventral, 
             insulation_depth_dorsal_max, insulation_depth_ventral_max,        
