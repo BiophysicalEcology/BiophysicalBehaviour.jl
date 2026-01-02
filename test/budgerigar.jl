@@ -70,12 +70,19 @@ morphology = endotherm_out.morphology
 energy_fluxes = endotherm_out.energy_fluxes
 mass_fluxes = endotherm_out.mass_fluxes
 
-# budgerigar observations
 testdir = realpath(joinpath(dirname(pathof(BiophysicalBehaviour)), "../test"))
+
+# budgerigar observations
 Weathers1976Fig1 = DataFrame(CSV.File("$testdir/data/budgerigar/Weathers1976Fig1.csv"))
 Weathers1976Fig2 = DataFrame(CSV.File("$testdir/data/budgerigar/Weathers1976Fig2.csv"))
 Weathers1976Fig3 = DataFrame(CSV.File("$testdir/data/budgerigar/Weathers1976Fig3.csv"))
 Weathers1976Fig5 = DataFrame(CSV.File("$testdir/data/budgerigar/Weathers1976Fig5.csv"))
+
+# budgerigar NicheMapR endoR predictions
+treg = DataFrame(CSV.File("$testdir/data/budgerigar/treg.csv"))[:, 2:end]
+morph = DataFrame(CSV.File("$testdir/data/budgerigar/morph.csv"))[:, 2:end]
+enbal = DataFrame(CSV.File("$testdir/data/budgerigar/enbal.csv"))[:, 2:end]
+masbal = DataFrame(CSV.File("$testdir/data/budgerigar/masbal.csv"))[:, 2:end]
 
 # budgerigar parameters
 shape_pars = example_shape_pars(; mass = 33.7u"g", shape_b = 1.1, shape_c = 1.1)
@@ -119,7 +126,7 @@ traits = Traits(
     ConvectionParameters(),
     evaporation_pars,
     example_hydraulic_pars(),
-    example_respiration_pars(),
+    respiration_pars,
     metabolism_pars,
 )
 
@@ -159,10 +166,10 @@ thermoregulation_pars = example_endotherm_thermoregulation_pars(;
     k_flesh_step = 0.1u"W/m/K",
     k_flesh_max = 2.8u"W/m/K",
 
-    T_core = (37.0 + 273.15)u"K",
+    T_core = metabolism_pars.T_core,
     T_core_step = 0.1u"K",
-    T_core_max = (39.0 + 273.15)u"K",
-    T_core_ref = (37.0 + 273.15)u"K",
+    T_core_max = (43.0 + 273.15)u"K",
+    T_core_ref = metabolism_pars.T_core,
 
     pant = 1.0,
     pant_step = 0.1,
@@ -193,7 +200,7 @@ mass_fluxes = endotherm_out.mass_fluxes
 
 # now run across all temperatures
 
-air_temperatures = (collect(0.0:1.0:40).+273.15)u"K"
+air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
 P_atmos = 101325.0u"Pa"
 ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
 saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1, P_atmos)).ρ_vap
@@ -214,7 +221,7 @@ for (T_air, rh, q10) in zip(
         experimental_relative_humdities,
         q10s,
     )
-@show T_air
+
     # --- Environment ---
     environment_vars = example_environment_vars(;
         T_air,
@@ -232,11 +239,11 @@ for (T_air, rh, q10) in zip(
 
     # --- Metabolism (Q10 changes here) ---
     metabolism_pars = example_metabolism_pars(
-        T_core = (37.0 + 273.15)u"K",
+        T_core = (38.0 + 273.15)u"K",
         Q_metabolism = Q_minimum,
         q10 = q10,
     )
-
+    evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
     traits = Traits(
         shape_pars,
         insulation_pars,
@@ -246,7 +253,7 @@ for (T_air, rh, q10) in zip(
         ConvectionParameters(),
         evaporation_pars,
         example_hydraulic_pars(),
-        example_respiration_pars(),
+        respiration_pars,
         metabolism_pars,
     )
 
@@ -308,6 +315,15 @@ p1 = plot(
     label = "predicted",
 )
 
+plot!(
+    p1,
+    (enbal.TA .+ 273.15)u"K",
+    (enbal.QGEN)u"W",
+    lw = 2,    
+    color = :red,
+    label = "NicheMapR",
+)
+
 scatter!(
     p1,
     (Weathers1976Fig1.Tair.+273.15)u"K",
@@ -347,7 +363,31 @@ plot!(
     label = "cutaneous",
 )
 
- scatter!(
+plot!(
+    p2,
+    (masbal.TA .+ 273.15)u"K",
+    (masbal.H2OResp_g .+ masbal.H2OCut_g)u"g/hr",
+    lw = 2,    
+    color = :red,
+    label = "NicheMapR",
+)
+plot!(
+    p2,
+    (masbal.TA .+ 273.15)u"K",
+    (masbal.H2OResp_g)u"g/hr",
+    lw = 2,    
+    color = :red,
+    label = "NicheMapR",
+)
+plot!(
+    p2,
+    (masbal.TA .+ 273.15)u"K",
+    (masbal.H2OCut_g)u"g/hr",
+    lw = 2,    
+    color = :red,
+    label = "NicheMapR",
+)
+scatter!(
     p2,
     (Weathers1976Fig3.Tair.+273.15)u"K",
     (Weathers1976Fig3.mgH2Ogh)u"mg/g/hr" .* shape_pars.mass,
@@ -376,6 +416,41 @@ plot!(p3, air_temperatures, predicted.T_skin_dorsal, color = :orange, label = "s
 plot!(p3, air_temperatures, predicted.T_skin_ventral, color = :orange, linestyle = :dash, label = "skin ventral")
 plot!(p3, air_temperatures, predicted.T_core, color = :red, lw = 2, label = "core (pred)")
 
+plot!(
+    p3,
+    (treg.TA .+ 273.15)u"K",
+    (treg.TFA_D .+ 273.15)u"K",
+    lw = 1,    
+    color = :red,
+)
+plot!(
+    p3,
+    (treg.TA .+ 273.15)u"K",
+    (treg.TFA_V .+ 273.15)u"K",
+    lw = 1,    
+    color = :red,
+)
+plot!(
+    p3,
+    (treg.TA .+ 273.15)u"K",
+    (treg.TSKIN_D .+ 273.15)u"K",
+    lw = 1,    
+    color = :red,
+)
+plot!(
+    p3,
+    (treg.TA .+ 273.15)u"K",
+    (treg.TSKIN_V .+ 273.15)u"K",
+    lw = 1,    
+    color = :red,
+)
+plot!(
+    p3,
+    (treg.TA .+ 273.15)u"K",
+    (treg.TC .+ 273.15)u"K",
+    lw = 1,    
+    color = :red,
+)
 scatter!(
     p3,
     (Weathers1976Fig3.Tair.+273.15)u"K",
@@ -389,6 +464,10 @@ plot!(
     p3,
     legend = :bottomright,
 )
+plot!(
+    p3,
+    legend = :none,
+)
 
 p4 = plot(
     air_temperatures,
@@ -401,6 +480,14 @@ p4 = plot(
     label = "predicted",
 )
 
+plot!(
+    p4,
+    (masbal.TA .+ 273.15)u"K",
+    (masbal.AIR_L)u"L/hr",
+    lw = 1,    
+    color = :red,
+    label = "NicheMapR",
+)
 scatter!(
     p4,
     (Weathers1976Fig5.Tair.+273.15)u"K",
@@ -418,4 +505,4 @@ plot!(
 
 plot(p1, p2, p3, p4, layout = (2, 2))
 
-plot(p4)
+#plot(p2)
