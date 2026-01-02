@@ -52,7 +52,7 @@ function example_environment_pars(;
     )
 end
 
-function example_shape_pars(;
+function example_ellipsoid_shape_pars(;
     mass=65.0u"kg",
     ρ_flesh=1000.0u"kg/m^3",
     shape_b=1.1,

@@ -33,6 +33,11 @@ function endotherm_thermoregulation_original(
                 organism)
     end
 
+    endotherm_out = solve_metabolic_rate(T_skin, T_insulation, organism, environment, model_pars)
+    T_skin = endotherm_out.thermoregulation.T_skin
+    T_insulation = endotherm_out.thermoregulation.T_insulation
+    Q_gen = endotherm_out.energy_fluxes.Q_gen
+        
     iteration = 0
 
     # start of thermoregulation loop

@@ -24,7 +24,7 @@ enbal = DataFrame(CSV.File("$testdir/data/budgerigar/enbal.csv"))[:, 2:end]
 masbal = DataFrame(CSV.File("$testdir/data/budgerigar/masbal.csv"))[:, 2:end]
 
 # budgerigar parameters
-shape_pars = example_shape_pars(; mass = 33.7u"g", shape_b = 1.1, shape_c = 1.1)
+shape_pars = example_ellipsoid_shape_pars(; mass = 33.7u"g", shape_b = 1.1, shape_c = 1.1)
 insulation_pars = example_insulation_pars(; 
                     fibre_diameter_dorsal = 30.0u"μm",
                     fibre_diameter_ventral = 30.0u"μm",
@@ -71,9 +71,26 @@ traits = Traits(
 
 organism = Organism(geometry, traits)
 
-environment_vars = example_environment_vars()
+# environmental conditions
+
+air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
+P_atmos = 101325.0u"Pa"
+ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
+saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1, P_atmos)).ρ_vap
+experimental_relative_humdities = ρ_vapour ./ saturated_ρ_vapours
+experimental_relative_humdities[experimental_relative_humdities .> 1.0] .= 1.0
+experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
+
+environment_vars = example_environment_vars(;
+                    T_air = air_temperatures[1],
+                    rh = experimental_relative_humdities[1])
 environment_pars = example_environment_pars()
 environment = (; environment_pars, environment_vars)
+
+# update q10s
+q10s = fill(1.0, length(air_temperatures))
+q10s[air_temperatures .> thermoregulation_pars.T_core_max] .= metabolism_pars.q10
+metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
 
 # initial conditions
 T_skin = metabolism_pars.T_core - 3.0u"K"
@@ -82,7 +99,7 @@ Q_minimum = metabolism_pars.Q_metabolism
 Q_gen = 0.0u"W"
 
 thermoregulation_pars = example_endotherm_thermoregulation_pars(;
-    thermoregulation_mode = 1,
+    thermoregulation_mode = 3,
     tolerance = 0.005,
     max_iterations = 1000,
 
@@ -111,7 +128,7 @@ thermoregulation_pars = example_endotherm_thermoregulation_pars(;
     T_core_ref = metabolism_pars.T_core,
 
     pant = 1.0,
-    pant_step = 0.1,
+    pant_step = 0.01,
     pant_max = 15.0,
     pant_cost = 0.0u"W",
     pant_multiplier = 1.0,
@@ -138,16 +155,6 @@ energy_fluxes = endotherm_out.energy_fluxes
 mass_fluxes = endotherm_out.mass_fluxes
 
 # now run across all temperatures
-
-air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
-P_atmos = 101325.0u"Pa"
-ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
-saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1, P_atmos)).ρ_vap
-experimental_relative_humdities = ρ_vapour ./ saturated_ρ_vapours
-experimental_relative_humdities[experimental_relative_humdities .> 1.0] .= 1.0
-experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
-q10s = fill(1.0, length(air_temperatures))
-q10s[air_temperatures .> thermoregulation_pars.T_core_max] .= metabolism_pars.q10
 
 results = NamedTuple[]
 
@@ -442,5 +449,7 @@ plot!(
 )
 
 plot(p1, p2, p3, p4, layout = (2, 2))
-
-#plot(p2)
+# plot(p1)
+# plot(p2)
+# plot(p3)
+# plot(p4)

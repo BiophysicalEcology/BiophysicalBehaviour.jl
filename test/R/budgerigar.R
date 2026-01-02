@@ -23,8 +23,9 @@ SHAPE_B_MAX <- 5 # maximum ratio of length to width/depth
 UNCURL <- 0.1 # allows the animal to uncurl to SHAPE_B_MAX, the value being the increment 
 # SHAPE_B is increased per iteration
 SHAPE <- 4 # use ellipsoid geometry
-SAMODE <- 1 # use bird surface area relations (2 is mammal, 0 is based on shape specified 
+SAMODE <- 0 # use bird surface area relations (2 is mammal, 0 is based on shape specified 
 # in GEOM)
+FATPCT <- 20
 
 # feather properties
 DHAIRD <- 30E-06 # hair diameter, dorsal (m)
@@ -47,14 +48,14 @@ Q10s[TAs >= TC_MAX] <- 2 # assuming Q10 effect kicks in only after air temp rise
 QBASAL <- 10 ^ (-1.461 + 0.669 * log10(AMASS * 1000)) # basal heat generation (W)
 DELTAR <- 5 # offset between air temperature and breath (°C)
 EXTREF <- 25 # O2 extraction efficiency (%)
-PANT_INC <- 0.1 # turns on panting, the value being the increment by which the panting multiplier
+PANT_INC <- 0.01 # turns on panting, the value being the increment by which the panting multiplier
 # is increased up to the maximum value, PANT_MAX
 PANT_MAX <- 15 # maximum panting rate - multiplier on air flow through the lungs above 
 # that determined by metabolic rate
 PANT_MULT <- 1 # multiplier on basal metabolic rate at maximum panting level
 
 ptm <- proc.time() # start timing
-endo.out <- lapply(1:length(TAs), function(x){endoR(TA = TAs[x], VEL = VEL, TC = TC, TC_MAX = TC_MAX, RH = hum[x], AMASS = AMASS, SHAPE = SHAPE, SHAPE_B = SHAPE_B, SHAPE_B_MAX = SHAPE_B_MAX, PCTWET = PCTWET, PCTWET_INC = PCTWET_INC, PCTWET_MAX = PCTWET_MAX, Q10 = Q10s[x], QBASAL = QBASAL, DELTAR = DELTAR, DHAIRD = DHAIRD, DHAIRV = DHAIRV, LHAIRD = LHAIRD, LHAIRV = LHAIRV, ZFURD = ZFURD, ZFURV = ZFURV, RHOD = RHOD, RHOV = RHOV, REFLD = REFLD, TC_INC = TC_INC, PANT_INC = PANT_INC, PANT_MAX = PANT_MAX, EXTREF = EXTREF, UNCURL = UNCURL, SAMODE = SAMODE, PANT_MULT = PANT_MULT)}) # run endoR across environments
+endo.out <- lapply(1:length(TAs), function(x){endoR(TA = TAs[x], VEL = VEL, TC = TC, TC_MAX = TC_MAX, RH = hum[x], AMASS = AMASS, FATPCT = FATPCT, SHAPE = SHAPE, SHAPE_B = SHAPE_B, SHAPE_B_MAX = SHAPE_B_MAX, PCTWET = PCTWET, PCTWET_INC = PCTWET_INC, PCTWET_MAX = PCTWET_MAX, Q10 = Q10s[x], QBASAL = QBASAL, DELTAR = DELTAR, DHAIRD = DHAIRD, DHAIRV = DHAIRV, LHAIRD = LHAIRD, LHAIRV = LHAIRV, ZFURD = ZFURD, ZFURV = ZFURV, RHOD = RHOD, RHOV = RHOV, REFLD = REFLD, TC_INC = TC_INC, PANT_INC = PANT_INC, PANT_MAX = PANT_MAX, EXTREF = EXTREF, UNCURL = UNCURL, SAMODE = SAMODE, PANT_MULT = PANT_MULT)}) # run endoR across environments
 proc.time() - ptm # stop timing
 
 # extract the output
@@ -85,6 +86,9 @@ write.csv(morph, file = '../data/budgerigar/morph.csv')
 write.csv(enbal, file = '../data/budgerigar/enbal.csv')
 write.csv(masbal, file = '../data/budgerigar/masbal.csv')
 
+# endo.out <- lapply(1:1, function(x){endoR(WRITE_INPUT = 1, TA = TAs[x], VEL = VEL, TC = TC, TC_MAX = TC_MAX, RH = hum[x], AMASS = AMASS, SHAPE = SHAPE, SHAPE_B = SHAPE_B, SHAPE_B_MAX = SHAPE_B_MAX, PCTWET = PCTWET, PCTWET_INC = PCTWET_INC, PCTWET_MAX = PCTWET_MAX, Q10 = Q10s[x], QBASAL = QBASAL, DELTAR = DELTAR, DHAIRD = DHAIRD, DHAIRV = DHAIRV, LHAIRD = LHAIRD, LHAIRV = LHAIRV, ZFURD = ZFURD, ZFURV = ZFURV, RHOD = RHOD, RHOV = RHOV, REFLD = REFLD, TC_INC = TC_INC, PANT_INC = PANT_INC, PANT_MAX = PANT_MAX, EXTREF = EXTREF, UNCURL = UNCURL, SAMODE = SAMODE, PANT_MULT = PANT_MULT)}) # run endoR across environments
+# file.copy("SOLVENDO.input.csv", to = "C:\\Users\\mrke\\Dropbox\\NicheMapR_Debug\\endo_source\\SOLVENDO.input.csv", overwrite = TRUE)
+# file.remove("SOLVENDO.input.csv")
 
 QGEN <- enbal$QGEN # metabolic rate (W)
 H2O <- masbal$H2OResp_g + masbal$H2OCut_g # g/h water evaporated
