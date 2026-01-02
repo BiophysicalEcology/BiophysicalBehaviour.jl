@@ -250,24 +250,28 @@ predicted = DataFrame(results)
 
 
 gr()
+default(guidefontsize=8, titlefontsize=10)
+plot_NicheMapR_output = false
 
 p1 = plot(
-    air_temperatures, predicted.Q_gen,
+    u"°C".(air_temperatures), predicted.Q_gen,
     lw = 2,
     xlabel = "air temperature",
-    ylabel = "metabolic rate",
+    title = "metabolic rate",
     ylim = (0.2, 1.2),
     label = "predicted",
 )
 
+if plot_NicheMapR_output
 plot!(
     p1,
-    (enbal.TA .+ 273.15)u"K",
+    (enbal.TA)u"°C",
     (enbal.QGEN)u"W",
     lw = 2,    
     color = :red,
     label = "NicheMapR",
 )
+end
 
 scatter!(
     p1,
@@ -282,43 +286,46 @@ scatter!(
 plot!(
     p1,
     legend = :topright,
+    legendfontsize=6,
 )
 
 p2 = plot(
-    air_temperatures, predicted.H2O_total,
+    u"°C".(air_temperatures), predicted.H2O_total,
     lw = 2,
     xlabel = "air temperature",
-    ylabel = "water loss",
+    title = "water loss",
     ylim = (0, 1.5),
     label = "total (pred)",
 )
 
 plot!(
     p2,
-    air_temperatures, u"g/hr".(predicted.H2O_resp),
+    u"°C".(air_temperatures), u"g/hr".(predicted.H2O_resp),
     linestyle = :dash,
     label = "respiratory",
 )
 
 plot!(
     p2,
-    air_temperatures, predicted.H2O_cut,
+    u"°C".(air_temperatures), predicted.H2O_cut,
     linestyle = :dash,
     color = :blue,
     label = "cutaneous",
 )
 
+if plot_NicheMapR_output
 plot!(
     p2,
-    (masbal.TA .+ 273.15)u"K",
+    (masbal.TA)u"°C",
     (masbal.H2OResp_g .+ masbal.H2OCut_g)u"g/hr",
     lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
+
 plot!(
     p2,
-    (masbal.TA .+ 273.15)u"K",
+    (masbal.TA)u"°C",
     (masbal.H2OResp_g)u"g/hr",
     lw = 1,    
     color = :red,
@@ -326,12 +333,14 @@ plot!(
 )
 plot!(
     p2,
-    (masbal.TA .+ 273.15)u"K",
+    (masbal.TA)u"°C",
     (masbal.H2OCut_g)u"g/hr",
     lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
+end
+
 scatter!(
     p2,
     (Weathers1976Fig3.Tair.+273.15)u"K",
@@ -344,58 +353,62 @@ scatter!(
 plot!(
     p2,
     legend = :topleft,
+    legendfontsize=6,
 )
 
 p3 = plot(
-    air_temperatures, predicted.T_insulation_dorsal,
+    u"°C".(air_temperatures), u"°C".(predicted.T_insulation_dorsal),
     color = :grey,
     lw = 2,
     xlabel = "air temperature",
-    ylabel = "feather, skin and core temperature",
-    ylim = (10+273.15, 50+273.15),
+    title = "feather, skin and core temperature",
+    ylim = (10, 50),
     label = "feathers dorsal",
 )
 
-plot!(p3, air_temperatures, predicted.T_insulation_ventral, color = :grey, linestyle = :dash, label = "feathers ventral")
-plot!(p3, air_temperatures, predicted.T_skin_dorsal, color = :orange, label = "skin dorsal")
-plot!(p3, air_temperatures, predicted.T_skin_ventral, color = :orange, linestyle = :dash, label = "skin ventral")
-plot!(p3, air_temperatures, predicted.T_core, color = :red, lw = 2, label = "core (pred)")
+plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_insulation_ventral), color = :grey, linestyle = :dash, label = "feathers ventral")
+plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_dorsal), color = :orange, label = "skin dorsal")
+plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_ventral), color = :orange, linestyle = :dash, label = "skin ventral")
+plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_core), color = :red, lw = 2, label = "core (pred)")
 
+if plot_NicheMapR_output
 plot!(
     p3,
-    (treg.TA .+ 273.15)u"K",
-    (treg.TFA_D .+ 273.15)u"K",
+    (treg.TA)u"°C",
+    (treg.TFA_D)u"°C",
     lw = 1,    
     color = :red,
 )
 plot!(
     p3,
-    (treg.TA .+ 273.15)u"K",
-    (treg.TFA_V .+ 273.15)u"K",
+    (treg.TA)u"°C",
+    (treg.TFA_V)u"°C",
     lw = 1,    
     color = :red,
 )
 plot!(
     p3,
-    (treg.TA .+ 273.15)u"K",
-    (treg.TSKIN_D .+ 273.15)u"K",
+    (treg.TA)u"°C",
+    (treg.TSKIN_D)u"°C",
     lw = 1,    
     color = :red,
 )
 plot!(
     p3,
-    (treg.TA .+ 273.15)u"K",
-    (treg.TSKIN_V .+ 273.15)u"K",
+    (treg.TA)u"°C",
+    (treg.TSKIN_V)u"°C",
     lw = 1,    
     color = :red,
 )
 plot!(
     p3,
-    (treg.TA .+ 273.15)u"K",
-    (treg.TC .+ 273.15)u"K",
+    (treg.TA)u"°C",
+    (treg.TC)u"°C",
     lw = 1,    
     color = :red,
 )
+end
+
 scatter!(
     p3,
     (Weathers1976Fig3.Tair.+273.15)u"K",
@@ -408,34 +421,39 @@ scatter!(
 plot!(
     p3,
     legend = :bottomright,
+    legendfontsize=6,
 )
+if plot_NicheMapR_output
 plot!(
     p3,
     legend = :none,
 )
+end
 
 p4 = plot(
-    air_temperatures,
+    u"°C".(air_temperatures),
     u"ml/minute".(predicted.V_air),
     lw = 2,
-    xlim = (-5, 50) .+ 273.15,
+    xlim = (-5, 50),
     ylim = (0, 250),
     xlabel = "air temperature",
-    ylabel = "air",
+    title = "ventilation rate",
     label = "predicted",
 )
 
+if plot_NicheMapR_output
 plot!(
     p4,
-    (masbal.TA .+ 273.15)u"K",
+    (masbal.TA)u"°C",
     (masbal.AIR_L)u"L/hr",
     lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
+end
 scatter!(
     p4,
-    (Weathers1976Fig5.Tair.+273.15)u"K",
+    (Weathers1976Fig5.Tair)u"°C",
     (Weathers1976Fig5.breaths_min .* (13.2 .* ustrip(u"kg", shape_pars.mass) .^ 1.08) .*
         ((Weathers1976Fig5.Tair .+ 273.15) ./ 273.15))u"ml/minute",
     color = :red,
@@ -446,10 +464,11 @@ scatter!(
 plot!(
     p4,
     legend = :topleft,
+    legendfontsize=6,
 )
 
 plot(p1, p2, p3, p4, layout = (2, 2))
-# plot(p1)
+# plot(p1, legendfontsize=6)
 # plot(p2)
 # plot(p3)
 # plot(p4)
