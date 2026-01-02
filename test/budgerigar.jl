@@ -76,7 +76,7 @@ organism = Organism(geometry, traits)
 air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
 P_atmos = 101325.0u"Pa"
 ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
-saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1, P_atmos)).ρ_vap
+saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1.0, P_atmos)).ρ_vap
 experimental_relative_humdities = ρ_vapour ./ saturated_ρ_vapours
 experimental_relative_humdities[experimental_relative_humdities .> 1.0] .= 1.0
 experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
@@ -89,7 +89,7 @@ environment = (; environment_pars, environment_vars)
 
 # update q10s
 q10s = fill(1.0, length(air_temperatures))
-q10s[air_temperatures .> thermoregulation_pars.T_core_max] .= metabolism_pars.q10
+q10s[air_temperatures .>= thermoregulation_pars.T_core_max] .= metabolism_pars.q10
 metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
 
 # initial conditions
