@@ -9,67 +9,6 @@ using Test
 using DataFrames, CSV
 using Plots
 
-# first with all default settings
-shape_pars = example_shape_pars()
-insulation_pars = example_insulation_pars()
-radiation_pars = example_radiation_pars()
-metabolism_pars = example_metabolism_pars()
-
-# set up geometry
-conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
-mean_insulation_depth = insulation_pars.insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) + 
-    insulation_pars.insulation_depth_ventral * radiation_pars.ventral_fraction
-mean_fibre_diameter = insulation_pars.fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) + 
-    insulation_pars.fibre_diameter_ventral * radiation_pars.ventral_fraction
-mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) + 
-    insulation_pars.fibre_density_ventral * radiation_pars.ventral_fraction
-fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
-geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-
-traits = Traits(
-    shape_pars,
-    insulation_pars,
-    example_conduction_pars_external(),
-    conduction_pars_internal,
-    radiation_pars,
-    ConvectionParameters(),
-    example_evaporation_pars(),
-    example_hydraulic_pars(),
-    example_respiration_pars(),
-    metabolism_pars,
-)
-
-organism = Organism(geometry, traits)
-
-environment_vars = example_environment_vars()
-environment_pars = example_environment_pars()
-environment = (; environment_pars, environment_vars)
-
-# initial conditions
-T_skin = metabolism_pars.T_core - 3.0u"K"
-T_insulation = environment_vars.T_air
-Q_minimum = metabolism_pars.Q_metabolism
-Q_gen = 0.0u"W"
-
-thermoregulation_pars = example_endotherm_thermoregulation_pars()
-
-model_pars = example_model_pars()
-
-endotherm_out = endotherm_thermoregulation_original(
-    Q_gen,
-    T_skin,
-    T_insulation,
-    organism,
-    thermoregulation_pars,
-    environment,
-    model_pars
-);
-thermoregulation = endotherm_out.thermoregulation
-morphology = endotherm_out.morphology
-energy_fluxes = endotherm_out.energy_fluxes
-mass_fluxes = endotherm_out.mass_fluxes
-
 testdir = realpath(joinpath(dirname(pathof(BiophysicalBehaviour)), "../test"))
 
 # budgerigar observations
@@ -177,7 +116,7 @@ thermoregulation_pars = example_endotherm_thermoregulation_pars(;
     pant_cost = 0.0u"W",
     pant_multiplier = 1.0,
 
-    skin_wetness = 0.005,
+    skin_wetness = evaporation_pars.skin_wetness,
     skin_wetness_step = 0.0025,
     skin_wetness_max = 0.05,
 )
@@ -243,7 +182,6 @@ for (T_air, rh, q10) in zip(
         Q_metabolism = Q_minimum,
         q10 = q10,
     )
-    evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
     traits = Traits(
         shape_pars,
         insulation_pars,
@@ -367,7 +305,7 @@ plot!(
     p2,
     (masbal.TA .+ 273.15)u"K",
     (masbal.H2OResp_g .+ masbal.H2OCut_g)u"g/hr",
-    lw = 2,    
+    lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
@@ -375,7 +313,7 @@ plot!(
     p2,
     (masbal.TA .+ 273.15)u"K",
     (masbal.H2OResp_g)u"g/hr",
-    lw = 2,    
+    lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
@@ -383,7 +321,7 @@ plot!(
     p2,
     (masbal.TA .+ 273.15)u"K",
     (masbal.H2OCut_g)u"g/hr",
-    lw = 2,    
+    lw = 1,    
     color = :red,
     label = "NicheMapR",
 )
