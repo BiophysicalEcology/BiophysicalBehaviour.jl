@@ -87,11 +87,6 @@ environment_vars = example_environment_vars(;
 environment_pars = example_environment_pars()
 environment = (; environment_pars, environment_vars)
 
-# update q10s
-q10s = fill(1.0, length(air_temperatures))
-q10s[air_temperatures .>= thermoregulation_pars.T_core_max] .= metabolism_pars.q10
-metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
-
 # initial conditions
 T_skin = metabolism_pars.T_core - 3.0u"K"
 T_insulation = environment_vars.T_air
@@ -137,6 +132,11 @@ thermoregulation_pars = example_endotherm_thermoregulation_pars(;
     skin_wetness_step = 0.0025,
     skin_wetness_max = 0.05,
 )
+
+# update q10s
+q10s = fill(1.0, length(air_temperatures))
+q10s[air_temperatures .>= thermoregulation_pars.T_core_max] .= metabolism_pars.q10
+metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
 
 model_pars = example_model_pars()
 
