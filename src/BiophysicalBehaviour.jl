@@ -4,6 +4,7 @@ using Unitful, UnitfulMoles, ModelParameters
 using BiophysicalGeometry
 using BiophysicalGeometry: AbstractBody, shape
 using ConstructionBase
+using FluidProperties # Not actually used, here for dependency debugging purposes
 using HeatExchange
 
 export piloerect!, uncurl!, vasodilate!, hyperthermia!, pant!, sweat!
