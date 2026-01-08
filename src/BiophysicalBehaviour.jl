@@ -6,7 +6,6 @@ using BiophysicalGeometry: AbstractBody, shape
 using ConstructionBase
 using HeatExchange
 
-export AbstractBehaviouralParameters
 export piloerect!, uncurl!, vasodilate!, hyperthermia!, pant!, sweat!
 export endotherm_thermoregulation_original
 export example_environment_vars, example_environment_pars,
