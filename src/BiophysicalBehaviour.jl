@@ -10,7 +10,6 @@ using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
-export AbstractBehaviouralParameters
 export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
 
 export endotherm_thermoregulation_original
