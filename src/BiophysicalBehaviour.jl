@@ -1,13 +1,17 @@
 module BiophysicalBehaviour
 
-using Unitful, UnitfulMoles, ModelParameters
-using BiophysicalGeometry
-using BiophysicalGeometry: AbstractBody, shape
-using ConstructionBase
-using FluidProperties # Not actually used, here for dependency debugging purposes
-using HeatExchange
+import ConstructionBase
 
-export piloerect!, uncurl!, vasodilate!, hyperthermia!, pant!, sweat!
+using BiophysicalGeometry
+using HeatExchange
+using ModelParameters
+using Unitful
+using UnitfulMoles
+
+using BiophysicalGeometry: AbstractBody, shape
+
+export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
+
 export endotherm_thermoregulation_original
 export example_environment_vars, example_environment_pars,
             example_ellipsoid_shape_pars, example_insulation_pars, example_conduction_pars_external,

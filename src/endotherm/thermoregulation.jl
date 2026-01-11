@@ -1,4 +1,4 @@
-function piloerect!(
+function piloerect(
     insulation_depth_dorsal,
     insulation_depth_ventral,
     insulation_depth_dorsal_ref,
@@ -47,7 +47,7 @@ function piloerect!(
     return insulation_depth_dorsal, insulation_depth_ventral, organism′
 end
 
-function uncurl!(shape_b, shape_b_step, shape_b_max, organism)
+function uncurl(shape_b, shape_b_step, shape_b_max, organism)
     shape_pars = organism.traits.shape_pars
 
     # No meaning to uncurl a sphere
@@ -66,7 +66,7 @@ function uncurl!(shape_b, shape_b_step, shape_b_max, organism)
     return shape_b, organism′
 end
 
-function vasodilate!(k_flesh, k_flesh_step, k_flesh_max, organism)
+function vasodilate(k_flesh, k_flesh_step, k_flesh_max, organism)
     k_flesh = min(k_flesh + k_flesh_step, k_flesh_max)
 
     new_conduction = ConstructionBase.setproperties(
@@ -80,7 +80,7 @@ function vasodilate!(k_flesh, k_flesh_step, k_flesh_max, organism)
     return k_flesh, organism′
 end
 
-function hyperthermia!(
+function hyperthermia(
     T_core, T_core_step, T_core_max, T_core_ref, Q_minimum_ref, pant_cost, organism
 )
     # Update T_core
@@ -101,7 +101,7 @@ function hyperthermia!(
     return T_core, Q_minimum, organism′
 end
 
-function pant!(pant, pant_step, pant_max, T_core_ref, Q_minimum_ref, pant_multiplier, organism)
+function pant(pant, pant_step, pant_max, T_core_ref, Q_minimum_ref, pant_multiplier, organism)
     pant = min(pant + pant_step, pant_max)
 
     pant_cost = ((pant - 1) / (pant_max + 1e-6 - 1)) *
@@ -127,7 +127,7 @@ function pant!(pant, pant_step, pant_max, T_core_ref, Q_minimum_ref, pant_multip
     return pant, pant_cost, Q_minimum, organism′
 end
 
-function sweat!(skin_wetness, skin_wetness_step, skin_wetness_max, organism)
+function sweat(skin_wetness, skin_wetness_step, skin_wetness_max, organism)
     skin_wetness = min(skin_wetness + skin_wetness_step, skin_wetness_max)
 
     new_evaporation = ConstructionBase.setproperties(
