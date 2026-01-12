@@ -24,7 +24,7 @@ function endotherm_thermoregulation_original(
     if insulation_step > 0.0 && (insulation_depth_dorsal + insulation_depth_ventral) > 0u"mm"
         # start with erect insulation
         insulation_depth_dorsal, insulation_depth_ventral, organism =
-            piloerect!(
+            piloerect(
                 insulation_depth_dorsal_max,
                 insulation_depth_ventral_max,
                 insulation_depth_dorsal_ref,
@@ -55,7 +55,7 @@ function endotherm_thermoregulation_original(
            (insulation_depth_ventral > insulation_depth_ventral_ref)
 
             insulation_depth_dorsal, insulation_depth_ventral, organism =
-                piloerect!(
+                piloerect(
                     insulation_depth_dorsal,
                     insulation_depth_ventral,
                     insulation_depth_dorsal_ref,
@@ -67,23 +67,23 @@ function endotherm_thermoregulation_original(
         # 2. Uncurl (increase surface area)
         # -------------------------------------------------------------------------------                   
         elseif shape_b < shape_b_max
-            shape_b, organism = uncurl!(shape_b, shape_b_step, shape_b_max, organism)
+            shape_b, organism = uncurl(shape_b, shape_b_step, shape_b_max, organism)
 
         # -------------------------------------------------------------------------------
         # 3. Vasodilate (increase k_flesh)
         # -------------------------------------------------------------------------------            
         elseif k_flesh < k_flesh_max
-            k_flesh, organism = vasodilate!(k_flesh, k_flesh_step, k_flesh_max, organism)
+            k_flesh, organism = vasodilate(k_flesh, k_flesh_step, k_flesh_max, organism)
 
         # -------------------------------------------------------------------------------
         # 4. Allow core temperature to rise (and possibly pant and sweat in parallel)
         # -------------------------------------------------------------------------------               
         elseif T_core < T_core_max
-            T_core, Q_minimum, organism = hyperthermia!(T_core, T_core_step, T_core_max,
+            T_core, Q_minimum, organism = hyperthermia(T_core, T_core_step, T_core_max,
                 T_core_ref, Q_minimum_ref, pant_cost, organism)
             if thermoregulation_mode >= 2 && pant < pant_max
                 # pant in parallel to allowing core temperature to rise
-                pant, pant_cost, Q_minimum, organism = pant!(pant, pant_step, pant_max,
+                pant, pant_cost, Q_minimum, organism = pant(pant, pant_step, pant_max,
                     T_core_ref, Q_minimum_ref, pant_multiplier, organism)
             end
             if thermoregulation_mode == 3
@@ -92,7 +92,7 @@ function endotherm_thermoregulation_original(
                     @warn "All thermoregulatory options exhausted"
                     return
                 end
-                skin_wetness, organism = sweat!(skin_wetness, skin_wetness_step,
+                skin_wetness, organism = sweat(skin_wetness, skin_wetness_step,
                     skin_wetness_max, organism)
             end
 
@@ -100,7 +100,7 @@ function endotherm_thermoregulation_original(
         # 5. Pant to dump heat evaporatively (and possibly sweat in parallel)
         # ------------------------------------------------------------------------------- 
         elseif pant < pant_max
-            pant, pant_cost, Q_minimum, organism = pant!(pant, pant_step, pant_max,
+            pant, pant_cost, Q_minimum, organism = pant(pant, pant_step, pant_max,
                 T_core_ref, Q_minimum_ref, pant_multiplier, organism)
             if thermoregulation_mode == 3
                 if (skin_wetness > skin_wetness_max) || (skin_wetness_step <= 0)
@@ -108,7 +108,7 @@ function endotherm_thermoregulation_original(
                     return
                 end
                 # sweat in parallel to panting
-                skin_wetness, organism = sweat!(skin_wetness, skin_wetness_step,
+                skin_wetness, organism = sweat(skin_wetness, skin_wetness_step,
                     skin_wetness_max, organism)
             end
 
@@ -119,7 +119,7 @@ function endotherm_thermoregulation_original(
             if (skin_wetness > skin_wetness_max) || (skin_wetness_step <= 0)
                 return
             end
-            skin_wetness, organism = sweat!(skin_wetness, skin_wetness_step,
+            skin_wetness, organism = sweat(skin_wetness, skin_wetness_step,
                 skin_wetness_max, organism)
         end
 
