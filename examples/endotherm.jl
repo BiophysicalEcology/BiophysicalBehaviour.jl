@@ -25,7 +25,7 @@ mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - radiation_pars.
 fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
-traits = Traits(
+traits = HeatExchangeTraits(
     shape_pars,
     insulation_pars,
     example_conduction_pars_external(),
@@ -47,10 +47,9 @@ environment = (; environment_pars, environment_vars)
 # initial conditions
 T_skin = metabolism_pars.T_core - 3.0u"K"
 T_insulation = environment_vars.T_air
-Q_minimum = metabolism_pars.Q_metabolism
 Q_gen = 0.0u"W"
 
-thermoregulation_pars = example_endotherm_thermoregulation_pars()
+thermoregulation_limits = example_thermoregulation_limits()
 
 model_pars = example_model_pars()
 
@@ -59,7 +58,7 @@ endotherm_out = endotherm_thermoregulation_original(
     T_skin,
     T_insulation,
     organism,
-    thermoregulation_pars,
+    thermoregulation_limits,
     environment,
     model_pars
 );

@@ -34,9 +34,7 @@ function example_environment_pars(;
     ϵ_sky=1.0,
     elevation=0.0u"m",
     fluid=0,
-    fN2=0.7902,
-    fO2=0.2095,
-    fCO2=0.000412,
+    gasfrac=FluidProperties.GasFractions(),
     convection_enhancement=1.0,
 )
     EnvironmentalPars(;
@@ -45,9 +43,7 @@ function example_environment_pars(;
         ϵ_sky,
         elevation,
         fluid,
-        fN2,
-        fO2,
-        fCO2,
+        gasfrac,
         convection_enhancement,
     )
 end
@@ -60,6 +56,9 @@ function example_ellipsoid_shape_pars(;
 )
     Ellipsoid(mass, ρ_flesh, shape_b, shape_c)
 end
+
+# Alias for convenience
+example_shape_pars(; kwargs...) = example_ellipsoid_shape_pars(; kwargs...)
 
 function example_conduction_pars_external(;
     conduction_fraction=0.0,
@@ -201,94 +200,191 @@ function example_insulation_pars(;
     )
 end
 
-function example_model_pars(;
+function example_metabolic_rate_options(;
     respire=true,
     simulsol_tolerance=1e-3u"K",
     resp_tolerance=1e-5,
 )
-    EndoModelPars(;
+    EndothermMetabolicRateOptions(;
         respire,
         simulsol_tolerance,
         resp_tolerance,
     )
 end
 
-function example_endotherm_thermoregulation_pars(;
-    thermoregulation_mode = 1,
-    tolerance = 0.005,
-    max_iterations = 1000,
+"""
+    example_thermoregulation_limits(; kwargs...)
 
-    Q_minimum = 77.61842u"W",
-    Q_minimum_ref = 77.61842u"W",
-
-    insulation_depth_dorsal = 2e-03u"m",
-    insulation_depth_ventral = 2e-03u"m",
-    insulation_depth_dorsal_max = 2e-03u"m",
-    insulation_depth_ventral_max = 2e-03u"m",
-    insulation_depth_dorsal_ref = 2e-03u"m",
-    insulation_depth_ventral_ref = 2e-03u"m",
-    insulation_step = 0.0,
-
-    shape_b = 1.1,
-    shape_b_step = 0.1,
-    shape_b_max = 5.0,
-
-    k_flesh = 0.9u"W/m/K",
-    k_flesh_step = 0.1u"W/m/K",
-    k_flesh_max = 2.8u"W/m/K",
-
-    T_core = (37.0 + 273.15)u"K",
-    T_core_step = 0.1u"K",
-    T_core_max = (39.0 + 273.15)u"K",
-    T_core_ref = (37.0 + 273.15)u"K",
-
-    pant = 1.0,
-    pant_step = 0.1,
-    pant_max = 10.0,
-    pant_cost = 0.0u"W",
-    pant_multiplier = 1.05,
-
-    skin_wetness = 0.005,
-    skin_wetness_step = 0.001,
-    skin_wetness_max = 1.0,
+Create example `ThermoregulationLimits` with sensible defaults.
+"""
+function example_thermoregulation_limits(;
+    # Control
+    thermoregulation_mode=1,
+    tolerance=0.005,
+    max_iterations=1000,
+    # Metabolic reference
+    Q_minimum_ref=77.61842u"W",
+    # Insulation (piloerection)
+    insulation_depth_dorsal=2e-03u"m",
+    insulation_depth_ventral=2e-03u"m",
+    insulation_depth_dorsal_max=2e-03u"m",
+    insulation_depth_ventral_max=2e-03u"m",
+    insulation_depth_dorsal_ref=2e-03u"m",
+    insulation_depth_ventral_ref=2e-03u"m",
+    insulation_step=0.0,
+    # Shape (uncurl)
+    shape_b=1.1,
+    shape_b_step=0.1,
+    shape_b_max=5.0,
+    # Tissue conductivity (vasodilation)
+    k_flesh=0.9u"W/m/K",
+    k_flesh_step=0.1u"W/m/K",
+    k_flesh_max=2.8u"W/m/K",
+    # Core temperature (hyperthermia)
+    T_core=(37.0 + 273.15)u"K",
+    T_core_step=0.1u"K",
+    T_core_max=(39.0 + 273.15)u"K",
+    T_core_ref=(37.0 + 273.15)u"K",
+    # Panting
+    pant_current=1.0,
+    pant_step=0.1,
+    pant_max=10.0,
+    pant_cost=0.0u"W",
+    pant_multiplier=1.05,
+    # Sweating
+    skin_wetness=0.005,
+    skin_wetness_step=0.001,
+    skin_wetness_max=1.0,
 )
-    EndothermThermoregulationParameters(;
-        thermoregulation_mode,
+    control = ThermoregulationControl(;
+        mode=thermoregulation_mode,
         tolerance,
         max_iterations,
-        
-        Q_minimum,
+    )
+
+    insulation = InsulationLimits(;
+        dorsal=SteppedParameter(;
+            current=insulation_depth_dorsal,
+            reference=insulation_depth_dorsal_ref,
+            max=insulation_depth_dorsal_max,
+            step=insulation_step,
+        ),
+        ventral=SteppedParameter(;
+            current=insulation_depth_ventral,
+            reference=insulation_depth_ventral_ref,
+            max=insulation_depth_ventral_max,
+            step=insulation_step,
+        ),
+    )
+
+    shape_b_param = SteppedParameter(;
+        current=shape_b,
+        max=shape_b_max,
+        step=shape_b_step,
+    )
+
+    k_flesh_param = SteppedParameter(;
+        current=k_flesh,
+        max=k_flesh_max,
+        step=k_flesh_step,
+    )
+
+    T_core_param = SteppedParameter(;
+        current=T_core,
+        reference=T_core_ref,
+        max=T_core_max,
+        step=T_core_step,
+    )
+
+    panting = PantingLimits(;
+        pant=SteppedParameter(;
+            current=pant_current,
+            max=pant_max,
+            step=pant_step,
+        ),
+        cost=pant_cost,
+        multiplier=pant_multiplier,
+        T_core_ref=T_core_ref,
+    )
+
+    skin_wetness_param = SteppedParameter(;
+        current=skin_wetness,
+        max=skin_wetness_max,
+        step=skin_wetness_step,
+    )
+
+    ThermoregulationLimits(;
+        control,
         Q_minimum_ref,
+        insulation,
+        shape_b=shape_b_param,
+        k_flesh=k_flesh_param,
+        T_core=T_core_param,
+        panting,
+        skin_wetness=skin_wetness_param,
+    )
+end
 
-        insulation_depth_dorsal,
-        insulation_depth_ventral,
-        insulation_depth_dorsal_max,
-        insulation_depth_ventral_max,
-        insulation_depth_dorsal_ref,
-        insulation_depth_ventral_ref,
-        insulation_step,
+"""
+    example_behavioral_traits(; kwargs...)
 
-        shape_b,
-        shape_b_step,
-        shape_b_max,
+Create example `BehavioralTraits` with sensible defaults.
+"""
+function example_behavioral_traits(;
+    thermoregulation=example_thermoregulation_limits(),
+    activity=Diurnal(),
+)
+    BehavioralTraits(; thermoregulation, activity)
+end
 
-        k_flesh,
-        k_flesh_step,
-        k_flesh_max,
+"""
+    example_organism_traits(; thermal_strategy=Endotherm(), physiology=nothing, behavior=nothing, kwargs...)
 
-        T_core,
-        T_core_step,
-        T_core_max,
-        T_core_ref,
+Create example `OrganismTraits` combining thermal strategy, physiology and behavior.
 
-        pant,
-        pant_step,
-        pant_max,
-        pant_cost,
-        pant_multiplier,
+If `physiology` is not provided, creates a default `HeatExchangeTraits`.
+If `behavior` is not provided, creates a default `BehavioralTraits`.
 
-        skin_wetness,
-        skin_wetness_step,
-        skin_wetness_max,
+Additional keyword arguments are passed to `example_heat_exchange_traits`.
+"""
+function example_organism_traits(;
+    thermal_strategy=Endotherm(),
+    physiology=nothing,
+    behavior=nothing,
+    kwargs...,
+)
+    phys = isnothing(physiology) ? example_heat_exchange_traits(; kwargs...) : physiology
+    behav = isnothing(behavior) ? example_behavioral_traits() : behavior
+    OrganismTraits(thermal_strategy, phys, behav)
+end
+
+"""
+    example_heat_exchange_traits(; kwargs...)
+
+Create example `HeatExchangeTraits` with sensible defaults.
+"""
+function example_heat_exchange_traits(;
+    shape_pars=example_shape_pars(),
+    insulation_pars=example_insulation_pars(),
+    conduction_pars_external=example_conduction_pars_external(),
+    conduction_pars_internal=example_conduction_pars_internal(),
+    convection_pars=ConvectionParameters(),
+    radiation_pars=example_radiation_pars(),
+    evaporation_pars=example_evaporation_pars(),
+    hydraulic_pars=example_hydraulic_pars(),
+    respiration_pars=example_respiration_pars(),
+    metabolism_pars=example_metabolism_pars(),
+)
+    HeatExchange.HeatExchangeTraits(;
+        shape_pars,
+        insulation_pars,
+        conduction_pars_external,
+        conduction_pars_internal,
+        convection_pars,
+        radiation_pars,
+        evaporation_pars,
+        hydraulic_pars,
+        respiration_pars,
+        metabolism_pars,
     )
 end

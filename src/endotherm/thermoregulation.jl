@@ -1,36 +1,55 @@
-function piloerect(
-    insulation_depth_dorsal,
-    insulation_depth_ventral,
-    insulation_depth_dorsal_ref,
-    insulation_depth_ventral_ref,
-    insulation_step,
-    organism
-)
-    insulation_pars = organism.traits.insulation_pars
-    shape_pars = organism.traits.shape_pars
+# Helper to get physiology traits from organism (works with both HeatExchangeTraits and OrganismTraits)
+_physiology(t::OrganismTraits) = t.physiology
+_physiology(t::HeatExchange.HeatExchangeTraits) = t
+
+# Helper to update physiology within traits
+function _update_physiology(t::OrganismTraits, new_phys)
+    ConstructionBase.setproperties(t; physiology=new_phys)
+end
+function _update_physiology(::HeatExchange.HeatExchangeTraits, new_phys)
+    new_phys
+end
+
+"""
+    piloerect(limits::InsulationLimits, organism::Organism)
+
+Reduce insulation depth toward reference values (flatten fur/feathers).
+
+Returns updated `InsulationLimits` and `organism`.
+"""
+function piloerect(limits::InsulationLimits, organism::Organism)
+    phys = _physiology(organism.traits)
+    insulation_pars = HeatExchange.insulationpars(phys)
+    shape_pars = HeatExchange.shapepars(phys)
     fibre_length_dorsal = insulation_pars.fibre_length_dorsal
     fibre_length_ventral = insulation_pars.fibre_length_ventral
 
     # Decrement each insulation depth towards its reference
-    insulation_depth_dorsal = max(
-        insulation_depth_dorsal_ref,
-        insulation_depth_dorsal - insulation_step * fibre_length_dorsal
+    new_dorsal_current = max(
+        limits.dorsal.reference,
+        limits.dorsal.current - limits.dorsal.step * fibre_length_dorsal
     )
-    insulation_depth_ventral = max(
-        insulation_depth_ventral_ref,
-        insulation_depth_ventral - insulation_step * fibre_length_ventral
+    new_ventral_current = max(
+        limits.ventral.reference,
+        limits.ventral.current - limits.ventral.step * fibre_length_ventral
     )
 
-    insulation_pars = ConstructionBase.setproperties(
-        insulation_pars,
-        insulation_depth_dorsal = insulation_depth_dorsal,
-        insulation_depth_ventral = insulation_depth_ventral
+    # Update limits
+    new_dorsal = ConstructionBase.setproperties(limits.dorsal; current=new_dorsal_current)
+    new_ventral = ConstructionBase.setproperties(limits.ventral; current=new_ventral_current)
+    limits′ = InsulationLimits(; dorsal=new_dorsal, ventral=new_ventral)
+
+    # Update organism insulation parameters
+    insulation_pars′ = ConstructionBase.setproperties(
+        insulation_pars;
+        insulation_depth_dorsal=new_dorsal_current,
+        insulation_depth_ventral=new_ventral_current
     )
 
     # Compute mean insulation properties
-    ventral_frac = organism.traits.radiation_pars.ventral_fraction
-    mean_insulation_depth = insulation_depth_dorsal * (1 - ventral_frac) +
-                            insulation_depth_ventral * ventral_frac
+    ventral_frac = HeatExchange.radiationpars(phys).ventral_fraction
+    mean_insulation_depth = new_dorsal_current * (1 - ventral_frac) +
+                            new_ventral_current * ventral_frac
     mean_fibre_diameter = insulation_pars.fibre_diameter_dorsal * (1 - ventral_frac) +
                           insulation_pars.fibre_diameter_ventral * ventral_frac
     mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - ventral_frac) +
@@ -40,103 +59,149 @@ function piloerect(
     fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
     fat = BiophysicalGeometry.inner_insulation(organism.body.insulation)
     geometry = Body(shape_pars, CompositeInsulation(fur, fat))
-    # Update organism immutably
-    traits′ = ConstructionBase.setproperties(organism.traits, insulation_pars = insulation_pars)
-    organism′ = ConstructionBase.setproperties(organism, traits = traits′, body = geometry)
 
-    return insulation_depth_dorsal, insulation_depth_ventral, organism′
+    # Update organism immutably
+    phys′ = ConstructionBase.setproperties(phys; insulation_pars=insulation_pars′)
+    traits′ = _update_physiology(organism.traits, phys′)
+    organism′ = ConstructionBase.setproperties(organism; traits=traits′, body=geometry)
+
+    return limits′, organism′
 end
 
-function uncurl(shape_b, shape_b_step, shape_b_max, organism)
-    shape_pars = organism.traits.shape_pars
+"""
+    uncurl(limits::SteppedParameter, organism::Organism)
+
+Increase body shape parameter (uncurl from ball to elongated).
+
+Returns updated `SteppedParameter` and `organism`.
+"""
+function uncurl(limits::SteppedParameter, organism::Organism)
+    phys = _physiology(organism.traits)
+    shape_pars = HeatExchange.shapepars(phys)
 
     # No meaning to uncurl a sphere
     if shape_pars isa Sphere
-        return shape_b_max, organism
+        limits′ = ConstructionBase.setproperties(limits; current=limits.max)
+        return limits′, organism
     end
 
-    shape_b = min(shape_b + shape_b_step, shape_b_max)
+    new_current = min(limits.current + limits.step, limits.max)
+    limits′ = ConstructionBase.setproperties(limits; current=new_current)
 
-    new_shape_pars = ConstructionBase.setproperties(shape_pars, b=shape_b)
+    new_shape_pars = ConstructionBase.setproperties(shape_pars; b=new_current)
     fat = BiophysicalGeometry.inner_insulation(organism.body.insulation)
     fur = BiophysicalGeometry.outer_insulation(organism.body.insulation)
     geometry = Body(new_shape_pars, CompositeInsulation(fur, fat))
-    organism′ = ConstructionBase.setproperties(organism, body=geometry)
+    organism′ = ConstructionBase.setproperties(organism; body=geometry)
 
-    return shape_b, organism′
+    return limits′, organism′
 end
 
-function vasodilate(k_flesh, k_flesh_step, k_flesh_max, organism)
-    k_flesh = min(k_flesh + k_flesh_step, k_flesh_max)
+"""
+    vasodilate(limits::SteppedParameter, organism::Organism)
+
+Increase tissue thermal conductivity (vasodilation).
+
+Returns updated `SteppedParameter` and `organism`.
+"""
+function vasodilate(limits::SteppedParameter, organism::Organism)
+    phys = _physiology(organism.traits)
+    new_current = min(limits.current + limits.step, limits.max)
+    limits′ = ConstructionBase.setproperties(limits; current=new_current)
 
     new_conduction = ConstructionBase.setproperties(
-        organism.traits.conduction_pars_internal, k_flesh=k_flesh
+        HeatExchange.conductionpars_internal(phys); k_flesh=new_current
     )
-    new_traits = ConstructionBase.setproperties(
-        organism.traits, conduction_pars_internal=new_conduction
-    )
-    organism′ = ConstructionBase.setproperties(organism, traits=new_traits)
+    phys′ = ConstructionBase.setproperties(phys; conduction_pars_internal=new_conduction)
+    traits′ = _update_physiology(organism.traits, phys′)
+    organism′ = ConstructionBase.setproperties(organism; traits=traits′)
 
-    return k_flesh, organism′
+    return limits′, organism′
 end
 
-function hyperthermia(
-    T_core, T_core_step, T_core_max, T_core_ref, Q_minimum_ref, pant_cost, organism
-)
-    # Update T_core
-    T_core = min(T_core + T_core_step, T_core_max)
+"""
+    hyperthermia(limits::SteppedParameter, Q_minimum_ref, pant_cost, organism::Organism)
 
-    metabolism = organism.traits.metabolism_pars
-    q10mult = metabolism.q10^((ustrip(u"K", T_core - T_core_ref)) / 10)
+Allow core temperature to rise (hyperthermia).
+
+Returns updated `SteppedParameter`, new Q_minimum, and `organism`.
+"""
+function hyperthermia(limits::SteppedParameter, Q_minimum_ref, pant_cost, organism::Organism)
+    phys = _physiology(organism.traits)
+    new_current = min(limits.current + limits.step, limits.max)
+    limits′ = ConstructionBase.setproperties(limits; current=new_current)
+
+    metabolism = HeatExchange.metabolismpars(phys)
+    q10mult = metabolism.q10^((ustrip(u"K", new_current - limits.reference)) / 10)
     Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
 
     new_metabolism = ConstructionBase.setproperties(
-        metabolism, T_core=T_core, Q_metabolism=Q_minimum
+        metabolism; T_core=new_current, Q_metabolism=Q_minimum
     )
-    new_traits = ConstructionBase.setproperties(
-        organism.traits, metabolism_pars=new_metabolism
-    )
-    organism′ = ConstructionBase.setproperties(organism, traits=new_traits)
+    phys′ = ConstructionBase.setproperties(phys; metabolism_pars=new_metabolism)
+    traits′ = _update_physiology(organism.traits, phys′)
+    organism′ = ConstructionBase.setproperties(organism; traits=traits′)
 
-    return T_core, Q_minimum, organism′
+    return limits′, Q_minimum, organism′
 end
 
-function pant(pant, pant_step, pant_max, T_core_ref, Q_minimum_ref, pant_multiplier, organism)
-    pant = min(pant + pant_step, pant_max)
+"""
+    pant(limits::PantingLimits, Q_minimum_ref, organism::Organism)
 
-    pant_cost = ((pant - 1) / (pant_max + 1e-6 - 1)) *
-                (pant_multiplier - 1) * Q_minimum_ref
+Increase panting rate for evaporative cooling.
 
-    metabolism = organism.traits.metabolism_pars
-    q10mult = metabolism.q10^((ustrip(u"K", metabolism.T_core - T_core_ref)) / 10)
+Returns updated `PantingLimits`, new Q_minimum, and `organism`.
+"""
+function pant(limits::PantingLimits, Q_minimum_ref, organism::Organism)
+    phys = _physiology(organism.traits)
+    pant_param = limits.pant
+    new_pant = min(pant_param.current + pant_param.step, pant_param.max)
+
+    pant_cost = ((new_pant - 1) / (pant_param.max + 1e-6 - 1)) *
+                (limits.multiplier - 1) * Q_minimum_ref
+
+    pant_param′ = ConstructionBase.setproperties(pant_param; current=new_pant)
+    limits′ = ConstructionBase.setproperties(limits; pant=pant_param′, cost=pant_cost)
+
+    metabolism = HeatExchange.metabolismpars(phys)
+    q10mult = metabolism.q10^((ustrip(u"K", metabolism.T_core - limits.T_core_ref)) / 10)
     Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
 
     new_metabolism = ConstructionBase.setproperties(
-        metabolism, Q_metabolism=Q_minimum
+        metabolism; Q_metabolism=Q_minimum
     )
     new_respiration = ConstructionBase.setproperties(
-        organism.traits.respiration_pars, pant=pant
+        HeatExchange.respirationpars(phys); pant=new_pant
     )
-    new_traits = ConstructionBase.setproperties(
-        organism.traits,
+    phys′ = ConstructionBase.setproperties(
+        phys;
         metabolism_pars=new_metabolism,
         respiration_pars=new_respiration
     )
-    organism′ = ConstructionBase.setproperties(organism, traits=new_traits)
+    traits′ = _update_physiology(organism.traits, phys′)
+    organism′ = ConstructionBase.setproperties(organism; traits=traits′)
 
-    return pant, pant_cost, Q_minimum, organism′
+    return limits′, Q_minimum, organism′
 end
 
-function sweat(skin_wetness, skin_wetness_step, skin_wetness_max, organism)
-    skin_wetness = min(skin_wetness + skin_wetness_step, skin_wetness_max)
+"""
+    sweat(limits::SteppedParameter, organism::Organism)
+
+Increase skin wetness for evaporative cooling (sweating).
+
+Returns updated `SteppedParameter` and `organism`.
+"""
+function sweat(limits::SteppedParameter, organism::Organism)
+    phys = _physiology(organism.traits)
+    new_current = min(limits.current + limits.step, limits.max)
+    limits′ = ConstructionBase.setproperties(limits; current=new_current)
 
     new_evaporation = ConstructionBase.setproperties(
-        organism.traits.evaporation_pars, skin_wetness=skin_wetness
+        HeatExchange.evaporationpars(phys); skin_wetness=new_current
     )
-    new_traits = ConstructionBase.setproperties(
-        organism.traits, evaporation_pars=new_evaporation
-    )
-    organism′ = ConstructionBase.setproperties(organism, traits=new_traits)
+    phys′ = ConstructionBase.setproperties(phys; evaporation_pars=new_evaporation)
+    traits′ = _update_physiology(organism.traits, phys′)
+    organism′ = ConstructionBase.setproperties(organism; traits=traits′)
 
-    return skin_wetness, organism′
+    return limits′, organism′
 end

@@ -10,3 +10,5 @@ using Test
     Aqua.test_project_extras(BiophysicalBehaviour)
     Aqua.test_deps_compat(BiophysicalBehaviour)
 end
+
+@safetestset "endotherm" begin include("endotherm.jl") end

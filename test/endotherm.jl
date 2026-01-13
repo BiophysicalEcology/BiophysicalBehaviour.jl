@@ -1,6 +1,7 @@
 using BiophysicalBehaviour
 using HeatExchange
 using BiophysicalGeometry
+using FluidProperties: GasFractions
 using ConstructionBase
 using ModelParameters
 using Unitful, UnitfulMoles
@@ -72,9 +73,11 @@ for shape_number in 1:4
             ϵ_sky=1.0,
             elevation=(endo_input.ELEV)u"m",
             fluid=endo_input.FLTYPE,
-            fN2=endo_input.N2GAS / 100.0,
-            fO2=endo_input.O2GAS / 100.0,
-            fCO2=endo_input.CO2GAS / 100.0,
+            gasfrac=GasFractions(;
+                fN2=endo_input.N2GAS / 100.0,
+                fO2=endo_input.O2GAS / 100.0,
+                fCO2=endo_input.CO2GAS / 100.0,
+            ),
             convection_enhancement=endo_input.CONV_ENHANCE,
         )
 
@@ -156,7 +159,7 @@ for shape_number in 1:4
             fibre_conductivity=(endo_input.KHAIR)u"W/m/K",
             longwave_depth_fraction=endo_input.XR,
         )
-        traits = Traits(
+        physiology_traits = HeatExchangeTraits(
             shape_pars,
             insulation_pars,
             conduction_pars_external,
@@ -169,87 +172,92 @@ for shape_number in 1:4
             metabolism_pars
         )
 
-        organism = Organism(geometry, traits)
+        # initial conditions
+        T_skin = u"K"((endo_input.TS)u"°C")
+        T_insulation = u"K"((endo_input.TFA)u"°C")
+        Q_minimum_ref = (endo_input.QBASAL)u"W"
+        Q_gen = 0.0u"W"
+        T_core_ref = metabolism_pars.T_core
+
+        # Build ThermoregulationLimits
+        thermoregulation_limits = ThermoregulationLimits(;
+            control=ThermoregulationControl(;
+                mode=endo_input.TREGMODE,
+                tolerance=0.005,
+                max_iterations=1000,
+            ),
+            Q_minimum_ref,
+            insulation=InsulationLimits(;
+                dorsal=SteppedParameter(;
+                    current=insulation_pars.insulation_depth_dorsal,
+                    reference=insulation_pars.insulation_depth_dorsal,
+                    max=(endo_input.ZFURD_MAX)u"m",
+                    step=endo_input.PZFUR,
+                ),
+                ventral=SteppedParameter(;
+                    current=insulation_pars.insulation_depth_ventral,
+                    reference=insulation_pars.insulation_depth_ventral,
+                    max=(endo_input.ZFURV_MAX)u"m",
+                    step=endo_input.PZFUR,
+                ),
+            ),
+            shape_b=SteppedParameter(;
+                current=endo_input.SHAPE_B,
+                max=endo_input.SHAPE_B_MAX,
+                step=endo_input.UNCURL,
+            ),
+            k_flesh=SteppedParameter(;
+                current=(endo_input.AK1)u"W/m/K",
+                max=(endo_input.AK1_MAX)u"W/m/K",
+                step=(endo_input.AK1_INC)u"W/m/K",
+            ),
+            T_core=SteppedParameter(;
+                current=T_core_ref,
+                reference=T_core_ref,
+                max=u"K"((endo_input.TC_MAX)u"°C"),
+                step=(endo_input.TC_INC)u"K",
+            ),
+            panting=PantingLimits(;
+                pant=SteppedParameter(;
+                    current=respiration_pars.pant,
+                    max=endo_input.PANT_MAX,
+                    step=endo_input.PANT_INC,
+                ),
+                cost=0.0u"W",
+                multiplier=endo_input.PANT_MULT,
+                T_core_ref=T_core_ref,
+            ),
+            skin_wetness=SteppedParameter(;
+                current=evaporation_pars.skin_wetness,
+                max=endo_input.PCTWET_MAX / 100,
+                step=endo_input.PCTWET_INC / 100,
+            ),
+        )
+
+        # Combine physiology and behavior into OrganismTraits
+        behavioral_traits = BehavioralTraits(;
+            thermoregulation=thermoregulation_limits,
+            activity=Diurnal(),
+        )
+        organism_traits = OrganismTraits(Endotherm(), physiology_traits, behavioral_traits)
+
+        organism = Organism(geometry, organism_traits)
         environment = (; environment_pars, environment_vars)
 
-        model_pars = EndoModelPars(
+        metabolic_rate_options = EndothermMetabolicRateOptions(
             respire=Bool(endo_input.RESPIRE),
             simulsol_tolerance=(endo_input.DIFTOL)u"K",
             resp_tolerance=endo_input.BRENTOL,
         )
 
-        # initial conditions
-        T_skin = u"K"((endo_input.TS)u"°C")
-        T_insulation = u"K"((endo_input.TFA)u"°C")
-        Q_minimum = (endo_input.QBASAL)u"W"
-        Q_gen = 0.0u"W"
-        Q_minimum_ref = Q_minimum
-
-        T_core_step = (endo_input.TC_INC)u"K"
-        T_core_max = u"K"((endo_input.TC_MAX)u"°C")
-        T_core_ref = metabolism_pars.T_core
-        T_core = T_core_ref
-        q10 = metabolism_pars.q10
-
-        insulation_depth_dorsal_max = (endo_input.ZFURD_MAX)u"m"
-        insulation_depth_ventral_max = (endo_input.ZFURV_MAX)u"m"
-        insulation_depth_dorsal = insulation_pars.insulation_depth_dorsal
-        insulation_depth_ventral = insulation_pars.insulation_depth_ventral
-        insulation_depth_dorsal_ref = insulation_depth_dorsal
-        insulation_depth_ventral_ref = insulation_depth_ventral
-        fibre_length_dorsal = insulation_pars.fibre_length_dorsal
-        fibre_length_ventral = insulation_pars.fibre_length_ventral
-        fibre_diameter_dorsal = insulation_pars.fibre_diameter_dorsal
-        fibre_diameter_ventral = insulation_pars.fibre_diameter_ventral
-        fibre_density_dorsal = insulation_pars.fibre_density_dorsal
-        fibre_density_ventral = insulation_pars.fibre_density_ventral
-        insulation_step = endo_input.PZFUR
-
-        k_flesh = (endo_input.AK1)u"W/m/K"
-        k_flesh_step = (endo_input.AK1_INC)u"W/m/K"
-        k_flesh_max = (endo_input.AK1_MAX)u"W/m/K"
-        shape_b = endo_input.SHAPE_B
-        shape_b_step = endo_input.UNCURL
-        shape_b_max = endo_input.SHAPE_B_MAX
-
-        pant = respiration_pars.pant
-        pant_step = endo_input.PANT_INC
-        pant_max = endo_input.PANT_MAX
-        pant_multiplier = endo_input.PANT_MULT
-        pant_cost = 0.0u"W" # initialise
-
-        skin_wetness = evaporation_pars.skin_wetness
-        skin_wetness_step = endo_input.PCTWET_INC / 100
-        skin_wetness_max = endo_input.PCTWET_MAX / 100
-
-        thermoregulation_mode = endo_input.TREGMODE
-        thermoregulate = Bool(endo_input.THERMOREG)
-
-        Q_gen = 0.0u"W" # initialise
-        tolerance = 0.005 # fraction by which metabolic rate can go below Q_minimum
-        max_iterations = 1000 # maximum allowed iterations of thermoregulation loop
-
-        thermoregulation_pars = (; 
-            thermoregulation_mode, tolerance, max_iterations,
-            Q_minimum, Q_minimum_ref,
-            insulation_depth_dorsal, insulation_depth_ventral, 
-            insulation_depth_dorsal_max, insulation_depth_ventral_max,        
-            insulation_depth_dorsal_ref, insulation_depth_ventral_ref, insulation_step,
-            shape_b, shape_b_step, shape_b_max,
-            k_flesh, k_flesh_step, k_flesh_max,
-            T_core, T_core_step, T_core_max, T_core_ref,
-            pant, pant_step, pant_max, pant_cost, pant_multiplier,
-            skin_wetness, skin_wetness_step, skin_wetness_max)
-
-        endotherm_out = endotherm_thermoregulation_original(
+        endotherm_out = thermoregulate(
+            organism,
             Q_gen,
             T_skin,
             T_insulation,
-            organism,
-            thermoregulation_pars,
             environment,
-            model_pars
-            )
+            metabolic_rate_options,
+        )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology
         energy_fluxes = endotherm_out.energy_fluxes
@@ -330,7 +338,7 @@ for shape_number in 1:4
 
         rtol = 1e-2
         @testset "endotherm mass flux comparisons" begin
-            if model_pars.respire
+            if metabolic_rate_options.respire
                 @test masbal_output_vec.AIR_L ≈ ustrip(u"L/hr", mass_fluxes.V_air) rtol = rtol
                 @test masbal_output_vec.O2_L ≈ ustrip(u"L/hr", mass_fluxes.V_O2_STP) rtol = rtol
                 @test masbal_output_vec.H2OResp_g ≈ ustrip(u"g/hr", mass_fluxes.m_resp) rtol = rtol
