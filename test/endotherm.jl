@@ -159,6 +159,11 @@ for shape_number in 1:4
             fibre_conductivity=(endo_input.KHAIR)u"W/m/K",
             longwave_depth_fraction=endo_input.XR,
         )
+        metabolic_rate_options = SolveMetabolicRateOptions(
+            respire=Bool(endo_input.RESPIRE),
+            simulsol_tolerance=(endo_input.DIFTOL)u"K",
+            resp_tolerance=(endo_input.BRENTOL)u"K",
+        )
         physiology_traits = HeatExchangeTraits(
             shape_pars,
             insulation_pars,
@@ -169,7 +174,8 @@ for shape_number in 1:4
             evaporation_pars,
             hydraulic_pars,
             respiration_pars,
-            metabolism_pars
+            metabolism_pars,
+            metabolic_rate_options,
         )
 
         # initial conditions
@@ -244,19 +250,12 @@ for shape_number in 1:4
         organism = Organism(geometry, organism_traits)
         environment = (; environment_pars, environment_vars)
 
-        metabolic_rate_options = EndothermMetabolicRateOptions(
-            respire=Bool(endo_input.RESPIRE),
-            simulsol_tolerance=(endo_input.DIFTOL)u"K",
-            resp_tolerance=endo_input.BRENTOL,
-        )
-
         endotherm_out = thermoregulate(
             organism,
             Q_gen,
             T_skin,
             T_insulation,
             environment,
-            metabolic_rate_options,
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology

@@ -1,12 +1,13 @@
 """
-    thermoregulate(organism, Q_gen, T_skin, T_insulation, environment, metabolic_rate_options)
+    thermoregulate(organism, Q_gen, T_skin, T_insulation, environment)
 
 Run the thermoregulation loop to find heat balance.
 
 Dispatches on the organism's thermal strategy (`Endotherm`, `Ectotherm`, `Heterotherm`).
 
 The organism must have `OrganismTraits` containing `BehavioralTraits` with
-thermoregulation limits.
+thermoregulation limits. Metabolic rate options are extracted from the organism's
+HeatExchangeTraits.
 
 Returns the result from `solve_metabolic_rate`.
 """
@@ -16,7 +17,6 @@ function thermoregulate(
     T_skin,
     T_insulation,
     environment,
-    metabolic_rate_options,
 )
     thermoregulate(
         thermal_strategy(organism),
@@ -25,12 +25,11 @@ function thermoregulate(
         T_skin,
         T_insulation,
         environment,
-        metabolic_rate_options,
     )
 end
 
 """
-    thermoregulate(::Endotherm, organism, Q_gen, T_skin, T_insulation, environment, metabolic_rate_options)
+    thermoregulate(::Endotherm, organism, Q_gen, T_skin, T_insulation, environment)
 
 Run the endotherm thermoregulation loop to find heat balance.
 
@@ -51,7 +50,6 @@ function thermoregulate(
     T_skin,
     T_insulation,
     environment,
-    metabolic_rate_options,
 )
     # Extract thermoregulation limits from organism's behavioral traits
     limits = thermoregulation(organism)
@@ -95,7 +93,7 @@ function thermoregulate(
         insulation_limits = InsulationLimits(; dorsal=dorsal_with_step, ventral=ventral_with_step)
     end
 
-    endotherm_out = solve_metabolic_rate(T_skin, T_insulation, organism, environment, metabolic_rate_options)
+    endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
     T_skin = endotherm_out.thermoregulation.T_skin
     T_insulation = endotherm_out.thermoregulation.T_insulation
     Q_gen = endotherm_out.energy_fluxes.Q_gen
@@ -180,7 +178,7 @@ function thermoregulate(
             skin_wetness_limits, organism = sweat(skin_wetness_limits, organism)
         end
 
-        endotherm_out = solve_metabolic_rate(T_skin, T_insulation, organism, environment, metabolic_rate_options)
+        endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
         T_skin = endotherm_out.thermoregulation.T_skin
         T_insulation = endotherm_out.thermoregulation.T_insulation
         Q_gen = endotherm_out.energy_fluxes.Q_gen
@@ -197,7 +195,6 @@ function thermoregulate(
     T_skin,
     T_insulation,
     environment,
-    metabolic_rate_options,
 )
     error("Ectotherm thermoregulation not yet implemented")
 end
@@ -209,7 +206,6 @@ function thermoregulate(
     T_skin,
     T_insulation,
     environment,
-    metabolic_rate_options,
 )
     error("Heterotherm thermoregulation not yet implemented")
 end

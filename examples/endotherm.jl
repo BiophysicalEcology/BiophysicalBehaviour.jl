@@ -36,6 +36,7 @@ traits = HeatExchangeTraits(
     example_hydraulic_pars(),
     example_respiration_pars(),
     metabolism_pars,
+    example_metabolic_rate_options(),
 )
 
 organism = Organism(geometry, traits)

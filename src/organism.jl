@@ -159,6 +159,7 @@ HeatExchange.evaporationpars(t::OrganismTraits) = HeatExchange.evaporationpars(t
 HeatExchange.hydraulicpars(t::OrganismTraits) = HeatExchange.hydraulicpars(t.physiology)
 HeatExchange.respirationpars(t::OrganismTraits) = HeatExchange.respirationpars(t.physiology)
 HeatExchange.metabolismpars(t::OrganismTraits) = HeatExchange.metabolismpars(t.physiology)
+HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.physiology)
 
 # =============================================================================
 # OrganismTraits accessors

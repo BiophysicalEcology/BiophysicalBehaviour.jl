@@ -203,9 +203,9 @@ end
 function example_metabolic_rate_options(;
     respire=true,
     simulsol_tolerance=1e-3u"K",
-    resp_tolerance=1e-5,
+    resp_tolerance=1e-5u"K",
 )
-    EndothermMetabolicRateOptions(;
+    SolveMetabolicRateOptions(;
         respire,
         simulsol_tolerance,
         resp_tolerance,
@@ -374,6 +374,7 @@ function example_heat_exchange_traits(;
     hydraulic_pars=example_hydraulic_pars(),
     respiration_pars=example_respiration_pars(),
     metabolism_pars=example_metabolism_pars(),
+    options=example_metabolic_rate_options(),
 )
     HeatExchange.HeatExchangeTraits(;
         shape_pars,
@@ -386,5 +387,6 @@ function example_heat_exchange_traits(;
         hydraulic_pars,
         respiration_pars,
         metabolism_pars,
+        options,
     )
 end
