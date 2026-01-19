@@ -252,10 +252,10 @@ for shape_number in 1:4
 
         endotherm_out = thermoregulate(
             organism,
+            environment,
             Q_gen,
             T_skin,
             T_insulation,
-            environment,
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology

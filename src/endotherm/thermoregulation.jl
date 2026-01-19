@@ -11,13 +11,13 @@ function _update_physiology(::HeatExchange.HeatExchangeTraits, new_phys)
 end
 
 """
-    piloerect(insulation_limits::InsulationLimits, organism::Organism)
+    piloerect(organism::Organism, insulation_limits::InsulationLimits)
 
 Reduce insulation depth toward reference values (flatten fur/feathers).
 
 Returns updated `InsulationLimits` and `organism`.
 """
-function piloerect(insulation_limits::InsulationLimits, organism::Organism)
+function piloerect(organism::Organism, insulation_limits::InsulationLimits)
     phys = _physiology(organism.traits)
     insulation_pars = HeatExchange.insulationpars(phys)
     shape_pars = HeatExchange.shapepars(phys)
@@ -69,13 +69,13 @@ function piloerect(insulation_limits::InsulationLimits, organism::Organism)
 end
 
 """
-    uncurl(shape_b_limits::SteppedParameter, organism::Organism)
+    uncurl(organism::Organism, shape_b_limits::SteppedParameter)
 
 Increase body shape parameter (uncurl from ball to elongated).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function uncurl(shape_b_limits::SteppedParameter, organism::Organism)
+function uncurl(organism::Organism, shape_b_limits::SteppedParameter)
     phys = _physiology(organism.traits)
     shape_pars = HeatExchange.shapepars(phys)
 
@@ -98,13 +98,13 @@ function uncurl(shape_b_limits::SteppedParameter, organism::Organism)
 end
 
 """
-    vasodilate(k_flesh_limits::SteppedParameter, organism::Organism)
+    vasodilate(organism::Organism, k_flesh_limits::SteppedParameter)
 
 Increase tissue thermal conductivity (vasodilation).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function vasodilate(k_flesh_limits::SteppedParameter, organism::Organism)
+function vasodilate(organism::Organism, k_flesh_limits::SteppedParameter)
     phys = _physiology(organism.traits)
     k_flesh = min(k_flesh_limits.current + k_flesh_limits.step, k_flesh_limits.max)
     k_flesh_limits′ = ConstructionBase.setproperties(k_flesh_limits; current=k_flesh)
@@ -120,14 +120,15 @@ function vasodilate(k_flesh_limits::SteppedParameter, organism::Organism)
 end
 
 """
-    hyperthermia(T_core_limits::SteppedParameter, Q_minimum_ref, pant_cost, organism::Organism)
+    hyperthermia(organism::Organism, T_core_limits::SteppedParameter, pant_cost)
 
 Allow core temperature to rise (hyperthermia).
 
 Returns updated `SteppedParameter`, new Q_minimum, and `organism`.
 """
-function hyperthermia(T_core_limits::SteppedParameter, Q_minimum_ref, pant_cost, organism::Organism)
+function hyperthermia(organism::Organism, T_core_limits::SteppedParameter, pant_cost)
     phys = _physiology(organism.traits)
+    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
     T_core = min(T_core_limits.current + T_core_limits.step, T_core_limits.max)
     T_core_limits′ = ConstructionBase.setproperties(T_core_limits; current=T_core)
 
@@ -146,14 +147,15 @@ function hyperthermia(T_core_limits::SteppedParameter, Q_minimum_ref, pant_cost,
 end
 
 """
-    pant(panting_limits::PantingLimits, Q_minimum_ref, organism::Organism)
+    pant(organism::Organism, panting_limits::PantingLimits)
 
 Increase panting rate for evaporative cooling.
 
 Returns updated `PantingLimits`, new Q_minimum, and `organism`.
 """
-function pant(panting_limits::PantingLimits, Q_minimum_ref, organism::Organism)
+function pant(organism::Organism, panting_limits::PantingLimits)
     phys = _physiology(organism.traits)
+    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
     pant_rate_limits = panting_limits.pant
     pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
 
@@ -185,13 +187,13 @@ function pant(panting_limits::PantingLimits, Q_minimum_ref, organism::Organism)
 end
 
 """
-    sweat(skin_wetness_limits::SteppedParameter, organism::Organism)
+    sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
 
 Increase skin wetness for evaporative cooling (sweating).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function sweat(skin_wetness_limits::SteppedParameter, organism::Organism)
+function sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
     phys = _physiology(organism.traits)
     skin_wetness = min(skin_wetness_limits.current + skin_wetness_limits.step, skin_wetness_limits.max)
     skin_wetness_limits′ = ConstructionBase.setproperties(skin_wetness_limits; current=skin_wetness)
