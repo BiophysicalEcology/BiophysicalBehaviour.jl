@@ -162,7 +162,7 @@ for shape_number in 1:4
         metabolic_rate_options = SolveMetabolicRateOptions(
             respire=Bool(endo_input.RESPIRE),
             simulsol_tolerance=(endo_input.DIFTOL)u"K",
-            resp_tolerance=(endo_input.BRENTOL)u"K",
+            resp_tolerance=endo_input.BRENTOL,
         )
         physiology_traits = HeatExchangeTraits(
             shape_pars,
