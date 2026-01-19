@@ -1,71 +1,94 @@
 """
-    EndothermThermoregulationParameters <: AbstractBehaviouralParameters
+    SteppedParameter{T,S}
 
-Parameters controlling endotherm thermoregulation behaviour.
+A parameter that can be adjusted in steps toward a maximum value.
 
-# Parameters
-- Thermoregulation control and limits
-- Insulation (piloerection)
-- Body shape adjustments
-- Tissue thermal properties
-- Core temperature regulation
-- Panting and evaporative cooling
-- Skin wetness
+# Fields
+- `current::T`: Current value
+- `reference::T`: Reference/baseline value (defaults to current)
+- `max::T`: Maximum allowed value
+- `step::S`: Step size for adjustment
 """
-Base.@kwdef struct EndothermThermoregulationParameters{
-    TM, TO, MI,
-    QM, QMR,
-    IDD, IDV, IDDM, IDVM, IDDR, IDVR, IDS,
-    SB, SBS, SBM,
-    KF, KFS, KFM,
-    TC, TCS, TCM, TCR,
-    PA, PAS, PAM, PC, PM,
-    SW, SWS, SWM
-} <: AbstractBehaviourParameters
+Base.@kwdef struct SteppedParameter{T,S}
+    current::T
+    reference::T = current
+    max::T
+    step::S
+end
 
-    # --- Control ---
-    thermoregulation_mode::TM
-    tolerance::TO
-    max_iterations::MI
+"""
+    InsulationLimits{D,S}
 
-    # --- Metabolic limits ---
-    Q_minimum::QM
-    Q_minimum_ref::QMR
+Limits for dorsal and ventral insulation depth adjustment (piloerection).
 
-    # --- Insulation / piloerection ---
-    insulation_depth_dorsal::IDD
-    insulation_depth_ventral::IDV
-    insulation_depth_dorsal_max::IDDM
-    insulation_depth_ventral_max::IDVM
-    insulation_depth_dorsal_ref::IDDR
-    insulation_depth_ventral_ref::IDVR
-    insulation_step::IDS
+# Fields
+- `dorsal::SteppedParameter{D,S}`: Dorsal insulation limits
+- `ventral::SteppedParameter{D,S}`: Ventral insulation limits
+"""
+Base.@kwdef struct InsulationLimits{D,S}
+    dorsal::SteppedParameter{D,S}
+    ventral::SteppedParameter{D,S}
+end
 
-    # --- Shape change ---
-    shape_b::SB
-    shape_b_step::SBS
-    shape_b_max::SBM
+"""
+    PantingLimits{P,S,C,M,T}
 
-    # --- Tissue conductivity ---
-    k_flesh::KF
-    k_flesh_step::KFS
-    k_flesh_max::KFM
+Limits for panting behavior with associated metabolic costs.
 
-    # --- Core temperature ---
-    T_core::TC
-    T_core_step::TCS
-    T_core_max::TCM
-    T_core_ref::TCR
+# Fields
+- `pant::SteppedParameter{P,S}`: Panting rate limits
+- `cost::C`: Current panting cost (W)
+- `multiplier::M`: Metabolic cost multiplier at max panting
+- `T_core_ref::T`: Reference core temperature for Q10 calculation
+"""
+Base.@kwdef struct PantingLimits{P,S,C,M,T}
+    pant::SteppedParameter{P,S}
+    cost::C = 0.0u"W"
+    multiplier::M = 1.05
+    T_core_ref::T
+end
 
-    # --- Panting / evaporative cooling ---
-    pant::PA
-    pant_step::PAS
-    pant_max::PAM
-    pant_cost::PC
-    pant_multiplier::PM
+"""
+    ThermoregulationControl{M,T,I}
 
-    # --- Skin wetness ---
-    skin_wetness::SW
-    skin_wetness_step::SWS
-    skin_wetness_max::SWM
+Control parameters for the thermoregulation loop.
+
+# Fields
+- `mode::M`: Thermoregulation mode (1, 2, or 3)
+- `tolerance::T`: Fraction below Q_minimum allowed
+- `max_iterations::I`: Maximum iterations before warning
+"""
+Base.@kwdef struct ThermoregulationControl{M,T,I}
+    mode::M = 1
+    tolerance::T = 0.005
+    max_iterations::I = 1000
+end
+
+"""
+    ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+
+Parameters controlling endotherm thermoregulation behavior.
+
+Contains limits for all adjustable parameters: insulation depth, body shape,
+tissue conductivity, core temperature, panting, and skin wetness.
+
+# Fields
+- `control::ThermoregulationControl`: Loop control parameters
+- `Q_minimum_ref::Q`: Reference minimum metabolic rate
+- `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
+- `shape_b::SteppedParameter`: Body shape adjustment limits
+- `k_flesh::SteppedParameter`: Tissue conductivity limits (vasodilation)
+- `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
+- `panting::PantingLimits`: Panting limits and costs
+- `skin_wetness::SteppedParameter`: Sweating limits
+"""
+Base.@kwdef struct ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+    control::C = ThermoregulationControl()
+    Q_minimum_ref::Q
+    insulation::I
+    shape_b::Sh
+    k_flesh::K
+    T_core::Tc
+    panting::P
+    skin_wetness::Sw
 end
