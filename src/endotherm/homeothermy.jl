@@ -1,5 +1,5 @@
 """
-    thermoregulate(organism, Q_gen, T_skin, T_insulation, environment)
+    thermoregulate(organism, environment, Q_gen, T_skin, T_insulation)
 
 Run the thermoregulation loop to find heat balance.
 
@@ -13,23 +13,23 @@ Returns the result from `solve_metabolic_rate`.
 """
 function thermoregulate(
     organism::Organism,
+    environment::NamedTuple,
     Q_gen,
     T_skin,
     T_insulation,
-    environment,
 )
     thermoregulate(
         thermal_strategy(organism),
         organism,
+        environment,
         Q_gen,
         T_skin,
         T_insulation,
-        environment,
     )
 end
 
 """
-    thermoregulate(::Endotherm, organism, Q_gen, T_skin, T_insulation, environment)
+    thermoregulate(::Endotherm, organism, environment, Q_gen, T_skin, T_insulation)
 
 Run the endotherm thermoregulation loop to find heat balance.
 
@@ -46,10 +46,10 @@ Returns the final `endotherm_out` result from `solve_metabolic_rate`.
 function thermoregulate(
     ::Endotherm,
     organism::Organism,
+    environment::NamedTuple,
     Q_gen,
     T_skin,
     T_insulation,
-    environment,
 )
     # Extract thermoregulation limits from organism's behavioral traits
     limits = thermoregulation(organism)
@@ -57,7 +57,6 @@ function thermoregulate(
 
     # Extract control parameters
     (; mode, tolerance, max_iterations) = limits.control
-    Q_minimum_ref = limits.Q_minimum_ref
 
     # Extract current limits (will be updated during loop)
     insulation_limits = limits.insulation
@@ -82,7 +81,7 @@ function thermoregulate(
         zero_step_dorsal = ConstructionBase.setproperties(insulation_limits.dorsal; step=0)
         zero_step_ventral = ConstructionBase.setproperties(insulation_limits.ventral; step=0)
         zero_step_limits = InsulationLimits(; dorsal=zero_step_dorsal, ventral=zero_step_ventral)
-        insulation_limits, organism = piloerect(zero_step_limits, organism)
+        insulation_limits, organism = piloerect(organism, zero_step_limits)
         # Restore original step values
         dorsal_with_step = ConstructionBase.setproperties(
             insulation_limits.dorsal; step=limits.insulation.dorsal.step
@@ -99,7 +98,7 @@ function thermoregulate(
     Q_gen = endotherm_out.energy_fluxes.Q_gen
 
     # Current Q_minimum (may be modified by panting/hyperthermia)
-    Q_minimum = Q_minimum_ref
+    Q_minimum = limits.Q_minimum_ref
 
     iteration = 0
 
@@ -117,30 +116,30 @@ function thermoregulate(
         if (insulation_limits.dorsal.current > insulation_limits.dorsal.reference) &&
            (insulation_limits.ventral.current > insulation_limits.ventral.reference)
 
-            insulation_limits, organism = piloerect(insulation_limits, organism)
+            insulation_limits, organism = piloerect(organism, insulation_limits)
 
         # -------------------------------------------------------------------------
         # 2. Uncurl (increase surface area)
         # -------------------------------------------------------------------------
         elseif shape_b_limits.current < shape_b_limits.max
-            shape_b_limits, organism = uncurl(shape_b_limits, organism)
+            shape_b_limits, organism = uncurl(organism, shape_b_limits)
 
         # -------------------------------------------------------------------------
         # 3. Vasodilate (increase k_flesh)
         # -------------------------------------------------------------------------
         elseif k_flesh_limits.current < k_flesh_limits.max
-            k_flesh_limits, organism = vasodilate(k_flesh_limits, organism)
+            k_flesh_limits, organism = vasodilate(organism, k_flesh_limits)
 
         # -------------------------------------------------------------------------
         # 4. Allow core temperature to rise (and possibly pant and sweat in parallel)
         # -------------------------------------------------------------------------
         elseif T_core_limits.current < T_core_limits.max
             T_core_limits, Q_minimum, organism = hyperthermia(
-                T_core_limits, Q_minimum_ref, panting_limits.cost, organism
+                organism, T_core_limits, panting_limits.cost
             )
             if mode >= 2 && panting_limits.pant.current < panting_limits.pant.max
                 # Pant in parallel to allowing core temperature to rise
-                panting_limits, Q_minimum, organism = pant(panting_limits, Q_minimum_ref, organism)
+                panting_limits, Q_minimum, organism = pant(organism, panting_limits)
             end
             if mode == 3
                 # Sweat in parallel to allowing core temperature to rise and panting
@@ -149,14 +148,14 @@ function thermoregulate(
                     @warn "All thermoregulatory options exhausted"
                     return endotherm_out
                 end
-                skin_wetness_limits, organism = sweat(skin_wetness_limits, organism)
+                skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
             end
 
         # -------------------------------------------------------------------------
         # 5. Pant to dump heat evaporatively (and possibly sweat in parallel)
         # -------------------------------------------------------------------------
         elseif panting_limits.pant.current < panting_limits.pant.max
-            panting_limits, Q_minimum, organism = pant(panting_limits, Q_minimum_ref, organism)
+            panting_limits, Q_minimum, organism = pant(organism, panting_limits)
             if mode == 3
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
@@ -164,7 +163,7 @@ function thermoregulate(
                     return endotherm_out
                 end
                 # Sweat in parallel to panting
-                skin_wetness_limits, organism = sweat(skin_wetness_limits, organism)
+                skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
             end
 
         # -------------------------------------------------------------------------
@@ -175,7 +174,7 @@ function thermoregulate(
                (skin_wetness_limits.step <= 0)
                 return endotherm_out
             end
-            skin_wetness_limits, organism = sweat(skin_wetness_limits, organism)
+            skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
         end
 
         endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
@@ -191,10 +190,10 @@ end
 function thermoregulate(
     ::Ectotherm,
     organism::Organism,
+    environment::NamedTuple,
     Q_gen,
     T_skin,
     T_insulation,
-    environment,
 )
     error("Ectotherm thermoregulation not yet implemented")
 end
@@ -202,10 +201,10 @@ end
 function thermoregulate(
     ::Heterotherm,
     organism::Organism,
+    environment::NamedTuple,
     Q_gen,
     T_skin,
     T_insulation,
-    environment,
 )
     error("Heterotherm thermoregulation not yet implemented")
 end
