@@ -31,6 +31,11 @@ export AbstractThermalStrategy,
     Ectotherm,
     Heterotherm
 
+# Control strategies
+export AbstractControlStrategy,
+    RuleBasedSequentialControl,
+    PDEControl
+
 # Traits structs
 export BehavioralTraits,
     OrganismTraits
@@ -40,7 +45,8 @@ export thermal_strategy,
     behavior,
     physiology,
     thermoregulation,
-    activity
+    activity,
+    control_strategy
 
 # Thermoregulation functions
 export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
@@ -51,7 +57,6 @@ export thermoregulate
 export SteppedParameter,
     InsulationLimits,
     PantingLimits,
-    ThermoregulationControl,
     ThermoregulationLimits
 
 # Example constructors

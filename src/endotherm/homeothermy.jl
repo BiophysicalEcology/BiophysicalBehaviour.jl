@@ -33,6 +33,32 @@ end
 
 Run the endotherm thermoregulation loop to find heat balance.
 
+Dispatches on the control strategy from the organism's thermoregulation limits.
+"""
+function thermoregulate(
+    ::Endotherm,
+    organism::Organism,
+    environment::NamedTuple,
+    Q_gen,
+    T_skin,
+    T_insulation,
+)
+    thermoregulate(
+        Endotherm(),
+        control_strategy(organism),
+        organism,
+        environment,
+        Q_gen,
+        T_skin,
+        T_insulation,
+    )
+end
+
+"""
+    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, Q_gen, T_skin, T_insulation)
+
+Run the endotherm thermoregulation loop using rule-based sequential control.
+
 Applies thermoregulation behaviors in order:
 1. Reduce insulation (piloerection)
 2. Uncurl (increase surface area)
@@ -45,6 +71,7 @@ Returns the final `endotherm_out` result from `solve_metabolic_rate`.
 """
 function thermoregulate(
     ::Endotherm,
+    ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
     Q_gen,
@@ -184,6 +211,26 @@ function thermoregulate(
     end
 
     return endotherm_out
+end
+
+"""
+    thermoregulate(::Endotherm, ::PDEControl, organism, environment, Q_gen, T_skin, T_insulation)
+
+Run the endotherm thermoregulation loop using PDE-based control.
+
+!!! warning
+    This control strategy is not yet implemented.
+"""
+function thermoregulate(
+    ::Endotherm,
+    ::PDEControl,
+    organism::Organism,
+    environment::NamedTuple,
+    Q_gen,
+    T_skin,
+    T_insulation,
+)
+    error("PDEControl thermoregulation not yet implemented")
 end
 
 # Placeholder for future implementations

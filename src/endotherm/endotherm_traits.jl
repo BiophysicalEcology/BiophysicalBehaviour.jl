@@ -49,22 +49,6 @@ Base.@kwdef struct PantingLimits{P,S,C,M,T}
 end
 
 """
-    ThermoregulationControl{M,T,I}
-
-Control parameters for the thermoregulation loop.
-
-# Fields
-- `mode::M`: Thermoregulation mode (1, 2, or 3)
-- `tolerance::T`: Fraction below Q_minimum allowed
-- `max_iterations::I`: Maximum iterations before warning
-"""
-Base.@kwdef struct ThermoregulationControl{M,T,I}
-    mode::M = 1
-    tolerance::T = 0.005
-    max_iterations::I = 1000
-end
-
-"""
     ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
 
 Parameters controlling endotherm thermoregulation behavior.
@@ -73,7 +57,7 @@ Contains limits for all adjustable parameters: insulation depth, body shape,
 tissue conductivity, core temperature, panting, and skin wetness.
 
 # Fields
-- `control::ThermoregulationControl`: Loop control parameters
+- `control::C`: Control strategy (RuleBasedSequentialControl, PDEControl, etc.)
 - `Q_minimum_ref::Q`: Reference minimum metabolic rate
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
 - `shape_b::SteppedParameter`: Body shape adjustment limits
@@ -82,8 +66,8 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating limits
 """
-Base.@kwdef struct ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
-    control::C = ThermoregulationControl()
+Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+    control::C = RuleBasedSequentialControl()
     Q_minimum_ref::Q
     insulation::I
     shape_b::Sh

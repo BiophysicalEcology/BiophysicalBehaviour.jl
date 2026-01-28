@@ -187,7 +187,7 @@ for shape_number in 1:4
 
         # Build ThermoregulationLimits
         thermoregulation_limits = ThermoregulationLimits(;
-            control=ThermoregulationControl(;
+            control=RuleBasedSequentialControl(;
                 mode=endo_input.TREGMODE,
                 tolerance=0.005,
                 max_iterations=1000,
