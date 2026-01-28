@@ -203,7 +203,7 @@ end
 function example_metabolic_rate_options(;
     respire=true,
     simulsol_tolerance=1e-3u"K",
-    resp_tolerance=1e-5u"K",
+    resp_tolerance=1e-5,
 )
     SolveMetabolicRateOptions(;
         respire,
@@ -256,7 +256,7 @@ function example_thermoregulation_limits(;
     skin_wetness_step=0.001,
     skin_wetness_max=1.0,
 )
-    control = ThermoregulationControl(;
+    control = RuleBasedSequentialControl(;
         mode=thermoregulation_mode,
         tolerance,
         max_iterations,
