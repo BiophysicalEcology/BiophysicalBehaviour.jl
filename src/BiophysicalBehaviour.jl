@@ -11,6 +11,8 @@ using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
+using ConstructionBase: getproperties, setproperties
+
 # Organism and traits
 export AbstractBehavior,
     AbstractMovementBehavior,
