@@ -137,28 +137,28 @@ for shape_number in 1:4
             model=Kleiber(),
         )
 
-        if endo_input.FURTHRMK == 0.0
-            insulation_conductivity = nothing
-        else
-            insulation_conductivity = (endo_input.FURTHRMK)u"W/m/K"
-        end
         insulation_pars = InsulationParameters(;
-            insulation_conductivity_dorsal=insulation_conductivity,
-            insulation_conductivity_ventral=insulation_conductivity,
-            fibre_diameter_dorsal=(endo_input.DHAIRD)u"m",
-            fibre_diameter_ventral=(endo_input.DHAIRV)u"m",
-            fibre_length_dorsal=(endo_input.LHAIRD)u"m",
-            fibre_length_ventral=(endo_input.LHAIRV)u"m",
-            insulation_depth_dorsal=(endo_input.ZFURD)u"m",
-            insulation_depth_ventral=(endo_input.ZFURV)u"m",
-            fibre_density_dorsal=(endo_input.RHOD)u"1/m^2",
-            fibre_density_ventral=(endo_input.RHOV)u"1/m^2",
-            insulation_reflectance_dorsal=endo_input.REFLD,
-            insulation_reflectance_ventral=endo_input.REFLV,
-            insulation_depth_compressed=(endo_input.ZFURCOMP)u"m",
-            fibre_conductivity=(endo_input.KHAIR)u"W/m/K",
+            dorsal=FibreProperties(;
+                diameter=(endo_input.DHAIRD)u"m",
+                length=(endo_input.LHAIRD)u"m",
+                density=(endo_input.RHOD)u"1/m^2",
+                depth=(endo_input.ZFURD)u"m",
+                reflectance=endo_input.REFLD,
+                conductivity=(endo_input.KHAIR)u"W/m/K",
+            ),
+            ventral=FibreProperties(;
+                diameter=(endo_input.DHAIRV)u"m",
+                length=(endo_input.LHAIRV)u"m",
+                density=(endo_input.RHOV)u"1/m^2",
+                depth=(endo_input.ZFURV)u"m",
+                reflectance=endo_input.REFLV,
+                conductivity=(endo_input.KHAIR)u"W/m/K",
+            ),
+            depth_compressed=(endo_input.ZFURCOMP)u"m",
             longwave_depth_fraction=endo_input.XR,
         )
+        # New API always computes insulation conductivity (no override option)
+        insulation_conductivity = nothing
         metabolic_rate_options = SolveMetabolicRateOptions(
             respire=Bool(endo_input.RESPIRE),
             simulsol_tolerance=(endo_input.DIFTOL)u"K",
@@ -187,7 +187,7 @@ for shape_number in 1:4
 
         # Build ThermoregulationLimits
         thermoregulation_limits = ThermoregulationLimits(;
-            control=ThermoregulationControl(;
+            control=RuleBasedSequentialControl(;
                 mode=endo_input.TREGMODE,
                 tolerance=0.005,
                 max_iterations=1000,
@@ -195,14 +195,14 @@ for shape_number in 1:4
             Q_minimum_ref,
             insulation=InsulationLimits(;
                 dorsal=SteppedParameter(;
-                    current=insulation_pars.insulation_depth_dorsal,
-                    reference=insulation_pars.insulation_depth_dorsal,
+                    current=insulation_pars.dorsal.depth,
+                    reference=insulation_pars.dorsal.depth,
                     max=(endo_input.ZFURD_MAX)u"m",
                     step=endo_input.PZFUR,
                 ),
                 ventral=SteppedParameter(;
-                    current=insulation_pars.insulation_depth_ventral,
-                    reference=insulation_pars.insulation_depth_ventral,
+                    current=insulation_pars.ventral.depth,
+                    reference=insulation_pars.ventral.depth,
                     max=(endo_input.ZFURV_MAX)u"m",
                     step=endo_input.PZFUR,
                 ),
@@ -262,9 +262,9 @@ for shape_number in 1:4
         energy_fluxes = endotherm_out.energy_fluxes
         mass_fluxes = endotherm_out.mass_fluxes
 
-        (; insulation_test) = insulation_properties(; insulation=insulation_pars,
-            insulation_temperature=thermoregulation.T_insulation,
-            ventral_fraction=radiation_pars.ventral_fraction)
+        (; insulation_test) = insulation_properties(insulation_pars,
+            thermoregulation.T_insulation,
+            radiation_pars.ventral_fraction)
 
         rtol = 1e-3
 
