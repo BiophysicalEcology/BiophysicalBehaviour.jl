@@ -97,26 +97,15 @@ function thermoregulate(
     if insulation_limits.dorsal.step > 0.0 &&
        (insulation_limits.dorsal.current + insulation_limits.ventral.current) > 0u"mm"
         # Start with erect insulation (set to max)
-        dorsal_max = ConstructionBase.setproperties(
-            insulation_limits.dorsal; current=insulation_limits.dorsal.max
-        )
-        ventral_max = ConstructionBase.setproperties(
-            insulation_limits.ventral; current=insulation_limits.ventral.max
-        )
-        insulation_limits = InsulationLimits(; dorsal=dorsal_max, ventral=ventral_max)
+        insulation_limits = @set insulation_limits.dorsal.current = insulation_limits.dorsal.max
+        insulation_limits = @set insulation_limits.ventral.current = insulation_limits.ventral.max
         # Apply to organism with step=0 (just set to max, don't decrement)
-        zero_step_dorsal = ConstructionBase.setproperties(insulation_limits.dorsal; step=0)
-        zero_step_ventral = ConstructionBase.setproperties(insulation_limits.ventral; step=0)
-        zero_step_limits = InsulationLimits(; dorsal=zero_step_dorsal, ventral=zero_step_ventral)
+        zero_step_limits = @set insulation_limits.dorsal.step = 0.0
+        zero_step_limits = @set zero_step_limits.ventral.step = 0.0
         insulation_limits, organism = piloerect(organism, zero_step_limits)
         # Restore original step values
-        dorsal_with_step = ConstructionBase.setproperties(
-            insulation_limits.dorsal; step=limits.insulation.dorsal.step
-        )
-        ventral_with_step = ConstructionBase.setproperties(
-            insulation_limits.ventral; step=limits.insulation.ventral.step
-        )
-        insulation_limits = InsulationLimits(; dorsal=dorsal_with_step, ventral=ventral_with_step)
+        insulation_limits = @set insulation_limits.dorsal.step = limits.insulation.dorsal.step
+        insulation_limits = @set insulation_limits.ventral.step = limits.insulation.ventral.step
     end
 
     endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
