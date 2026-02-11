@@ -1,5 +1,63 @@
 abstract type AbstractBehaviourParameters end
 
+# =============================================================================
+# Control Strategy Types
+# =============================================================================
+
+"""
+    AbstractControlStrategy
+
+Abstract supertype for thermoregulation control strategies.
+
+Control strategies determine how the thermoregulation loop solves for
+heat balance. Different strategies may use different algorithmic approaches.
+"""
+abstract type AbstractControlStrategy end
+
+"""
+    RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
+
+Rule-based sequential controller (priority-based bang-bang control).
+
+Applies thermoregulation behaviors in a fixed priority order, with each
+effector operating in discrete steps until saturation before moving to
+the next. The loop iterates until heat balance is achieved within tolerance.
+
+This is the default control strategy, mimicking biological thermoregulation
+where organisms engage responses in a prioritized sequence based on
+metabolic cost and effectiveness.
+
+# Fields
+- `mode::M`: Thermoregulation mode (1, 2, or 3). 
+- `tolerance::T`: Fraction below Q_minimum allowed
+- `max_iterations::I`: Maximum iterations before warning
+"""
+Base.@kwdef struct RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
+    mode::M = 1 # TODO: name these modes rather than numbering
+    tolerance::T = 0.005
+    max_iterations::I = 1000
+end
+
+"""
+    PDEControl <: AbstractControlStrategy
+
+Partial differential equation-based control strategy.
+
+Uses a PDE formulation to solve the thermoregulation problem, allowing
+for spatially-resolved temperature distributions and continuous control
+of effectors.
+
+!!! warning
+    This control strategy is not yet implemented.
+"""
+struct PDEControl <: AbstractControlStrategy 
+    # Add any reqired settings here
+end
+
+# =============================================================================
+# Behavior Types
+# =============================================================================
+
 """
     AbstractBehavior
 
@@ -231,3 +289,19 @@ Get the activity period from an OrganismTraits or Organism.
 """
 activity(t::OrganismTraits) = activity(t.behavior)
 activity(o::Organism) = activity(HeatExchange.traits(o))
+
+"""
+    control_strategy(t::BehavioralTraits)
+
+Get the control strategy from BehavioralTraits.
+"""
+control_strategy(t::BehavioralTraits) = t.thermoregulation.control
+
+"""
+    control_strategy(t::OrganismTraits)
+    control_strategy(o::Organism)
+
+Get the control strategy from an OrganismTraits or Organism.
+"""
+control_strategy(t::OrganismTraits) = control_strategy(t.behavior)
+control_strategy(o::Organism) = control_strategy(HeatExchange.traits(o))
