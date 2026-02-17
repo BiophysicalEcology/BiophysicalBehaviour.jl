@@ -1,8 +1,8 @@
 function example_environment_vars(;
-    T_air=u"K"((20.0)u"°C"),
-    rh=0.05,
+    air_temperature=u"K"((20.0)u"°C"),
+    relative_humidity=0.05,
     wind_speed=0.1u"m/s",
-    P_atmos=101325.0u"Pa",
+    atmospheric_pressure=101325.0u"Pa",
     zenith_angle=20.0u"°",
     k_substrate=2.79u"W/m/K",
     global_radiation=0.0u"W/m^2",
@@ -10,16 +10,16 @@ function example_environment_vars(;
     shade=0,
 )
     EnvironmentalVars(;
-        T_air,
-        T_air_reference=T_air,
-        T_sky=T_air,
-        T_ground=T_air,
-        T_substrate=T_air,
-        T_bush=T_air,
-        T_vegetation=T_air,
-        rh,
+        air_temperature,
+        reference_air_temperature=air_temperature,
+        sky_temperature=air_temperature,
+        ground_temperature=air_temperature,
+        substrate_temperature=air_temperature,
+        bush_temperature=air_temperature,
+        vegetation_temperature=air_temperature,
+        relative_humidity,
         wind_speed,
-        P_atmos,
+        atmospheric_pressure,
         zenith_angle,
         k_substrate,
         global_radiation,
@@ -151,13 +151,13 @@ function example_respiration_pars(;
 end
 
 function example_metabolism_pars(;
-    T_core=u"K"((37.0)u"°C"),
+    core_temperature=u"K"((37.0)u"°C"),
     Q_metabolism=77.61842u"W",
     q10=2.0,
     model=Kleiber(),
 )
     MetabolismParameters(;
-        T_core,
+        core_temperature,
         Q_metabolism,
         q10,
         model,
@@ -241,10 +241,10 @@ function example_thermoregulation_limits(;
     k_flesh_step=0.1u"W/m/K",
     k_flesh_max=2.8u"W/m/K",
     # Core temperature (hyperthermia)
-    T_core=(37.0 + 273.15)u"K",
-    T_core_step=0.1u"K",
-    T_core_max=(39.0 + 273.15)u"K",
-    T_core_ref=(37.0 + 273.15)u"K",
+    core_temperature=(37.0 + 273.15)u"K",
+    core_temperature_step=0.1u"K",
+    core_temperature_max=(39.0 + 273.15)u"K",
+    core_temperature_ref=(37.0 + 273.15)u"K",
     # Panting
     pant_current=1.0,
     pant_step=0.1,
@@ -289,11 +289,11 @@ function example_thermoregulation_limits(;
         step=k_flesh_step,
     )
 
-    T_core_param = SteppedParameter(;
-        current=T_core,
-        reference=T_core_ref,
-        max=T_core_max,
-        step=T_core_step,
+    core_temperature_param = SteppedParameter(;
+        current=core_temperature,
+        reference=core_temperature_ref,
+        max=core_temperature_max,
+        step=core_temperature_step,
     )
 
     panting = PantingLimits(;
@@ -304,7 +304,7 @@ function example_thermoregulation_limits(;
         ),
         cost=pant_cost,
         multiplier=pant_multiplier,
-        T_core_ref=T_core_ref,
+        core_temperature_ref=core_temperature_ref,
     )
 
     skin_wetness_param = SteppedParameter(;
@@ -319,7 +319,7 @@ function example_thermoregulation_limits(;
         insulation,
         shape_b=shape_b_param,
         k_flesh=k_flesh_param,
-        T_core=T_core_param,
+        core_temperature=core_temperature_param,
         panting,
         skin_wetness=skin_wetness_param,
     )

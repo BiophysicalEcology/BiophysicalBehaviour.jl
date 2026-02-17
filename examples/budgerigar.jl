@@ -40,7 +40,7 @@ insulation_pars = example_insulation_pars(;
                     )
 radiation_pars = example_radiation_pars()
 Q_metabolism = metabolic_rate(McKechnieWolf(), shape_pars.mass)
-metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = 2, Q_metabolism)
+metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, Q_metabolism)
 respiration_pars = example_respiration_pars(; fO2_extract=0.25, Δ_breath=5.0u"K")
 evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
 
@@ -58,31 +58,31 @@ geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
 # environmental conditions
 air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
-P_atmos = 101325.0u"Pa"
-ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
-saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1.0, P_atmos)).ρ_vap
+atmospheric_pressure = 101325.0u"Pa"
+ρ_vapour = wet_air_properties(40.0u"°C", 0.3, atmospheric_pressure).ρ_vap
+saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1.0, atmospheric_pressure)).ρ_vap
 experimental_relative_humdities = ρ_vapour ./ saturated_ρ_vapours
 experimental_relative_humdities[experimental_relative_humdities .> 1.0] .= 1.0
 experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
 
 environment_vars = example_environment_vars(;
-                    T_air = air_temperatures[1],
-                    rh = experimental_relative_humdities[1])
+                    air_temperature = air_temperatures[1],
+                    relative_humidity = experimental_relative_humdities[1])
 environment_pars = example_environment_pars()
 
 # initial conditions
-T_skin = metabolism_pars.T_core - 3.0u"K"
-T_insulation = environment_vars.T_air
+skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
+insulation_temperature = environment_vars.air_temperature
 Q_minimum = metabolism_pars.Q_metabolism
 Q_gen = 0.0u"W"
 
 # Thermoregulation limits
-T_core_ref = metabolism_pars.T_core
-T_core_max = (43.0 + 273.15)u"K"
+core_temperature_ref = metabolism_pars.core_temperature
+core_temperature_max = (43.0 + 273.15)u"K"
 
 # update q10s
 q10s = fill(1.0, length(air_temperatures))
-q10s[air_temperatures .>= T_core_max] .= metabolism_pars.q10
+q10s[air_temperatures .>= core_temperature_max] .= metabolism_pars.q10
 
 # Helper function to create organism with current parameters
 function create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
@@ -132,10 +132,10 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             max=2.8u"W/m/K",
             step=0.1u"W/m/K",
         ),
-        T_core=SteppedParameter(;
+        core_temperature=SteppedParameter(;
             current=T_core_ref,
             reference=T_core_ref,
-            max=T_core_max,
+            max=core_temperature_max,
             step=0.1u"K",
         ),
         panting=PantingLimits(;
@@ -146,7 +146,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             ),
             cost=0.0u"W",
             multiplier=1.0,
-            T_core_ref=T_core_ref,
+            core_temperature_ref=T_core_ref,
         ),
         skin_wetness=SteppedParameter(;
             current=evaporation_pars.skin_wetness,
@@ -165,7 +165,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
 end
 
 # Initial run
-metabolism_pars_init = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
+metabolism_pars_init = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
 organism = create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
                            evaporation_pars, respiration_pars, metabolism_pars_init, geometry)
 environment = (; environment_pars, environment_vars)
@@ -174,8 +174,8 @@ endotherm_out = thermoregulate(
     organism,
     environment,
     Q_gen,
-    T_skin,
-    T_insulation,
+    skin_temperature,
+    insulation_temperature,
 )
 thermoregulation = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
@@ -190,7 +190,7 @@ results = NamedTuple[]
         length(experimental_relative_humdities) ==
         length(q10s)
 
-for (T_air, rh, q10) in zip(
+for (air_temp, rel_humidity, q10) in zip(
         air_temperatures,
         experimental_relative_humdities,
         q10s,
@@ -198,10 +198,10 @@ for (T_air, rh, q10) in zip(
 
     # --- Environment ---
     environment_vars = example_environment_vars(;
-        T_air,
-        rh,
+        air_temperature=air_temp,
+        relative_humidity=rel_humidity,
         wind_speed=0.1u"m/s",
-        P_atmos=101325.0u"Pa",
+        atmospheric_pressure=101325.0u"Pa",
         zenith_angle=20.0u"°",
         k_substrate=2.79u"W/m/K",
         global_radiation=0.0u"W/m^2",
@@ -213,7 +213,7 @@ for (T_air, rh, q10) in zip(
 
     # --- Metabolism (Q10 changes here) ---
     metabolism_pars = example_metabolism_pars(
-        T_core = (38.0 + 273.15)u"K",
+        core_temperature = (38.0 + 273.15)u"K",
         Q_metabolism = Q_minimum,
         q10 = q10,
     )
@@ -222,8 +222,8 @@ for (T_air, rh, q10) in zip(
                                evaporation_pars, respiration_pars, metabolism_pars, geometry)
 
     #--- Initial conditions (reset every run!) ---
-    T_skin = metabolism_pars.T_core - 3.0u"K"
-    T_insulation = environment_vars.T_air
+    skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
+    insulation_temperature = environment_vars.air_temperature
     Q_gen = 0.0u"W"
 
     # --- Thermoregulation ---
@@ -231,8 +231,8 @@ for (T_air, rh, q10) in zip(
         organism,
         environment,
         Q_gen,
-        T_skin,
-        T_insulation,
+        skin_temperature,
+        insulation_temperature,
     )
 
     tr = endotherm_out.thermoregulation
@@ -240,16 +240,16 @@ for (T_air, rh, q10) in zip(
     mf = endotherm_out.mass_fluxes
 
     push!(results, (
-        T_air = T_air,
-        rh = rh,
+        air_temperature = air_temp,
+        relative_humidity = rel_humidity,
         q10 = q10,
 
         Q_gen = ef.Q_gen,
-        T_core = tr.T_core,
-        T_skin_dorsal = tr.T_skin_dorsal,
-        T_skin_ventral = tr.T_skin_ventral,
-        T_insulation_dorsal = tr.T_insulation_dorsal,
-        T_insulation_ventral = tr.T_insulation_ventral,
+        core_temperature = tr.core_temperature,
+        skin_temperature_dorsal = tr.skin_temperature_dorsal,
+        skin_temperature_ventral = tr.skin_temperature_ventral,
+        insulation_temperature_dorsal = tr.insulation_temperature_dorsal,
+        insulation_temperature_ventral = tr.insulation_temperature_ventral,
 
         pant = tr.pant,
         skin_wetness = tr.skin_wetness,
@@ -384,7 +384,7 @@ p3 = plot(
 plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_insulation_ventral), color = :grey, linestyle = :dash, label = "feathers ventral")
 plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_dorsal), color = :orange, label = "skin dorsal")
 plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_ventral), color = :orange, linestyle = :dash, label = "skin ventral")
-plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.T_core), color = :red, lw = 2, label = "core (pred)")
+plot!(p3, u"°C".(air_temperatures), u"°C".(predicted.core_temperature), color = :red, lw = 2, label = "core (pred)")
 
 if plot_NicheMapR_output
 plot!(

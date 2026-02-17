@@ -39,13 +39,13 @@ Limits for panting behavior with associated metabolic costs.
 - `pant::SteppedParameter{P,S}`: Panting rate limits
 - `cost::C`: Current panting cost (W)
 - `multiplier::M`: Metabolic cost multiplier at max panting
-- `T_core_ref::T`: Reference core temperature for Q10 calculation
+- `core_temperature_ref::T`: Reference core temperature for Q10 calculation
 """
 Base.@kwdef struct PantingLimits{P,S,C,M,T}
     pant::SteppedParameter{P,S}
     cost::C = 0.0u"W"
     multiplier::M = 1.05
-    T_core_ref::T
+    core_temperature_ref::T
 end
 
 """
@@ -62,7 +62,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
 - `shape_b::SteppedParameter`: Body shape adjustment limits
 - `k_flesh::SteppedParameter`: Tissue conductivity limits (vasodilation)
-- `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
+- `core_temperature::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating limits
 """
@@ -72,7 +72,7 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     insulation::I
     shape_b::Sh
     k_flesh::K
-    T_core::Tc
+    core_temperature::Tc
     panting::P
     skin_wetness::Sw
 end

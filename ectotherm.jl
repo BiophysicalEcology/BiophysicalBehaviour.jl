@@ -105,12 +105,12 @@ micro_max_shade = runmicro(;
 );
 
 min_shade_habitat = EnvironmentalVarsVec(
-    T_air = K.(micro_min_shade.air_temperature), # second column is first node above surface
-    T_sky = micro_min_shade.sky_temperature,
-    T_substrate = micro_min_shade.soil_temperature, # surface temperature
-    rh = Matrix(micro_min_shade.relative_humidity), # second column is first node above surface
+    air_temperature = K.(micro_min_shade.air_temperature), # second column is first node above surface
+    sky_temperature = micro_min_shade.sky_temperature,
+    substrate_temperature = micro_min_shade.soil_temperature, # surface temperature
+    relative_humidity = Matrix(micro_min_shade.relative_humidity), # second column is first node above surface
     wind_speed = Matrix(micro_min_shade.wind_speed), # second column is first node above surface
-    P_atmos = fill(101325.0u"Pa", n_hours),
+    atmospheric_pressure = fill(101325.0u"Pa", n_hours),
     k_substrate = micro_min_shade.soil_thermal_conductivity,
     Q_solar = micro_min_shade.global_solar .* (1.0 - minimum_shade),
     Q_direct = micro_min_shade.direct_solar .* (1.0 - minimum_shade),
@@ -119,12 +119,12 @@ min_shade_habitat = EnvironmentalVarsVec(
 );
 
 max_shade_habitat = EnvironmentalVarsVec(
-    T_air = K.(micro_max_shade.air_temperature), # second column is first node above surface
-    T_sky = micro_max_shade.sky_temperature,
-    T_substrate = micro_max_shade.soil_temperature, # surface temperature
-    rh = Matrix(micro_max_shade.relative_humidity), # second column is first node above surface
+    air_temperature = K.(micro_max_shade.air_temperature), # second column is first node above surface
+    sky_temperature = micro_max_shade.sky_temperature,
+    substrate_temperature = micro_max_shade.soil_temperature, # surface temperature
+    relative_humidity = Matrix(micro_max_shade.relative_humidity), # second column is first node above surface
     wind_speed = Matrix(micro_max_shade.wind_speed), # second column is first node above surface
-    P_atmos = fill(101325.0u"Pa", n_hours),
+    atmospheric_pressure = fill(101325.0u"Pa", n_hours),
     k_substrate = micro_max_shade.soil_thermal_conductivity,
     Q_solar = micro_max_shade.global_solar .* (1.0 - maximum_shade),
     Q_direct = micro_max_shade.direct_solar .* (1.0 - maximum_shade),
@@ -141,23 +141,23 @@ deep_rh = 99.
 deep_vel = 0.01u"m/s"
 
 balances = map(1:n) do i
-    P_atmos = min_shade_habitat.P_atmos[i]
+    atmospheric_pressure = min_shade_habitat.atmospheric_pressure[i]
     zenith_angle     = min_shade_habitat.zenith_angle[i]
     if depth > 1
-        T_air   = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        T_sky   = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        T_substrate   = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        rh      = deep_rh
+        air_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        sky_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        substrate_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        relative_humidity      = deep_rh
         wind_speed     = deep_vel
         k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
         Q_solar   = 0.0u"W/m^2"
         Q_direct   = 0.0u"W/m^2"
         Q_diffuse   = 0.0u"W/m^2"
     else
-        T_air   = min_shade_habitat.T_air[i, height + 1] * (1 - shade) + max_shade_habitat.T_air[i, height + 1] * shade
-        T_sky   = min_shade_habitat.T_sky[i] * (1 - shade) + max_shade_habitat.T_sky[i] * shade
-        T_substrate   = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        rh      = min_shade_habitat.rh[i, height + 1] * (1 - shade) + max_shade_habitat.rh[i, height + 1] * shade
+        air_temperature   = min_shade_habitat.air_temperature[i, height + 1] * (1 - shade) + max_shade_habitat.air_temperature[i, height + 1] * shade
+        sky_temperature   = min_shade_habitat.sky_temperature[i] * (1 - shade) + max_shade_habitat.sky_temperature[i] * shade
+        substrate_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        relative_humidity      = min_shade_habitat.relative_humidity[i, height + 1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height + 1] * shade
         wind_speed     = min_shade_habitat.wind_speed[i, height + 1] * (1 - shade) + max_shade_habitat.wind_speed[i, height + 1] * shade
         k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
         Q_solar   = min_shade_habitat.Q_solar[i] * (1 - shade) + max_shade_habitat.Q_solar[i] * shade
@@ -165,12 +165,12 @@ balances = map(1:n) do i
         Q_diffuse   = min_shade_habitat.Q_diffuse[i] * (1 - shade) + max_shade_habitat.Q_diffuse[i] * shade
     end
     env_i = EnvironmentalVars(;
-        T_air,
-        T_sky,
-        T_substrate,
-        rh,
+        air_temperature,
+        sky_temperature,
+        substrate_temperature,
+        relative_humidity,
         wind_speed,
-        P_atmos,
+        atmospheric_pressure,
         zenith_angle,
         k_substrate,
         Q_solar,
@@ -185,29 +185,29 @@ resp_out = flip2vectors(balance_out.resp_out); # pull out each output as a vecto
 evap_out = flip2vectors(balance_out.evap_out); # pull out each output as a vector
 conv_out = flip2vectors(balance_out.conv_out); # pull out each output as a vector
 
-plot(1:1:n, °C.(balance_out.T_core), ylims=[-10.0, 55.0])
+plot(1:1:n, °C.(balance_out.core_temperature), ylims=[-10.0, 55.0])
 plot!(1:1:n, micro_min_shade.air_temperature[:, 2])
 plot!(1:1:n, micro_min_shade.soil_temperature[:, 1])
 plot!(1:1:n, °C.(micro_min_shade.sky_temperature[:, 1]))
 
 function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
-    P_atmos = min_shade_habitat.P_atmos[i]
+    atmospheric_pressure = min_shade_habitat.atmospheric_pressure[i]
     zenith_angle     = min_shade_habitat.zenith_angle[i]
     if depth > 1
-        T_air = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        T_sky = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        T_substrate = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        rh = deep_rh
+        air_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        sky_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        substrate_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        relative_humidity = deep_rh
         wind_speed = deep_vel
         k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
         Q_solar = 0.0u"W/m^2"
         Q_direct = 0.0u"W/m^2"
         Q_diffuse = 0.0u"W/m^2"
     else
-        T_air = min_shade_habitat.T_air[i, height+1] * (1 - shade) + max_shade_habitat.T_air[i, height+1] * shade
-        T_sky = min_shade_habitat.T_sky[i] * (1 - shade) + max_shade_habitat.T_sky[i] * shade
-        T_substrate = min_shade_habitat.T_substrate[i, depth] * (1 - shade) + max_shade_habitat.T_substrate[i, depth] * shade
-        rh = min_shade_habitat.rh[i, height+1] * (1 - shade) + max_shade_habitat.rh[i, height+1] * shade
+        air_temperature = min_shade_habitat.air_temperature[i, height+1] * (1 - shade) + max_shade_habitat.air_temperature[i, height+1] * shade
+        sky_temperature = min_shade_habitat.sky_temperature[i] * (1 - shade) + max_shade_habitat.sky_temperature[i] * shade
+        substrate_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
+        relative_humidity = min_shade_habitat.relative_humidity[i, height+1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height+1] * shade
         wind_speed = min_shade_habitat.wind_speed[i, height+1] * (1 - shade) + max_shade_habitat.wind_speed[i, height+1] * shade
         k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
         Q_solar = min_shade_habitat.Q_solar[i] * (1 - shade) + max_shade_habitat.Q_solar[i] * shade
@@ -215,12 +215,12 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         Q_diffuse = min_shade_habitat.Q_diffuse[i] * (1 - shade) + max_shade_habitat.Q_diffuse[i] * shade
     end
     env_i = EnvironmentalVars(;
-        T_air,
-        T_sky,
-        T_substrate,
-        rh,
+        air_temperature,
+        sky_temperature,
+        substrate_temperature,
+        relative_humidity,
         wind_speed,
-        P_atmos,
+        atmospheric_pressure,
         zenith_angle,
         k_substrate,
         Q_solar,
@@ -230,9 +230,9 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
     return env_i
 end
 
-T_forage_min = u"K"(24.5u"°C")
-T_forage_max = u"K"(34.5u"°C")
-T_lethal_min = u"K"(0.1u"°C")
+forage_temperature_min = u"K"(24.5u"°C")
+forage_temperature_max = u"K"(34.5u"°C")
+lethal_temperature_min = u"K"(0.1u"°C")
 shade = 0.0
 Δshade = 0.01
 min_depth = 2
@@ -251,45 +251,45 @@ balances = map(1:n) do i
     depth = 1 # reset depth to surface
     env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
     variables_i = (organism=OrganismalVars(), environment=env_i)
-    Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
+    Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
     # check if too hot and, if so, seek shade
     if shadeseeker
-    while Tb > T_forage_max && shade <= maximum_shade && depth == 1
+    while Tb > forage_temperature_max && shade <= maximum_shade && depth == 1
         shade += Δshade
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
-        Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
+        Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
     end
     shade = clamp(shade, minimum_shade, maximum_shade)
     end
     if climber
-    while Tb > T_forage_max && (shade >= maximum_shade || !shadeseeker) && height < max_height
+    while Tb > forage_temperature_max && (shade >= maximum_shade || !shadeseeker) && height < max_height
         shade = minimum_shade # reset to minimum shade burrow
         height = height + 1
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
-        Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
-        while (Tb > T_forage_max || Tb < T_lethal_min) && height < max_height
+        Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
+        while (Tb > forage_temperature_max || Tb < lethal_temperature_min) && height < max_height
             height = height + 1
             env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
             variables_i = (organism=OrganismalVars(), environment=env_i)
-            Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
+            Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
         end
     end
     end
     # check if too cold or too hot and shade maxed out, and, if so, go underground
     if burrower
-    while (Tb < T_forage_min || (Tb > T_forage_max && shade >= maximum_shade) || (Tb > T_forage_max && height >= max_height)) && depth == 1
+    while (Tb < forage_temperature_min || (Tb > forage_temperature_max && shade >= maximum_shade) || (Tb > forage_temperature_max && height >= max_height)) && depth == 1
         shade = minimum_shade # reset to minimum shade burrow
         depth = max(min_depth, depth + 1)
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
-        Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
-        while (Tb > T_forage_max || Tb < T_lethal_min) && depth < 10
+        Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
+        while (Tb > forage_temperature_max || Tb < lethal_temperature_min) && depth < 10
             depth = max(min_depth, depth + 1)
             env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
             variables_i = (organism=OrganismalVars(), environment=env_i)
-            Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
+            Tb = get_Tb(lizard, environmental_params, variables_i).core_temperature;
         end
     end
     end
@@ -297,7 +297,7 @@ balances = map(1:n) do i
 end
 balance_out = flip2vectors(balances); # pull out each output as a vector
 
-plot(1:1:n, °C.(balance_out.T_core), ylims=[0, 55.0])
+plot(1:1:n, °C.(balance_out.core_temperature), ylims=[0, 55.0])
 plot!(1:1:n, Tb_NMR;
         xlabel="time", ylabel="body temperature", lw=2,
         linestyle=:dash, linecolor="grey"
@@ -398,10 +398,10 @@ micro_maxshade = runmicro(;
 )
 
 env_minshade = EnvironmentalVarsVec(
-    T_air = K.(micro_minshade.air_temperature[:, 2]), # second column is first node above surface
-    T_sky = micro_minshade.sky_temperature,
-    T_substrate = micro_minshade.soil_temperature[:, 1], # surface temperature
-    rh = micro_minshade.relative_humidity[:, 2], # second column is first node above surface
+    air_temperature = K.(micro_minshade.air_temperature[:, 2]), # second column is first node above surface
+    sky_temperature = micro_minshade.sky_temperature,
+    substrate_temperature = micro_minshade.soil_temperature[:, 1], # surface temperature
+    relative_humidity = micro_minshade.relative_humidity[:, 2], # second column is first node above surface
     wind_speed = micro_minshade.wind_speed[:, 2], # second column is first node above surface
     Q_solar = micro_minshade.global_solar .* (1.0 - min_shade / 100.0),
     Q_direct = micro_minshade.direct_solar .* (1.0 - min_shade / 100.0),
@@ -410,10 +410,10 @@ env_minshade = EnvironmentalVarsVec(
 )
 
 env_maxshade = EnvironmentalVarsVec(
-    T_air = K.(micro_minshade.air_temperature[:, 2]), # second column is first node above surface
-    T_sky = micro_maxshade.sky_temperature,
-    T_substrate = micro_maxshade.soil_temperature[:, 1], # surface temperature
-    rh = micro_maxshade.relative_humidity[:, 2], # second column is first node above surface
+    air_temperature = K.(micro_minshade.air_temperature[:, 2]), # second column is first node above surface
+    sky_temperature = micro_maxshade.sky_temperature,
+    substrate_temperature = micro_maxshade.soil_temperature[:, 1], # surface temperature
+    relative_humidity = micro_maxshade.relative_humidity[:, 2], # second column is first node above surface
     wind_speed = micro_maxshade.wind_speed[:, 2], # second column is first node above surface
     Q_solar = micro_maxshade.global_solar .* (1.0 - max_shade / 100.0),
     Q_direct = micro_maxshade.direct_solar .* (1.0 - max_shade / 100.0),
@@ -428,12 +428,12 @@ environment = env_minshade
 n = length(days) * (length(hours) - 1)
 balances = map(1:n) do i
     env_i = EnvironmentalVars(
-        T_air = environment.T_air[i],
-        T_sky = environment.T_sky[i],
-        T_substrate = environment.T_substrate[i],
-        rh = environment.rh[i],
+        air_temperature = environment.air_temperature[i],
+        sky_temperature = environment.sky_temperature[i],
+        substrate_temperature = environment.substrate_temperature[i],
+        relative_humidity = environment.relative_humidity[i],
         wind_speed = environment.wind_speed[i],
-        P_atmos = environment.P_atmos[i],
+        atmospheric_pressure = environment.atmospheric_pressure[i],
         zenith_angle = environment.zenith_angle[i],
         k_substrate = environment.k_substrate[i],
         Q_solar = environment.Q_solar[i],
@@ -448,8 +448,8 @@ resp_out = flip2vectors(balance_out.resp_out); # pull out each output as a vecto
 evap_out = flip2vectors(balance_out.evap_out); # pull out each output as a vector
 conv_out = flip2vectors(balance_out.conv_out); # pull out each output as a vector
 
-plot(1:1:n, °C.(balance_out.T_core), ylims=[0.0, 55.0])
-plot!(1:1:n, environment.T_air)
+plot(1:1:n, °C.(balance_out.core_temperature), ylims=[0.0, 55.0])
+plot!(1:1:n, environment.air_temperature)
 
 plot(1:1:n, u"mg/hr".(evap_out.m_cut))
 plot!(1:1:n, u"mg/hr".(evap_out.m_resp))

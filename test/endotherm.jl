@@ -50,16 +50,16 @@ for shape_number in 1:4
         geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
         environment_vars = EnvironmentalVars(;
-            T_air=u"K"((endo_input.TA)u"°C"),
-            T_air_reference=u"K"((endo_input.TAREF)u"°C"),
-            T_sky=u"K"((endo_input.TSKY)u"°C"),
-            T_ground=u"K"((endo_input.TGRD)u"°C"),
-            T_substrate=u"K"((endo_input.TCONDSB)u"°C"),
-            T_bush=u"K"((endo_input.TBUSH)u"°C"),
-            T_vegetation=u"K"((endo_input.TAREF)u"°C"),
-            rh=endo_input.RH / 100.0,
+            air_temperature=u"K"((endo_input.TA)u"°C"),
+            reference_air_temperature=u"K"((endo_input.TAREF)u"°C"),
+            sky_temperature=u"K"((endo_input.TSKY)u"°C"),
+            ground_temperature=u"K"((endo_input.TGRD)u"°C"),
+            substrate_temperature=u"K"((endo_input.TCONDSB)u"°C"),
+            bush_temperature=u"K"((endo_input.TBUSH)u"°C"),
+            vegetation_temperature=u"K"((endo_input.TAREF)u"°C"),
+            relative_humidity=endo_input.RH / 100.0,
             wind_speed=(endo_input.VEL)u"m/s",
-            P_atmos=(endo_input.BP)u"Pa",
+            atmospheric_pressure=(endo_input.BP)u"Pa",
             zenith_angle=(endo_input.Z)u"°",
             k_substrate=(endo_input.KSUB)u"W/m/K",
             global_radiation=(endo_input.QSOLR)u"W/m^2",
@@ -131,7 +131,7 @@ for shape_number in 1:4
         )
 
         metabolism_pars = MetabolismParameters(;
-            T_core=u"K"((endo_input.TC)u"°C"),
+            core_temperature=u"K"((endo_input.TC)u"°C"),
             Q_metabolism=(endo_input.QBASAL)u"W",
             q10=endo_input.Q10,
             model=Kleiber(),
@@ -179,11 +179,11 @@ for shape_number in 1:4
         )
 
         # initial conditions
-        T_skin = u"K"((endo_input.TS)u"°C")
-        T_insulation = u"K"((endo_input.TFA)u"°C")
+        skin_temperature = u"K"((endo_input.TS)u"°C")
+        insulation_temperature = u"K"((endo_input.TFA)u"°C")
         Q_minimum_ref = (endo_input.QBASAL)u"W"
         Q_gen = 0.0u"W"
-        T_core_ref = metabolism_pars.T_core
+        core_temperature_ref = metabolism_pars.core_temperature
 
         # Convert R integer mode to struct type
         thermoregulation_mode = if endo_input.TREGMODE == 1
@@ -226,9 +226,9 @@ for shape_number in 1:4
                 max=(endo_input.AK1_MAX)u"W/m/K",
                 step=(endo_input.AK1_INC)u"W/m/K",
             ),
-            T_core=SteppedParameter(;
-                current=T_core_ref,
-                reference=T_core_ref,
+            core_temperature=SteppedParameter(;
+                current=core_temperature_ref,
+                reference=core_temperature_ref,
                 max=u"K"((endo_input.TC_MAX)u"°C"),
                 step=(endo_input.TC_INC)u"K",
             ),
@@ -240,7 +240,7 @@ for shape_number in 1:4
                 ),
                 cost=0.0u"W",
                 multiplier=endo_input.PANT_MULT,
-                T_core_ref=T_core_ref,
+                core_temperature_ref=core_temperature_ref,
             ),
             skin_wetness=SteppedParameter(;
                 current=evaporation_pars.skin_wetness,
@@ -263,8 +263,8 @@ for shape_number in 1:4
             organism,
             environment,
             Q_gen,
-            T_skin,
-            T_insulation,
+            skin_temperature,
+            insulation_temperature,
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology
@@ -272,18 +272,18 @@ for shape_number in 1:4
         mass_fluxes = endotherm_out.mass_fluxes
 
         (; insulation_test) = insulation_properties(insulation_pars,
-            thermoregulation.T_insulation,
+            thermoregulation.insulation_temperature,
             radiation_pars.ventral_fraction)
 
         rtol = 1e-3
 
         @testset "endotherm thermoregulation comparisons" begin
-            @test treg_output_vec.TC ≈ ustrip(u"°C", thermoregulation.T_core) rtol = rtol
-            @test treg_output_vec.TLUNG ≈ ustrip(u"°C", thermoregulation.T_lung) rtol = rtol
-            @test treg_output_vec.TSKIN_D ≈ ustrip(u"°C", thermoregulation.T_skin_dorsal) rtol = rtol
-            @test treg_output_vec.TSKIN_V ≈ ustrip(u"°C", thermoregulation.T_skin_ventral) rtol = rtol
-            @test treg_output_vec.TFA_D ≈ ustrip(u"°C", thermoregulation.T_insulation_dorsal) rtol = rtol
-            @test treg_output_vec.TFA_V ≈ ustrip(u"°C", thermoregulation.T_insulation_ventral) rtol = rtol
+            @test treg_output_vec.TC ≈ ustrip(u"°C", thermoregulation.core_temperature) rtol = rtol
+            @test treg_output_vec.TLUNG ≈ ustrip(u"°C", thermoregulation.lung_temperature) rtol = rtol
+            @test treg_output_vec.TSKIN_D ≈ ustrip(u"°C", thermoregulation.skin_temperature_dorsal) rtol = rtol
+            @test treg_output_vec.TSKIN_V ≈ ustrip(u"°C", thermoregulation.skin_temperature_ventral) rtol = rtol
+            @test treg_output_vec.TFA_D ≈ ustrip(u"°C", thermoregulation.insulation_temperature_dorsal) rtol = rtol
+            @test treg_output_vec.TFA_V ≈ ustrip(u"°C", thermoregulation.insulation_temperature_ventral) rtol = rtol
             if insulation_test > 0.0u"m"
                 @test treg_output_vec.K_FUR_D ≈ ustrip(u"W/m/K", thermoregulation.k_insulation_dorsal) rtol = rtol
                 @test treg_output_vec.K_FUR_V ≈ ustrip(u"W/m/K", thermoregulation.k_insulation_ventral) rtol = rtol
