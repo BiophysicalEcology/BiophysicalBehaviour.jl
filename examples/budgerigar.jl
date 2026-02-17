@@ -103,7 +103,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
 
     thermoregulation_limits = ThermoregulationLimits(;
         control=RuleBasedSequentialControl(;
-            mode=3,
+            mode=CorePantingSweating(),
             tolerance=0.005,
             max_iterations=1000,
         ),
