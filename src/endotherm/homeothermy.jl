@@ -1,3 +1,29 @@
+# =============================================================================
+# Mode dispatch helpers
+# =============================================================================
+
+"""
+    can_pant(mode::AbstractThermoregulationMode) -> Bool
+
+Return true if the mode allows panting as an effector.
+"""
+can_pant(::Core) = false
+can_pant(::CoreAndPanting) = true
+can_pant(::CorePantingSweating) = true
+
+"""
+    can_sweat(mode::AbstractThermoregulationMode) -> Bool
+
+Return true if the mode allows sweating as an effector.
+"""
+can_sweat(::Core) = false
+can_sweat(::CoreAndPanting) = false
+can_sweat(::CorePantingSweating) = true
+
+# =============================================================================
+# Thermoregulation entry points
+# =============================================================================
+
 """
     thermoregulate(organism, environment, Q_gen, T_skin, T_insulation)
 
@@ -153,11 +179,11 @@ function thermoregulate(
             T_core_limits, Q_minimum, organism = hyperthermia(
                 organism, T_core_limits, panting_limits.cost
             )
-            if mode >= 2 && panting_limits.pant.current < panting_limits.pant.max
+            if can_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
                 # Pant in parallel to allowing core temperature to rise
                 panting_limits, Q_minimum, organism = pant(organism, panting_limits)
             end
-            if mode == 3
+            if can_sweat(mode)
                 # Sweat in parallel to allowing core temperature to rise and panting
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
@@ -172,7 +198,7 @@ function thermoregulate(
         # -------------------------------------------------------------------------
         elseif panting_limits.pant.current < panting_limits.pant.max
             panting_limits, Q_minimum, organism = pant(organism, panting_limits)
-            if mode == 3
+            if can_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
                     @warn "All thermoregulatory options exhausted"

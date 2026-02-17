@@ -1,6 +1,50 @@
 abstract type AbstractBehaviourParameters end
 
 # =============================================================================
+# Thermoregulation Mode Types
+# =============================================================================
+
+"""
+    AbstractThermoregulationMode
+
+Abstract supertype for thermoregulation modes.
+
+Modes determine which effectors are available during thermoregulation:
+- `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
+- `CoreAndPanting`: Adds panting during hyperthermia
+- `CorePantingSweating`: Adds both panting and sweating
+"""
+abstract type AbstractThermoregulationMode end
+
+"""
+    Core <: AbstractThermoregulationMode
+
+Basic thermoregulation mode.
+
+Effectors: piloerection, uncurling, vasodilation, hyperthermia.
+No evaporative cooling via panting or sweating.
+"""
+struct Core <: AbstractThermoregulationMode end
+
+"""
+    CoreAndPanting <: AbstractThermoregulationMode
+
+Thermoregulation with panting.
+
+Effectors: all from `Core` plus panting for evaporative cooling.
+"""
+struct CoreAndPanting <: AbstractThermoregulationMode end
+
+"""
+    CorePantingSweating <: AbstractThermoregulationMode
+
+Full thermoregulation with panting and sweating.
+
+Effectors: all from `CoreAndPanting` plus sweating for evaporative cooling.
+"""
+struct CorePantingSweating <: AbstractThermoregulationMode end
+
+# =============================================================================
 # Control Strategy Types
 # =============================================================================
 
@@ -28,12 +72,12 @@ where organisms engage responses in a prioritized sequence based on
 metabolic cost and effectiveness.
 
 # Fields
-- `mode::M`: Thermoregulation mode (1, 2, or 3). 
+- `mode::M`: Thermoregulation mode (`Core`, `CoreAndPanting`, or `CorePantingSweating`)
 - `tolerance::T`: Fraction below Q_minimum allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
-Base.@kwdef struct RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
-    mode::M = 1 # TODO: name these modes rather than numbering
+Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
+    mode::M = Core()
     tolerance::T = 0.005
     max_iterations::I = 1000
 end
