@@ -7,7 +7,7 @@
 
 Return true if the mode allows panting as an effector.
 """
-can_pant(::Core) = false
+can_pant(::CoreOnly) = false
 can_pant(::CoreAndPanting) = true
 can_pant(::CorePantingSweating) = true
 
@@ -16,7 +16,7 @@ can_pant(::CorePantingSweating) = true
 
 Return true if the mode allows sweating as an effector.
 """
-can_sweat(::Core) = false
+can_sweat(::CoreOnly) = false
 can_sweat(::CoreAndPanting) = false
 can_sweat(::CorePantingSweating) = true
 

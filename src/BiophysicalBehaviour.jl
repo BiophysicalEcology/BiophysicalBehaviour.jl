@@ -41,7 +41,7 @@ export AbstractControlStrategy,
 
 # Thermoregulation modes
 export AbstractThermoregulationMode,
-    Core,
+    CoreOnly,
     CoreAndPanting,
     CorePantingSweating
 

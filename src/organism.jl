@@ -17,14 +17,14 @@ Modes determine which effectors are available during thermoregulation:
 abstract type AbstractThermoregulationMode end
 
 """
-    Core <: AbstractThermoregulationMode
+    CoreOnly <: AbstractThermoregulationMode
 
 Basic thermoregulation mode.
 
 Effectors: piloerection, uncurling, vasodilation, hyperthermia.
 No evaporative cooling via panting or sweating.
 """
-struct Core <: AbstractThermoregulationMode end
+struct CoreOnly <: AbstractThermoregulationMode end
 
 """
     CoreAndPanting <: AbstractThermoregulationMode
@@ -77,7 +77,7 @@ metabolic cost and effectiveness.
 - `max_iterations::I`: Maximum iterations before warning
 """
 Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
-    mode::M = Core()
+    mode::M = CoreOnly()
     tolerance::T = 0.005
     max_iterations::I = 1000
 end

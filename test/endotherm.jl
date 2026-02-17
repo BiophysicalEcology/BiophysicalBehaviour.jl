@@ -187,7 +187,7 @@ for shape_number in 1:4
 
         # Convert R integer mode to struct type
         thermoregulation_mode = if endo_input.TREGMODE == 1
-            Core()
+            CoreOnly()
         elseif endo_input.TREGMODE == 2
             CoreAndPanting()
         else

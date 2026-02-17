@@ -219,7 +219,7 @@ Create example `ThermoregulationLimits` with sensible defaults.
 """
 function example_thermoregulation_limits(;
     # Control
-    thermoregulation_mode=Core(),
+    thermoregulation_mode=CoreOnly(),
     tolerance=0.005,
     max_iterations=1000,
     # Metabolic reference
