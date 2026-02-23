@@ -187,11 +187,11 @@ for shape_number in 1:4
 
         # Convert R integer mode to struct type
         thermoregulation_mode = if endo_input.TREGMODE == 1
-            CoreOnly()
+            CoreFirst()
         elseif endo_input.TREGMODE == 2
-            CoreAndPanting()
+            CoreAndPantingFirst()
         else
-            CorePantingSweating()
+            CorePantingSweatingFirst()
         end
 
         # Build ThermoregulationLimits

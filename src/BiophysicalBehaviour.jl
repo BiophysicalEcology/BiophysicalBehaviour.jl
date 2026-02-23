@@ -40,10 +40,10 @@ export AbstractControlStrategy,
     PDEControl
 
 # Thermoregulation modes
-export AbstractThermoregulationMode,
-    CoreOnly,
-    CoreAndPanting,
-    CorePantingSweating
+export AbstractThermoregulationSequence,
+    CoreFirst,
+    CoreAndPantingFirst,
+    CorePantingSweatingFirst
 
 # Traits structs
 export BehavioralTraits,

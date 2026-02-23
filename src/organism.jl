@@ -11,38 +11,38 @@ Abstract supertype for thermoregulation modes.
 
 Modes determine which effectors are available during thermoregulation:
 - `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
-- `CoreAndPanting`: Adds panting during hyperthermia
-- `CorePantingSweating`: Adds both panting and sweating
+- `CoreAndPantingFirst`: Adds panting during hyperthermia
+- `CorePantingSweatingFirst`: Adds both panting and sweating
 """
 abstract type AbstractThermoregulationMode end
 
 """
-    CoreOnly <: AbstractThermoregulationMode
+    CoreFirst <: AbstractThermoregulationMode
 
 Basic thermoregulation mode.
 
 Effectors: piloerection, uncurling, vasodilation, hyperthermia.
 No evaporative cooling via panting or sweating.
 """
-struct CoreOnly <: AbstractThermoregulationMode end
+struct CoreFirst <: AbstractThermoregulationMode end
 
 """
-    CoreAndPanting <: AbstractThermoregulationMode
+    CoreAndPantingFirst <: AbstractThermoregulationMode
 
 Thermoregulation with panting.
 
 Effectors: all from `Core` plus panting for evaporative cooling.
 """
-struct CoreAndPanting <: AbstractThermoregulationMode end
+struct CoreAndPantingFirst <: AbstractThermoregulationMode end
 
 """
-    CorePantingSweating <: AbstractThermoregulationMode
+    CorePantingSweatingFirst <: AbstractThermoregulationMode
 
 Full thermoregulation with panting and sweating.
 
-Effectors: all from `CoreAndPanting` plus sweating for evaporative cooling.
+Effectors: all from `CoreAndPantingFirst` plus sweating for evaporative cooling.
 """
-struct CorePantingSweating <: AbstractThermoregulationMode end
+struct CorePantingSweatingFirst <: AbstractThermoregulationMode end
 
 # =============================================================================
 # Control Strategy Types
@@ -72,12 +72,12 @@ where organisms engage responses in a prioritized sequence based on
 metabolic cost and effectiveness.
 
 # Fields
-- `mode::M`: Thermoregulation mode (`Core`, `CoreAndPanting`, or `CorePantingSweating`)
+- `mode::M`: Thermoregulation mode (`Core`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`)
 - `tolerance::T`: Fraction below Q_minimum allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
 Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
-    mode::M = CoreOnly()
+    mode::M = CoreFirst()
     tolerance::T = 0.005
     max_iterations::I = 1000
 end

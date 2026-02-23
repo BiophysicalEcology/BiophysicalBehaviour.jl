@@ -46,7 +46,7 @@ physiology_traits = HeatExchangeTraits(
 T_core_ref = metabolism_pars.T_core
 thermoregulation_limits = ThermoregulationLimits(;
     control=RuleBasedSequentialControl(;
-        mode=CoreOnly(),
+        mode=CoreFirst(),
         tolerance=0.005,
         max_iterations=200,
     ),

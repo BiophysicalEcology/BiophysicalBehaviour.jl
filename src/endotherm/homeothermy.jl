@@ -7,18 +7,18 @@
 
 Return true if the mode allows panting as an effector.
 """
-can_pant(::CoreOnly) = false
-can_pant(::CoreAndPanting) = true
-can_pant(::CorePantingSweating) = true
+can_pant(::CoreFirst) = false
+can_pant(::CoreAndPantingFirst) = true
+can_pant(::CorePantingSweatingFirst) = true
 
 """
     can_sweat(mode::AbstractThermoregulationMode) -> Bool
 
 Return true if the mode allows sweating as an effector.
 """
-can_sweat(::CoreOnly) = false
-can_sweat(::CoreAndPanting) = false
-can_sweat(::CorePantingSweating) = true
+can_sweat(::CoreFirst) = false
+can_sweat(::CoreAndPantingFirst) = false
+can_sweat(::CorePantingSweatingFirst) = true
 
 # =============================================================================
 # Thermoregulation entry points
