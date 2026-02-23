@@ -3,22 +3,22 @@
 # =============================================================================
 
 """
-    can_pant(mode::AbstractThermoregulationMode) -> Bool
+    simultaneous_pant(mode::AbstractThermoregulationMode) -> Bool
 
 Return true if the mode allows panting as an effector.
 """
-can_pant(::CoreFirst) = false
-can_pant(::CoreAndPantingFirst) = true
-can_pant(::CorePantingSweatingFirst) = true
+simultaneous_pant(::CoreFirst) = false
+simultaneous_pant(::CoreAndPantingFirst) = true
+simultaneous_pant(::CorePantingSweatingFirst) = true
 
 """
-    can_sweat(mode::AbstractThermoregulationMode) -> Bool
+    simultaneous_sweat(mode::AbstractThermoregulationMode) -> Bool
 
 Return true if the mode allows sweating as an effector.
 """
-can_sweat(::CoreFirst) = false
-can_sweat(::CoreAndPantingFirst) = false
-can_sweat(::CorePantingSweatingFirst) = true
+simultaneous_sweat(::CoreFirst) = false
+simultaneous_sweat(::CoreAndPantingFirst) = false
+simultaneous_sweat(::CorePantingSweatingFirst) = true
 
 # =============================================================================
 # Thermoregulation entry points
@@ -179,11 +179,11 @@ function thermoregulate(
             T_core_limits, Q_minimum, organism = hyperthermia(
                 organism, T_core_limits, panting_limits.cost
             )
-            if can_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
+            if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
                 # Pant in parallel to allowing core temperature to rise
                 panting_limits, Q_minimum, organism = pant(organism, panting_limits)
             end
-            if can_sweat(mode)
+            if simultaneous_sweat(mode)
                 # Sweat in parallel to allowing core temperature to rise and panting
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
@@ -198,7 +198,7 @@ function thermoregulate(
         # -------------------------------------------------------------------------
         elseif panting_limits.pant.current < panting_limits.pant.max
             panting_limits, Q_minimum, organism = pant(organism, panting_limits)
-            if can_sweat(mode)
+            if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
                     @warn "All thermoregulatory options exhausted"
