@@ -40,7 +40,7 @@ export AbstractControlStrategy,
     PDEControl
 
 # Thermoregulation modes
-export AbstractThermoregulationSequence,
+export AbstractThermoregulationMode,
     CoreFirst,
     CoreAndPantingFirst,
     CorePantingSweatingFirst
