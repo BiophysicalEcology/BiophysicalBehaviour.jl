@@ -298,7 +298,7 @@ for shape_number in 1:4
         fat = morphology.fat < 1.0e-10u"m" ? 0.0u"m" : morphology.fat
         rtol = 1e-6
         @testset "endotherm morphology comparisons" begin
-            @test morph_output_vec.AREA ≈ ustrip(u"m^2", morphology.area_total) rtol = rtol
+            @test morph_output_vec.AREA ≈ ustrip(u"m^2", morphology.total_area) rtol = rtol
             @test morph_output_vec.AREA_SKIN ≈ ustrip(u"m^2", morphology.area_skin) rtol = rtol
             @test morph_output_vec.AREA_SKIN_EVAP ≈ ustrip(u"m^2", morphology.area_evaporation) rtol = rtol
             @test morph_output_vec.AREA_CONV ≈ ustrip(u"m^2", morphology.area_convection) rtol = rtol
