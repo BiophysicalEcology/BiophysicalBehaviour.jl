@@ -39,6 +39,12 @@ export AbstractControlStrategy,
     RuleBasedSequentialControl,
     PDEControl
 
+# Thermoregulation modes
+export AbstractThermoregulationMode,
+    CoreFirst,
+    CoreAndPantingFirst,
+    CorePantingSweatingFirst
+
 # Traits structs
 export BehavioralTraits,
     OrganismTraits

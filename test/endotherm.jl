@@ -185,10 +185,19 @@ for shape_number in 1:4
         Q_gen = 0.0u"W"
         T_core_ref = metabolism_pars.T_core
 
+        # Convert R integer mode to struct type
+        thermoregulation_mode = if endo_input.TREGMODE == 1
+            CoreFirst()
+        elseif endo_input.TREGMODE == 2
+            CoreAndPantingFirst()
+        else
+            CorePantingSweatingFirst()
+        end
+
         # Build ThermoregulationLimits
         thermoregulation_limits = ThermoregulationLimits(;
             control=RuleBasedSequentialControl(;
-                mode=endo_input.TREGMODE,
+                mode=thermoregulation_mode,
                 tolerance=0.005,
                 max_iterations=1000,
             ),

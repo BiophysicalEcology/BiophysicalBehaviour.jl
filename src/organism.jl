@@ -1,6 +1,43 @@
 abstract type AbstractBehaviourParameters end
 
 # =============================================================================
+# Thermoregulation Mode Types
+# =============================================================================
+
+"""
+    AbstractThermoregulationMode
+
+Abstract supertype for thermoregulation modes.
+
+Modes determine which effectors are available during thermoregulation:
+- `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
+- `CoreAndPantingFirst`: Adds panting during hyperthermia
+- `CorePantingSweatingFirst`: Adds both panting and sweating
+"""
+abstract type AbstractThermoregulationMode end
+
+"""
+    CoreFirst <: AbstractThermoregulationMode
+
+Core thermoregulation comes first in the sequence.
+"""
+struct CoreFirst <: AbstractThermoregulationMode end
+
+"""
+    CoreAndPantingFirst <: AbstractThermoregulationMode
+
+Simultaneous core and panting thermoregulation come first in the sequence.
+"""
+struct CoreAndPantingFirst <: AbstractThermoregulationMode end
+
+"""
+    CorePantingSweatingFirst <: AbstractThermoregulationMode
+
+Simultaneous core, panting and sweating thermoregulation come first in the sequence.
+"""
+struct CorePantingSweatingFirst <: AbstractThermoregulationMode end
+
+# =============================================================================
 # Control Strategy Types
 # =============================================================================
 
@@ -28,12 +65,12 @@ where organisms engage responses in a prioritized sequence based on
 metabolic cost and effectiveness.
 
 # Fields
-- `mode::M`: Thermoregulation mode (1, 2, or 3). 
+- `mode::M`: Thermoregulation mode (`Core`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`)
 - `tolerance::T`: Fraction below Q_minimum allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
-Base.@kwdef struct RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
-    mode::M = 1 # TODO: name these modes rather than numbering
+Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
+    mode::M = CoreFirst()
     tolerance::T = 0.005
     max_iterations::I = 1000
 end
