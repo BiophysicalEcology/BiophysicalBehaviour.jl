@@ -19,28 +19,21 @@ abstract type AbstractThermoregulationMode end
 """
     CoreFirst <: AbstractThermoregulationMode
 
-Basic thermoregulation mode.
-
-Effectors: piloerection, uncurling, vasodilation, hyperthermia.
-No evaporative cooling via panting or sweating.
+Core thermoregulation comes first in the sequence.
 """
 struct CoreFirst <: AbstractThermoregulationMode end
 
 """
     CoreAndPantingFirst <: AbstractThermoregulationMode
 
-Thermoregulation with panting.
-
-Effectors: all from `Core` plus panting for evaporative cooling.
+Simultaneous core and panting thermoregulation come first in the sequence.
 """
 struct CoreAndPantingFirst <: AbstractThermoregulationMode end
 
 """
     CorePantingSweatingFirst <: AbstractThermoregulationMode
 
-Full thermoregulation with panting and sweating.
-
-Effectors: all from `CoreAndPantingFirst` plus sweating for evaporative cooling.
+Simultaneous core, panting and sweating thermoregulation come first in the sequence.
 """
 struct CorePantingSweatingFirst <: AbstractThermoregulationMode end
 
