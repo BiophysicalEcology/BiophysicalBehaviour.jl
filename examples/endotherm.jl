@@ -17,13 +17,13 @@ respiration_pars = example_respiration_pars()
 
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
-mean_insulation_depth = insulation_pars.insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.insulation_depth_ventral * radiation_pars.ventral_fraction
-mean_fibre_diameter = insulation_pars.fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_diameter_ventral * radiation_pars.ventral_fraction
-mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_density_ventral * radiation_pars.ventral_fraction
+fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.density * radiation_pars.ventral_fraction
 fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
@@ -50,28 +50,28 @@ thermoregulation_limits = ThermoregulationLimits(;
         tolerance=0.005,
         max_iterations=200,
     ),
-    Q_minimum_ref=metabolism_pars.Q_metabolism,
+    minimum_metabolic_flux_ref=metabolism_pars.metabolic_flux,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
-            current=insulation_pars.insulation_depth_dorsal,
-            reference=insulation_pars.insulation_depth_dorsal,
-            max=insulation_pars.insulation_depth_dorsal,
+            current=insulation_pars.dorsal.depth,
+            reference=insulation_pars.dorsal.depth,
+            max=insulation_pars.dorsal.depth,
             step=0.0,
         ),
         ventral=SteppedParameter(;
-            current=insulation_pars.insulation_depth_ventral,
-            reference=insulation_pars.insulation_depth_ventral,
-            max=insulation_pars.insulation_depth_ventral,
+            current=insulation_pars.ventral.depth,
+            reference=insulation_pars.ventral.depth,
+            max=insulation_pars.ventral.depth,
             step=0.0,
         ),
     ),
-    shape_b=SteppedParameter(;
+    shape_coefficient_b=SteppedParameter(;
         current=shape_pars.b,
         max=5.0,
         step=0.1,
     ),
-    k_flesh=SteppedParameter(;
-        current=conduction_pars_internal.k_flesh,
+    flesh_conductivity=SteppedParameter(;
+        current=conduction_pars_internal.flesh_conductivity,
         max=2.8u"W/m/K",
         step=0.1u"W/m/K",
     ),
@@ -82,7 +82,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         step=0.1u"K",
     ),
     panting=PantingLimits(;
-        pant=SteppedParameter(;
+        panting_rate=SteppedParameter(;
             current=respiration_pars.pant,
             max=15.0,
             step=0.01,
@@ -114,12 +114,12 @@ environment = (; environment_pars, environment_vars)
 # initial conditions
 skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
 insulation_temperature = environment_vars.air_temperature
-Q_gen = 0.0u"W"
+generated_flux = 0.0u"W"
 
 endotherm_out = thermoregulate(
     organism,
     environment,
-    Q_gen,
+    generated_flux,
     skin_temperature,
     insulation_temperature,
 )

@@ -112,9 +112,9 @@ min_shade_habitat = EnvironmentalVarsVec(
     wind_speed = Matrix(micro_min_shade.wind_speed), # second column is first node above surface
     atmospheric_pressure = fill(101325.0u"Pa", n_hours),
     k_substrate = micro_min_shade.soil_thermal_conductivity,
-    Q_solar = micro_min_shade.global_solar .* (1.0 - minimum_shade),
-    Q_direct = micro_min_shade.direct_solar .* (1.0 - minimum_shade),
-    Q_diffuse = micro_min_shade.diffuse_solar .* (1.0 - minimum_shade),
+    solar_flux = micro_min_shade.global_solar .* (1.0 - minimum_shade),
+    direct_solar_flux = micro_min_shade.direct_solar .* (1.0 - minimum_shade),
+    diffuse_solar_flux = micro_min_shade.diffuse_solar .* (1.0 - minimum_shade),
     zenith_angle = micro_min_shade.zenith_angle
 );
 
@@ -126,9 +126,9 @@ max_shade_habitat = EnvironmentalVarsVec(
     wind_speed = Matrix(micro_max_shade.wind_speed), # second column is first node above surface
     atmospheric_pressure = fill(101325.0u"Pa", n_hours),
     k_substrate = micro_max_shade.soil_thermal_conductivity,
-    Q_solar = micro_max_shade.global_solar .* (1.0 - maximum_shade),
-    Q_direct = micro_max_shade.direct_solar .* (1.0 - maximum_shade),
-    Q_diffuse = micro_max_shade.diffuse_solar .* (1.0 - maximum_shade),
+    solar_flux = micro_max_shade.global_solar .* (1.0 - maximum_shade),
+    direct_solar_flux = micro_max_shade.direct_solar .* (1.0 - maximum_shade),
+    diffuse_solar_flux = micro_max_shade.diffuse_solar .* (1.0 - maximum_shade),
     zenith_angle = micro_max_shade.zenith_angle
 );
 
@@ -150,9 +150,9 @@ balances = map(1:n) do i
         relative_humidity      = deep_rh
         wind_speed     = deep_vel
         k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
-        Q_solar   = 0.0u"W/m^2"
-        Q_direct   = 0.0u"W/m^2"
-        Q_diffuse   = 0.0u"W/m^2"
+        solar_flux   = 0.0u"W/m^2"
+        direct_solar_flux   = 0.0u"W/m^2"
+        diffuse_solar_flux   = 0.0u"W/m^2"
     else
         air_temperature   = min_shade_habitat.air_temperature[i, height + 1] * (1 - shade) + max_shade_habitat.air_temperature[i, height + 1] * shade
         sky_temperature   = min_shade_habitat.sky_temperature[i] * (1 - shade) + max_shade_habitat.sky_temperature[i] * shade
@@ -160,9 +160,9 @@ balances = map(1:n) do i
         relative_humidity      = min_shade_habitat.relative_humidity[i, height + 1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height + 1] * shade
         wind_speed     = min_shade_habitat.wind_speed[i, height + 1] * (1 - shade) + max_shade_habitat.wind_speed[i, height + 1] * shade
         k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
-        Q_solar   = min_shade_habitat.Q_solar[i] * (1 - shade) + max_shade_habitat.Q_solar[i] * shade
-        Q_direct   = min_shade_habitat.Q_direct[i] * (1 - shade) + max_shade_habitat.Q_direct[i] * shade
-        Q_diffuse   = min_shade_habitat.Q_diffuse[i] * (1 - shade) + max_shade_habitat.Q_diffuse[i] * shade
+        solar_flux   = min_shade_habitat.solar_flux[i] * (1 - shade) + max_shade_habitat.solar_flux[i] * shade
+        direct_solar_flux   = min_shade_habitat.direct_solar_flux[i] * (1 - shade) + max_shade_habitat.direct_solar_flux[i] * shade
+        diffuse_solar_flux   = min_shade_habitat.diffuse_solar_flux[i] * (1 - shade) + max_shade_habitat.diffuse_solar_flux[i] * shade
     end
     env_i = EnvironmentalVars(;
         air_temperature,
@@ -173,9 +173,9 @@ balances = map(1:n) do i
         atmospheric_pressure,
         zenith_angle,
         k_substrate,
-        Q_solar,
-        Q_direct,
-        Q_diffuse,
+        solar_flux,
+        direct_solar_flux,
+        diffuse_solar_flux,
     )
     variables_i = (organism = OrganismalVars(), environment = env_i)
     get_Tb(lizard, environmental_params, variables_i);
@@ -200,9 +200,9 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         relative_humidity = deep_rh
         wind_speed = deep_vel
         k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
-        Q_solar = 0.0u"W/m^2"
-        Q_direct = 0.0u"W/m^2"
-        Q_diffuse = 0.0u"W/m^2"
+        solar_flux = 0.0u"W/m^2"
+        direct_solar_flux = 0.0u"W/m^2"
+        diffuse_solar_flux = 0.0u"W/m^2"
     else
         air_temperature = min_shade_habitat.air_temperature[i, height+1] * (1 - shade) + max_shade_habitat.air_temperature[i, height+1] * shade
         sky_temperature = min_shade_habitat.sky_temperature[i] * (1 - shade) + max_shade_habitat.sky_temperature[i] * shade
@@ -210,9 +210,9 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         relative_humidity = min_shade_habitat.relative_humidity[i, height+1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height+1] * shade
         wind_speed = min_shade_habitat.wind_speed[i, height+1] * (1 - shade) + max_shade_habitat.wind_speed[i, height+1] * shade
         k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
-        Q_solar = min_shade_habitat.Q_solar[i] * (1 - shade) + max_shade_habitat.Q_solar[i] * shade
-        Q_direct = min_shade_habitat.Q_direct[i] * (1 - shade) + max_shade_habitat.Q_direct[i] * shade
-        Q_diffuse = min_shade_habitat.Q_diffuse[i] * (1 - shade) + max_shade_habitat.Q_diffuse[i] * shade
+        solar_flux = min_shade_habitat.solar_flux[i] * (1 - shade) + max_shade_habitat.solar_flux[i] * shade
+        direct_solar_flux = min_shade_habitat.direct_solar_flux[i] * (1 - shade) + max_shade_habitat.direct_solar_flux[i] * shade
+        diffuse_solar_flux = min_shade_habitat.diffuse_solar_flux[i] * (1 - shade) + max_shade_habitat.diffuse_solar_flux[i] * shade
     end
     env_i = EnvironmentalVars(;
         air_temperature,
@@ -223,9 +223,9 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         atmospheric_pressure,
         zenith_angle,
         k_substrate,
-        Q_solar,
-        Q_direct,
-        Q_diffuse,
+        solar_flux,
+        direct_solar_flux,
+        diffuse_solar_flux,
     )
     return env_i
 end
@@ -403,9 +403,9 @@ env_minshade = EnvironmentalVarsVec(
     substrate_temperature = micro_minshade.soil_temperature[:, 1], # surface temperature
     relative_humidity = micro_minshade.relative_humidity[:, 2], # second column is first node above surface
     wind_speed = micro_minshade.wind_speed[:, 2], # second column is first node above surface
-    Q_solar = micro_minshade.global_solar .* (1.0 - min_shade / 100.0),
-    Q_direct = micro_minshade.direct_solar .* (1.0 - min_shade / 100.0),
-    Q_diffuse = micro_minshade.diffuse_solar .* (1.0 - min_shade / 100.0),
+    solar_flux = micro_minshade.global_solar .* (1.0 - min_shade / 100.0),
+    direct_solar_flux = micro_minshade.direct_solar .* (1.0 - min_shade / 100.0),
+    diffuse_solar_flux = micro_minshade.diffuse_solar .* (1.0 - min_shade / 100.0),
     zenith_angle = micro_minshade.zenith_angle
 )
 
@@ -415,9 +415,9 @@ env_maxshade = EnvironmentalVarsVec(
     substrate_temperature = micro_maxshade.soil_temperature[:, 1], # surface temperature
     relative_humidity = micro_maxshade.relative_humidity[:, 2], # second column is first node above surface
     wind_speed = micro_maxshade.wind_speed[:, 2], # second column is first node above surface
-    Q_solar = micro_maxshade.global_solar .* (1.0 - max_shade / 100.0),
-    Q_direct = micro_maxshade.direct_solar .* (1.0 - max_shade / 100.0),
-    Q_diffuse = micro_maxshade.diffuse_solar .* (1.0 - max_shade / 100.0),
+    solar_flux = micro_maxshade.global_solar .* (1.0 - max_shade / 100.0),
+    direct_solar_flux = micro_maxshade.direct_solar .* (1.0 - max_shade / 100.0),
+    diffuse_solar_flux = micro_maxshade.diffuse_solar .* (1.0 - max_shade / 100.0),
     zenith_angle = micro_maxshade.zenith_angle
 )
 
@@ -436,9 +436,9 @@ balances = map(1:n) do i
         atmospheric_pressure = environment.atmospheric_pressure[i],
         zenith_angle = environment.zenith_angle[i],
         k_substrate = environment.k_substrate[i],
-        Q_solar = environment.Q_solar[i],
-        Q_direct = environment.Q_direct[i],
-        Q_diffuse = environment.Q_diffuse[i],
+        solar_flux = environment.solar_flux[i],
+        direct_solar_flux = environment.direct_solar_flux[i],
+        diffuse_solar_flux = environment.diffuse_solar_flux[i],
     )
     variables_i = (organism = OrganismalVars(), environment = env_i)
     get_Tb(lizard, environmental_params, variables_i)

@@ -66,7 +66,7 @@ metabolic cost and effectiveness.
 
 # Fields
 - `mode::M`: Thermoregulation mode (`Core`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`)
-- `tolerance::T`: Fraction below Q_minimum allowed
+- `tolerance::T`: Fraction below minimum_metabolic_flux allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
 Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
