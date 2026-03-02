@@ -96,21 +96,21 @@ end
 
 Allow core temperature to rise (hyperthermia).
 
-Returns updated `SteppedParameter`, new minimum_metabolic_flux, and `organism`.
+Returns updated `SteppedParameter`, new minimum_metabolic_heat_flow, and `organism`.
 """
 function hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
-    minimum_metabolic_flux_ref = thermoregulation(organism).minimum_metabolic_flux_ref
+    minimum_metabolic_heat_flow_ref = thermoregulation(organism).minimum_metabolic_heat_flow_ref
     core_temperature = min(core_temperature_limits.current + core_temperature_limits.step, core_temperature_limits.max)
     core_temperature_limits = @set core_temperature_limits.current = core_temperature
 
     metabolism = HeatExchange.metabolism_pars(organism)
     q10mult = metabolism.q10^((ustrip(u"K", core_temperature - core_temperature_limits.reference)) / 10)
-    minimum_metabolic_flux = (minimum_metabolic_flux_ref + pant_cost) * q10mult
+    minimum_metabolic_heat_flow = (minimum_metabolic_heat_flow_ref + pant_cost) * q10mult
 
     organism = @set organism.traits.physiology.metabolism_pars.core_temperature = core_temperature
-    organism = @set organism.traits.physiology.metabolism_pars.metabolic_flux = minimum_metabolic_flux
+    organism = @set organism.traits.physiology.metabolism_pars.metabolic_heat_flow = minimum_metabolic_heat_flow
 
-    return core_temperature_limits, minimum_metabolic_flux, organism
+    return core_temperature_limits, minimum_metabolic_heat_flow, organism
 end
 
 """
@@ -118,27 +118,27 @@ end
 
 Increase panting rate for evaporative cooling.
 
-Returns updated `PantingLimits`, new minimum_metabolic_flux, and `organism`.
+Returns updated `PantingLimits`, new minimum_metabolic_heat_flow, and `organism`.
 """
 function pant(organism::Organism, panting_limits::PantingLimits)
-    minimum_metabolic_flux_ref = thermoregulation(organism).minimum_metabolic_flux_ref
+    minimum_metabolic_heat_flow_ref = thermoregulation(organism).minimum_metabolic_heat_flow_ref
     panting_rate_limits = panting_limits.panting_rate
     panting_rate = min(panting_rate_limits.current + panting_rate_limits.step, panting_rate_limits.max)
 
     pant_cost = ((panting_rate - 1) / (panting_rate_limits.max + 1e-6 - 1)) *
-                (panting_limits.multiplier - 1) * minimum_metabolic_flux_ref
+                (panting_limits.multiplier - 1) * minimum_metabolic_heat_flow_ref
 
     panting_limits = @set panting_limits.panting_rate.current = panting_rate
     panting_limits = @set panting_limits.cost = pant_cost
 
     metabolism = HeatExchange.metabolism_pars(organism)
     q10mult = metabolism.q10^((ustrip(u"K", metabolism.core_temperature - panting_limits.core_temperature_ref)) / 10)
-    minimum_metabolic_flux = (minimum_metabolic_flux_ref + pant_cost) * q10mult
+    minimum_metabolic_heat_flow = (minimum_metabolic_heat_flow_ref + pant_cost) * q10mult
 
-    organism = @set organism.traits.physiology.metabolism_pars.metabolic_flux = minimum_metabolic_flux
+    organism = @set organism.traits.physiology.metabolism_pars.metabolic_heat_flow = minimum_metabolic_heat_flow
     organism = @set organism.traits.physiology.respiration_pars.pant = panting_rate
 
-    return panting_limits, minimum_metabolic_flux, organism
+    return panting_limits, minimum_metabolic_heat_flow, organism
 end
 
 """

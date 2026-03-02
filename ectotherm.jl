@@ -111,7 +111,7 @@ min_shade_habitat = EnvironmentalVarsVec(
     relative_humidity = Matrix(micro_min_shade.relative_humidity), # second column is first node above surface
     wind_speed = Matrix(micro_min_shade.wind_speed), # second column is first node above surface
     atmospheric_pressure = fill(101325.0u"Pa", n_hours),
-    k_substrate = micro_min_shade.soil_thermal_conductivity,
+    substrate_conductivity = micro_min_shade.soil_thermal_conductivity,
     solar_flux = micro_min_shade.global_solar .* (1.0 - minimum_shade),
     direct_solar_flux = micro_min_shade.direct_solar .* (1.0 - minimum_shade),
     diffuse_solar_flux = micro_min_shade.diffuse_solar .* (1.0 - minimum_shade),
@@ -125,7 +125,7 @@ max_shade_habitat = EnvironmentalVarsVec(
     relative_humidity = Matrix(micro_max_shade.relative_humidity), # second column is first node above surface
     wind_speed = Matrix(micro_max_shade.wind_speed), # second column is first node above surface
     atmospheric_pressure = fill(101325.0u"Pa", n_hours),
-    k_substrate = micro_max_shade.soil_thermal_conductivity,
+    substrate_conductivity = micro_max_shade.soil_thermal_conductivity,
     solar_flux = micro_max_shade.global_solar .* (1.0 - maximum_shade),
     direct_solar_flux = micro_max_shade.direct_solar .* (1.0 - maximum_shade),
     diffuse_solar_flux = micro_max_shade.diffuse_solar .* (1.0 - maximum_shade),
@@ -149,7 +149,7 @@ balances = map(1:n) do i
         substrate_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
         relative_humidity      = deep_rh
         wind_speed     = deep_vel
-        k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
+        substrate_conductivity   = min_shade_habitat.substrate_conductivity[i, depth] * (1 - shade) + max_shade_habitat.substrate_conductivity[i, depth] * shade
         solar_flux   = 0.0u"W/m^2"
         direct_solar_flux   = 0.0u"W/m^2"
         diffuse_solar_flux   = 0.0u"W/m^2"
@@ -159,7 +159,7 @@ balances = map(1:n) do i
         substrate_temperature   = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
         relative_humidity      = min_shade_habitat.relative_humidity[i, height + 1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height + 1] * shade
         wind_speed     = min_shade_habitat.wind_speed[i, height + 1] * (1 - shade) + max_shade_habitat.wind_speed[i, height + 1] * shade
-        k_substrate   = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
+        substrate_conductivity   = min_shade_habitat.substrate_conductivity[i, depth] * (1 - shade) + max_shade_habitat.substrate_conductivity[i, depth] * shade
         solar_flux   = min_shade_habitat.solar_flux[i] * (1 - shade) + max_shade_habitat.solar_flux[i] * shade
         direct_solar_flux   = min_shade_habitat.direct_solar_flux[i] * (1 - shade) + max_shade_habitat.direct_solar_flux[i] * shade
         diffuse_solar_flux   = min_shade_habitat.diffuse_solar_flux[i] * (1 - shade) + max_shade_habitat.diffuse_solar_flux[i] * shade
@@ -172,7 +172,7 @@ balances = map(1:n) do i
         wind_speed,
         atmospheric_pressure,
         zenith_angle,
-        k_substrate,
+        substrate_conductivity,
         solar_flux,
         direct_solar_flux,
         diffuse_solar_flux,
@@ -199,7 +199,7 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         substrate_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
         relative_humidity = deep_rh
         wind_speed = deep_vel
-        k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
+        substrate_conductivity = min_shade_habitat.substrate_conductivity[i, depth] * (1 - shade) + max_shade_habitat.substrate_conductivity[i, depth] * shade
         solar_flux = 0.0u"W/m^2"
         direct_solar_flux = 0.0u"W/m^2"
         diffuse_solar_flux = 0.0u"W/m^2"
@@ -209,7 +209,7 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         substrate_temperature = min_shade_habitat.substrate_temperature[i, depth] * (1 - shade) + max_shade_habitat.substrate_temperature[i, depth] * shade
         relative_humidity = min_shade_habitat.relative_humidity[i, height+1] * (1 - shade) + max_shade_habitat.relative_humidity[i, height+1] * shade
         wind_speed = min_shade_habitat.wind_speed[i, height+1] * (1 - shade) + max_shade_habitat.wind_speed[i, height+1] * shade
-        k_substrate = min_shade_habitat.k_substrate[i, depth] * (1 - shade) + max_shade_habitat.k_substrate[i, depth] * shade
+        substrate_conductivity = min_shade_habitat.substrate_conductivity[i, depth] * (1 - shade) + max_shade_habitat.substrate_conductivity[i, depth] * shade
         solar_flux = min_shade_habitat.solar_flux[i] * (1 - shade) + max_shade_habitat.solar_flux[i] * shade
         direct_solar_flux = min_shade_habitat.direct_solar_flux[i] * (1 - shade) + max_shade_habitat.direct_solar_flux[i] * shade
         diffuse_solar_flux = min_shade_habitat.diffuse_solar_flux[i] * (1 - shade) + max_shade_habitat.diffuse_solar_flux[i] * shade
@@ -222,7 +222,7 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
         wind_speed,
         atmospheric_pressure,
         zenith_angle,
-        k_substrate,
+        substrate_conductivity,
         solar_flux,
         direct_solar_flux,
         diffuse_solar_flux,
@@ -435,7 +435,7 @@ balances = map(1:n) do i
         wind_speed = environment.wind_speed[i],
         atmospheric_pressure = environment.atmospheric_pressure[i],
         zenith_angle = environment.zenith_angle[i],
-        k_substrate = environment.k_substrate[i],
+        substrate_conductivity = environment.substrate_conductivity[i],
         solar_flux = environment.solar_flux[i],
         direct_solar_flux = environment.direct_solar_flux[i],
         diffuse_solar_flux = environment.diffuse_solar_flux[i],

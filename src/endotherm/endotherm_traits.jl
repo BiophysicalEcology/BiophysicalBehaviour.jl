@@ -58,7 +58,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 
 # Fields
 - `control::C`: Control strategy (RuleBasedSequentialControl, PDEControl, etc.)
-- `minimum_metabolic_flux_ref::Q`: Reference minimum metabolic rate
+- `minimum_metabolic_heat_flow_ref::Q`: Reference minimum metabolic rate
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
 - `shape_coefficient_b::SteppedParameter`: Body shape adjustment limits
 - `flesh_conductivity::SteppedParameter`: Tissue conductivity limits (vasodilation)
@@ -68,7 +68,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
-    minimum_metabolic_flux_ref::Q
+    minimum_metabolic_heat_flow_ref::Q
     insulation::I
     shape_coefficient_b::Sh
     flesh_conductivity::K

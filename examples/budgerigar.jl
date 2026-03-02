@@ -39,8 +39,8 @@ insulation_pars = example_insulation_pars(;
                     insulation_reflectance_ventral=0.351,
                     )
 radiation_pars = example_radiation_pars()
-metabolic_flux = metabolic_rate(McKechnieWolf(), shape_pars.mass)
-metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, metabolic_flux)
+metabolic_heat_flow = metabolic_rate(McKechnieWolf(), shape_pars.mass)
+metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, metabolic_heat_flow)
 respiration_pars = example_respiration_pars(; oxygen_extraction_efficiency=0.25, exhaled_temperature_offset=5.0u"K")
 evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
 
@@ -73,8 +73,8 @@ environment_pars = example_environment_pars()
 # initial conditions
 skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
 insulation_temperature = environment_vars.air_temperature
-minimum_metabolic_flux = metabolism_pars.metabolic_flux
-generated_flux = 0.0u"W"
+minimum_metabolic_heat_flow = metabolism_pars.metabolic_heat_flow
+generated_heat_flow = 0.0u"W"
 
 # Thermoregulation limits
 core_temperature_ref = metabolism_pars.core_temperature
@@ -107,7 +107,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             tolerance=0.005,
             max_iterations=1000,
         ),
-        minimum_metabolic_flux_ref=minimum_metabolic_flux,
+        minimum_metabolic_heat_flow_ref=minimum_metabolic_heat_flow,
         insulation=InsulationLimits(;
             dorsal=SteppedParameter(;
                 current=insulation_pars.dorsal.depth,
@@ -173,14 +173,14 @@ environment = (; environment_pars, environment_vars)
 endotherm_out = thermoregulate(
     organism,
     environment,
-    generated_flux,
+    generated_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
 thermoregulation = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
-energy_fluxes = endotherm_out.energy_fluxes
-mass_fluxes = endotherm_out.mass_fluxes
+energy_flows = endotherm_out.energy_flows
+mass_flows = endotherm_out.mass_flows
 
 # now run across all temperatures
 
@@ -203,7 +203,7 @@ for (air_temp, rel_humidity, q10) in zip(
         wind_speed=0.1u"m/s",
         atmospheric_pressure=101325.0u"Pa",
         zenith_angle=20.0u"°",
-        k_substrate=2.79u"W/m/K",
+        substrate_conductivity=2.79u"W/m/K",
         global_radiation=0.0u"W/m^2",
         diffuse_fraction=0,
         shade=0,
@@ -214,7 +214,7 @@ for (air_temp, rel_humidity, q10) in zip(
     # --- Metabolism (Q10 changes here) ---
     metabolism_pars = example_metabolism_pars(
         core_temperature = (38.0 + 273.15)u"K",
-        metabolic_flux = minimum_metabolic_flux,
+        metabolic_heat_flow = minimum_metabolic_heat_flow,
         q10 = q10,
     )
 
@@ -224,27 +224,27 @@ for (air_temp, rel_humidity, q10) in zip(
     #--- Initial conditions (reset every run!) ---
     skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
     insulation_temperature = environment_vars.air_temperature
-    generated_flux = 0.0u"W"
+    generated_heat_flow = 0.0u"W"
 
     # --- Thermoregulation ---
     endotherm_out = thermoregulate(
         organism,
         environment,
-        generated_flux,
+        generated_heat_flow,
         skin_temperature,
         insulation_temperature,
     )
 
     tr = endotherm_out.thermoregulation
-    ef = endotherm_out.energy_fluxes
-    mf = endotherm_out.mass_fluxes
+    ef = endotherm_out.energy_flows
+    mf = endotherm_out.mass_flows
 
     push!(results, (
         air_temperature = air_temp,
         relative_humidity = rel_humidity,
         q10 = q10,
 
-        generated_flux = ef.generated_flux,
+        generated_heat_flow = ef.generated_heat_flow,
         core_temperature = tr.core_temperature,
         skin_temperature_dorsal = tr.skin_temperature_dorsal,
         skin_temperature_ventral = tr.skin_temperature_ventral,
@@ -254,9 +254,9 @@ for (air_temp, rel_humidity, q10) in zip(
         pant = tr.pant,
         skin_wetness = tr.skin_wetness,
 
-        V_air = mf.V_air,
+        V_air = mf.air_flow,
         H2O_total = mf.m_evap,
-        H2O_resp = mf.m_resp,
+        H2O_resp = mf.respiration_mass,
         H2O_cut = mf.m_sweat,
     ))
 end
@@ -269,7 +269,7 @@ default(guidefontsize=8, titlefontsize=10)
 plot_NicheMapR_output = false
 
 p1 = plot(
-    u"°C".(air_temperatures), predicted.generated_flux,
+    u"°C".(air_temperatures), predicted.generated_heat_flow,
     lw = 2,
     xlabel = "air temperature",
     title = "metabolic rate",

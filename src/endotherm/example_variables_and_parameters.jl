@@ -4,7 +4,7 @@ function example_environment_vars(;
     wind_speed=0.1u"m/s",
     atmospheric_pressure=101325.0u"Pa",
     zenith_angle=20.0u"°",
-    k_substrate=2.79u"W/m/K",
+    substrate_conductivity=2.79u"W/m/K",
     global_radiation=0.0u"W/m^2",
     diffuse_fraction=0.0,
     shade=0,
@@ -21,7 +21,7 @@ function example_environment_vars(;
         wind_speed,
         atmospheric_pressure,
         zenith_angle,
-        k_substrate,
+        substrate_conductivity,
         global_radiation,
         diffuse_fraction,
         shade,
@@ -152,13 +152,13 @@ end
 
 function example_metabolism_pars(;
     core_temperature=u"K"((37.0)u"°C"),
-    metabolic_flux=77.61842u"W",
+    metabolic_heat_flow=77.61842u"W",
     q10=2.0,
     model=Kleiber(),
 )
     MetabolismParameters(;
         core_temperature,
-        metabolic_flux,
+        metabolic_heat_flow,
         q10,
         model,
     )
@@ -209,12 +209,12 @@ end
 
 function example_metabolic_rate_options(;
     respire=true,
-    simulsol_tolerance=1e-3u"K",
+    temperature_tolerance=1e-3u"K",
     resp_tolerance=1e-5,
 )
     SolveMetabolicRateOptions(;
         respire,
-        simulsol_tolerance,
+        temperature_tolerance,
         resp_tolerance,
     )
 end
@@ -230,7 +230,7 @@ function example_thermoregulation_limits(;
     tolerance=0.005,
     max_iterations=1000,
     # Metabolic reference
-    minimum_metabolic_flux_ref=77.61842u"W",
+    minimum_metabolic_heat_flow_ref=77.61842u"W",
     # Insulation (piloerection)
     insulation_depth_dorsal=2e-03u"m",
     insulation_depth_ventral=2e-03u"m",
@@ -322,7 +322,7 @@ function example_thermoregulation_limits(;
 
     ThermoregulationLimits(;
         control,
-        minimum_metabolic_flux_ref,
+        minimum_metabolic_heat_flow_ref,
         insulation,
         shape_coefficient_b=shape_coefficient_b_param,
         flesh_conductivity=flesh_conductivity_param,

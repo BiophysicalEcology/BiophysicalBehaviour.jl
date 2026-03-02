@@ -50,7 +50,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         tolerance=0.005,
         max_iterations=200,
     ),
-    minimum_metabolic_flux_ref=metabolism_pars.metabolic_flux,
+    minimum_metabolic_heat_flow_ref=metabolism_pars.metabolic_heat_flow,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
             current=insulation_pars.dorsal.depth,
@@ -114,16 +114,16 @@ environment = (; environment_pars, environment_vars)
 # initial conditions
 skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
 insulation_temperature = environment_vars.air_temperature
-generated_flux = 0.0u"W"
+generated_heat_flow = 0.0u"W"
 
 endotherm_out = thermoregulate(
     organism,
     environment,
-    generated_flux,
+    generated_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
 thermoregulation = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
-energy_fluxes = endotherm_out.energy_fluxes
-mass_fluxes = endotherm_out.mass_fluxes
+energy_flows = endotherm_out.energy_flows
+mass_flows = endotherm_out.mass_flows
