@@ -36,16 +36,16 @@ end
 Limits for panting behavior with associated metabolic costs.
 
 # Fields
-- `pant::SteppedParameter{P,S}`: Panting rate limits
+- `panting_rate::SteppedParameter{P,S}`: Panting rate limits
 - `cost::C`: Current panting cost (W)
 - `multiplier::M`: Metabolic cost multiplier at max panting
-- `T_core_ref::T`: Reference core temperature for Q10 calculation
+- `core_temperature_ref::T`: Reference core temperature for Q10 calculation
 """
 Base.@kwdef struct PantingLimits{P,S,C,M,T}
-    pant::SteppedParameter{P,S}
+    panting_rate::SteppedParameter{P,S}
     cost::C = 0.0u"W"
     multiplier::M = 1.05
-    T_core_ref::T
+    core_temperature_ref::T
 end
 
 """
@@ -58,21 +58,21 @@ tissue conductivity, core temperature, panting, and skin wetness.
 
 # Fields
 - `control::C`: Control strategy (RuleBasedSequentialControl, PDEControl, etc.)
-- `Q_minimum_ref::Q`: Reference minimum metabolic rate
+- `minimum_metabolic_heat_flow_ref::Q`: Reference minimum metabolic rate
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
-- `shape_b::SteppedParameter`: Body shape adjustment limits
-- `k_flesh::SteppedParameter`: Tissue conductivity limits (vasodilation)
-- `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
+- `shape_coefficient_b::SteppedParameter`: Body shape adjustment limits
+- `flesh_conductivity::SteppedParameter`: Tissue conductivity limits (vasodilation)
+- `core_temperature::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating limits
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
-    Q_minimum_ref::Q
+    minimum_metabolic_heat_flow_ref::Q
     insulation::I
-    shape_b::Sh
-    k_flesh::K
-    T_core::Tc
+    shape_coefficient_b::Sh
+    flesh_conductivity::K
+    core_temperature::Tc
     panting::P
     skin_wetness::Sw
 end

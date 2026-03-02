@@ -25,7 +25,7 @@ simultaneous_sweat(::CorePantingSweatingFirst) = true
 # =============================================================================
 
 """
-    thermoregulate(organism, environment, Q_gen, T_skin, T_insulation)
+    thermoregulate(organism, environment, generated_heat_flow, skin_temperature, insulation_temperature)
 
 Run the thermoregulation loop to find heat balance.
 
@@ -40,22 +40,22 @@ Returns the result from `solve_metabolic_rate`.
 function thermoregulate(
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     thermoregulate(
         thermal_strategy(organism),
         organism,
         environment,
-        Q_gen,
-        T_skin,
-        T_insulation,
+        generated_heat_flow,
+        skin_temperature,
+        insulation_temperature,
     )
 end
 
 """
-    thermoregulate(::Endotherm, organism, environment, Q_gen, T_skin, T_insulation)
+    thermoregulate(::Endotherm, organism, environment, generated_heat_flow, skin_temperature, insulation_temperature)
 
 Run the endotherm thermoregulation loop to find heat balance.
 
@@ -65,23 +65,23 @@ function thermoregulate(
     ::Endotherm,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     thermoregulate(
         Endotherm(),
         control_strategy(organism),
         organism,
         environment,
-        Q_gen,
-        T_skin,
-        T_insulation,
+        generated_heat_flow,
+        skin_temperature,
+        insulation_temperature,
     )
 end
 
 """
-    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, Q_gen, T_skin, T_insulation)
+    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, generated_heat_flow, skin_temperature, insulation_temperature)
 
 Run the endotherm thermoregulation loop using rule-based sequential control.
 
@@ -100,9 +100,9 @@ function thermoregulate(
     ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     # Extract thermoregulation limits from organism's behavioral traits
     limits = thermoregulation(organism)
@@ -113,9 +113,9 @@ function thermoregulate(
 
     # Extract current limits (will be updated during loop)
     insulation_limits = limits.insulation
-    shape_b_limits = limits.shape_b
-    k_flesh_limits = limits.k_flesh
-    T_core_limits = limits.T_core
+    shape_coefficient_b_limits = limits.shape_coefficient_b
+    flesh_conductivity_limits = limits.flesh_conductivity
+    core_temperature_limits = limits.core_temperature
     panting_limits = limits.panting
     skin_wetness_limits = limits.skin_wetness
 
@@ -134,18 +134,18 @@ function thermoregulate(
         insulation_limits = @set insulation_limits.ventral.step = limits.insulation.ventral.step
     end
 
-    endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
-    T_skin = endotherm_out.thermoregulation.T_skin
-    T_insulation = endotherm_out.thermoregulation.T_insulation
-    Q_gen = endotherm_out.energy_fluxes.Q_gen
+    endotherm_out = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
+    skin_temperature = endotherm_out.thermoregulation.skin_temperature
+    insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
+    generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow
 
-    # Current Q_minimum (may be modified by panting/hyperthermia)
-    Q_minimum = limits.Q_minimum_ref
+    # Current minimum_metabolic_heat_flow (may be modified by panting/hyperthermia)
+    minimum_metabolic_heat_flow = limits.minimum_metabolic_heat_flow_ref
 
     iteration = 0
 
     # Start of thermoregulation loop
-    while Q_gen < Q_minimum * (1 - tolerance)
+    while generated_heat_flow < minimum_metabolic_heat_flow * (1 - tolerance)
         iteration += 1
         if iteration > max_iterations
             @warn "max_iterations exceeded"
@@ -163,25 +163,25 @@ function thermoregulate(
         # -------------------------------------------------------------------------
         # 2. Uncurl (increase surface area)
         # -------------------------------------------------------------------------
-        elseif shape_b_limits.current < shape_b_limits.max
-            shape_b_limits, organism = uncurl(organism, shape_b_limits)
+        elseif shape_coefficient_b_limits.current < shape_coefficient_b_limits.max
+            shape_coefficient_b_limits, organism = uncurl(organism, shape_coefficient_b_limits)
 
         # -------------------------------------------------------------------------
-        # 3. Vasodilate (increase k_flesh)
+        # 3. Vasodilate (increase flesh_conductivity)
         # -------------------------------------------------------------------------
-        elseif k_flesh_limits.current < k_flesh_limits.max
-            k_flesh_limits, organism = vasodilate(organism, k_flesh_limits)
+        elseif flesh_conductivity_limits.current < flesh_conductivity_limits.max
+            flesh_conductivity_limits, organism = vasodilate(organism, flesh_conductivity_limits)
 
         # -------------------------------------------------------------------------
         # 4. Allow core temperature to rise (and possibly pant and sweat in parallel)
         # -------------------------------------------------------------------------
-        elseif T_core_limits.current < T_core_limits.max
-            T_core_limits, Q_minimum, organism = hyperthermia(
-                organism, T_core_limits, panting_limits.cost
+        elseif core_temperature_limits.current < core_temperature_limits.max
+            core_temperature_limits, minimum_metabolic_heat_flow, organism = hyperthermia(
+                organism, core_temperature_limits, panting_limits.cost
             )
-            if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
+            if simultaneous_pant(mode) && panting_limits.panting_rate.current < panting_limits.panting_rate.max
                 # Pant in parallel to allowing core temperature to rise
-                panting_limits, Q_minimum, organism = pant(organism, panting_limits)
+                panting_limits, minimum_metabolic_heat_flow, organism = pant(organism, panting_limits)
             end
             if simultaneous_sweat(mode)
                 # Sweat in parallel to allowing core temperature to rise and panting
@@ -196,8 +196,8 @@ function thermoregulate(
         # -------------------------------------------------------------------------
         # 5. Pant to dump heat evaporatively (and possibly sweat in parallel)
         # -------------------------------------------------------------------------
-        elseif panting_limits.pant.current < panting_limits.pant.max
-            panting_limits, Q_minimum, organism = pant(organism, panting_limits)
+        elseif panting_limits.panting_rate.current < panting_limits.panting_rate.max
+            panting_limits, minimum_metabolic_heat_flow, organism = pant(organism, panting_limits)
             if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
@@ -219,17 +219,17 @@ function thermoregulate(
             skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
         end
 
-        endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
-        T_skin = endotherm_out.thermoregulation.T_skin
-        T_insulation = endotherm_out.thermoregulation.T_insulation
-        Q_gen = endotherm_out.energy_fluxes.Q_gen
+        endotherm_out = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
+        skin_temperature = endotherm_out.thermoregulation.skin_temperature
+        insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
+        generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow
     end
 
     return endotherm_out
 end
 
 """
-    thermoregulate(::Endotherm, ::PDEControl, organism, environment, Q_gen, T_skin, T_insulation)
+    thermoregulate(::Endotherm, ::PDEControl, organism, environment, generated_heat_flow, skin_temperature, insulation_temperature)
 
 Run the endotherm thermoregulation loop using PDE-based control.
 
@@ -241,9 +241,9 @@ function thermoregulate(
     ::PDEControl,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     error("PDEControl thermoregulation not yet implemented")
 end
@@ -253,9 +253,9 @@ function thermoregulate(
     ::Ectotherm,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     error("Ectotherm thermoregulation not yet implemented")
 end
@@ -264,9 +264,9 @@ function thermoregulate(
     ::Heterotherm,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
     error("Heterotherm thermoregulation not yet implemented")
 end

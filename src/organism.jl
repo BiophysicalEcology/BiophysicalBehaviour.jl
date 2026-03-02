@@ -66,7 +66,7 @@ metabolic cost and effectiveness.
 
 # Fields
 - `mode::M`: Thermoregulation mode (`Core`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`)
-- `tolerance::T`: Fraction below Q_minimum allowed
+- `tolerance::T`: Fraction below minimum_metabolic_flux allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
 Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
@@ -240,20 +240,20 @@ end
 # =============================================================================
 
 # Forward all physiology accessor methods to the physiology field
-HeatExchange.shapepars(t::OrganismTraits) = HeatExchange.shapepars(t.physiology)
-HeatExchange.insulationpars(t::OrganismTraits) = HeatExchange.insulationpars(t.physiology)
-function HeatExchange.conductionpars_external(t::OrganismTraits)
-    HeatExchange.conductionpars_external(t.physiology)
+HeatExchange.shape_pars(t::OrganismTraits) = HeatExchange.shape_pars(t.physiology)
+HeatExchange.insulation_pars(t::OrganismTraits) = HeatExchange.insulation_pars(t.physiology)
+function HeatExchange.conduction_pars_external(t::OrganismTraits)
+    HeatExchange.conduction_pars_external(t.physiology)
 end
-function HeatExchange.conductionpars_internal(t::OrganismTraits)
-    HeatExchange.conductionpars_internal(t.physiology)
+function HeatExchange.conduction_pars_internal(t::OrganismTraits)
+    HeatExchange.conduction_pars_internal(t.physiology)
 end
-HeatExchange.convectionpars(t::OrganismTraits) = HeatExchange.convectionpars(t.physiology)
-HeatExchange.radiationpars(t::OrganismTraits) = HeatExchange.radiationpars(t.physiology)
-HeatExchange.evaporationpars(t::OrganismTraits) = HeatExchange.evaporationpars(t.physiology)
-HeatExchange.hydraulicpars(t::OrganismTraits) = HeatExchange.hydraulicpars(t.physiology)
-HeatExchange.respirationpars(t::OrganismTraits) = HeatExchange.respirationpars(t.physiology)
-HeatExchange.metabolismpars(t::OrganismTraits) = HeatExchange.metabolismpars(t.physiology)
+HeatExchange.convection_pars(t::OrganismTraits) = HeatExchange.convection_pars(t.physiology)
+HeatExchange.radiation_pars(t::OrganismTraits) = HeatExchange.radiation_pars(t.physiology)
+HeatExchange.evaporation_pars(t::OrganismTraits) = HeatExchange.evaporation_pars(t.physiology)
+HeatExchange.hydraulic_pars(t::OrganismTraits) = HeatExchange.hydraulic_pars(t.physiology)
+HeatExchange.respiration_pars(t::OrganismTraits) = HeatExchange.respiration_pars(t.physiology)
+HeatExchange.metabolism_pars(t::OrganismTraits) = HeatExchange.metabolism_pars(t.physiology)
 HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.physiology)
 
 # =============================================================================

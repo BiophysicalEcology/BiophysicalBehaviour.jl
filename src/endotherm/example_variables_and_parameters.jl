@@ -1,27 +1,27 @@
 function example_environment_vars(;
-    T_air=u"K"((20.0)u"°C"),
-    rh=0.05,
+    air_temperature=u"K"((20.0)u"°C"),
+    relative_humidity=0.05,
     wind_speed=0.1u"m/s",
-    P_atmos=101325.0u"Pa",
+    atmospheric_pressure=101325.0u"Pa",
     zenith_angle=20.0u"°",
-    k_substrate=2.79u"W/m/K",
+    substrate_conductivity=2.79u"W/m/K",
     global_radiation=0.0u"W/m^2",
     diffuse_fraction=0.0,
     shade=0,
 )
     EnvironmentalVars(;
-        T_air,
-        T_air_reference=T_air,
-        T_sky=T_air,
-        T_ground=T_air,
-        T_substrate=T_air,
-        T_bush=T_air,
-        T_vegetation=T_air,
-        rh,
+        air_temperature,
+        reference_air_temperature=air_temperature,
+        sky_temperature=air_temperature,
+        ground_temperature=air_temperature,
+        substrate_temperature=air_temperature,
+        bush_temperature=air_temperature,
+        vegetation_temperature=air_temperature,
+        relative_humidity,
         wind_speed,
-        P_atmos,
+        atmospheric_pressure,
         zenith_angle,
-        k_substrate,
+        substrate_conductivity,
         global_radiation,
         diffuse_fraction,
         shade,
@@ -29,21 +29,21 @@ function example_environment_vars(;
 end
 
 function example_environment_pars(;
-    α_ground=0.8,
-    ϵ_ground=1.0,
-    ϵ_sky=1.0,
+    ground_albedo=0.8,
+    ground_emissivity=1.0,
+    sky_emissivity=1.0,
     elevation=0.0u"m",
     fluid=0,
-    gasfrac=FluidProperties.GasFractions(),
+    gas_fractions=FluidProperties.GasFractions(),
     convection_enhancement=1.0,
 )
     EnvironmentalPars(;
-        α_ground,
-        ϵ_ground,
-        ϵ_sky,
+        ground_albedo,
+        ground_emissivity,
+        sky_emissivity,
         elevation,
         fluid,
-        gasfrac,
+        gas_fractions,
         convection_enhancement,
     )
 end
@@ -51,10 +51,10 @@ end
 function example_ellipsoid_shape_pars(;
     mass=65.0u"kg",
     ρ_flesh=1000.0u"kg/m^3",
-    shape_b=1.1,
-    shape_c=1.1,
+    shape_coefficient_b=1.1,
+    shape_coefficient_c=1.1,
 )
-    Ellipsoid(mass, ρ_flesh, shape_b, shape_c)
+    Ellipsoid(mass, ρ_flesh, shape_coefficient_b, shape_coefficient_c)
 end
 
 # Alias for convenience
@@ -70,37 +70,37 @@ end
 
 function example_conduction_pars_internal(;
     fat_fraction=0.0,
-    k_flesh=0.9u"W/m/K",
-    k_fat=0.23u"W/m/K",
-    ρ_fat=901.0u"kg/m^3",
+    flesh_conductivity=0.9u"W/m/K",
+    fat_conductivity=0.23u"W/m/K",
+    fat_density=901.0u"kg/m^3",
 )
     InternalConductionParameters(;
         fat_fraction,
-        k_flesh,
-        k_fat,
-        ρ_fat,
+        flesh_conductivity,
+        fat_conductivity,
+        fat_density,
     )
 end
 
 function example_radiation_pars(;
-    α_body_dorsal=0.8,
-    α_body_ventral=0.8,
-    ϵ_body_dorsal=0.99,
-    ϵ_body_ventral=0.99,
-    F_sky=0.5,
-    F_ground=0.5,
-    F_bush=0.0,
+    body_absorptivity_dorsal=0.8,
+    body_absorptivity_ventral=0.8,
+    body_emissivity_dorsal=0.99,
+    body_emissivity_ventral=0.99,
+    sky_view_factor=0.5,
+    ground_view_factor=0.5,
+    bush_view_factor=0.0,
     ventral_fraction=0.5,
     solar_orientation=Intermediate(),
 )
     RadiationParameters(;
-        α_body_dorsal,
-        α_body_ventral,
-        ϵ_body_dorsal,
-        ϵ_body_ventral,
-        F_sky,
-        F_ground,
-        F_bush,
+        body_absorptivity_dorsal,
+        body_absorptivity_ventral,
+        body_emissivity_dorsal,
+        body_emissivity_ventral,
+        sky_view_factor,
+        ground_view_factor,
+        bush_view_factor,
         ventral_fraction,
         solar_orientation,
     )
@@ -135,79 +135,86 @@ function example_hydraulic_pars(;
 end
 
 function example_respiration_pars(;
-    fO2_extract=0.2,
-    pant=1.0,
-    rq=0.8,
-    Δ_breath=0.0u"K",
-    rh_exit=1.0,
+    oxygen_extraction_efficiency=0.2,
+    panting_rate=1.0,
+    respiratory_quotient=0.8,
+    exhaled_temperature_offset=0.0u"K",
+    exhaled_relative_humidity=1.0,
 )
     RespirationParameters(;
-        fO2_extract,
-        pant,
-        rq,
-        Δ_breath,
-        rh_exit,
+        oxygen_extraction_efficiency,
+        pant=panting_rate,
+        respiratory_quotient,
+        exhaled_temperature_offset,
+        exhaled_relative_humidity,
     )
 end
 
 function example_metabolism_pars(;
-    T_core=u"K"((37.0)u"°C"),
-    Q_metabolism=77.61842u"W",
+    core_temperature=u"K"((37.0)u"°C"),
+    metabolic_heat_flow=77.61842u"W",
     q10=2.0,
     model=Kleiber(),
 )
     MetabolismParameters(;
-        T_core,
-        Q_metabolism,
+        core_temperature,
+        metabolic_heat_flow,
         q10,
         model,
     )
 end
 
 function example_insulation_pars(;
-    insulation_conductivity_dorsal=nothing,
-    insulation_conductivity_ventral=nothing,
+    # Dorsal fibre properties
     fibre_diameter_dorsal=30e-06u"m",
-    fibre_diameter_ventral=30e-06u"m",
     fibre_length_dorsal=23.9e-03u"m",
-    fibre_length_ventral=23.9e-03u"m",
-    insulation_depth_dorsal=2e-03u"m",
-    insulation_depth_ventral=2e-03u"m",
     fibre_density_dorsal=3000e+04u"1/m^2",
-    fibre_density_ventral=3000e+04u"1/m^2",
+    insulation_depth_dorsal=2e-03u"m",
     insulation_reflectance_dorsal=0.2,
+    fibre_conductivity_dorsal=0.209u"W/m/K",
+    # Ventral fibre properties
+    fibre_diameter_ventral=30e-06u"m",
+    fibre_length_ventral=23.9e-03u"m",
+    fibre_density_ventral=3000e+04u"1/m^2",
+    insulation_depth_ventral=2e-03u"m",
     insulation_reflectance_ventral=0.2,
+    fibre_conductivity_ventral=0.209u"W/m/K",
+    # Global insulation parameters
     insulation_depth_compressed=2e-03u"m",
-    fibre_conductivity=0.209u"W/m/K",
     longwave_depth_fraction=1.0,
 )
+    dorsal = HeatExchange.FibreProperties(;
+        diameter=fibre_diameter_dorsal,
+        length=fibre_length_dorsal,
+        density=fibre_density_dorsal,
+        depth=insulation_depth_dorsal,
+        reflectance=insulation_reflectance_dorsal,
+        conductivity=fibre_conductivity_dorsal,
+    )
+    ventral = HeatExchange.FibreProperties(;
+        diameter=fibre_diameter_ventral,
+        length=fibre_length_ventral,
+        density=fibre_density_ventral,
+        depth=insulation_depth_ventral,
+        reflectance=insulation_reflectance_ventral,
+        conductivity=fibre_conductivity_ventral,
+    )
     InsulationParameters(;
-        insulation_conductivity_dorsal,
-        insulation_conductivity_ventral,
-        fibre_diameter_dorsal,
-        fibre_diameter_ventral,
-        fibre_length_dorsal,
-        fibre_length_ventral,
-        insulation_depth_dorsal,
-        insulation_depth_ventral,
-        fibre_density_dorsal,
-        fibre_density_ventral,
-        insulation_reflectance_dorsal,
-        insulation_reflectance_ventral,
-        insulation_depth_compressed,
-        fibre_conductivity,
+        dorsal,
+        ventral,
+        depth_compressed=insulation_depth_compressed,
         longwave_depth_fraction,
     )
 end
 
 function example_metabolic_rate_options(;
     respire=true,
-    simulsol_tolerance=1e-3u"K",
+    temperature_tolerance=1e-3u"K",
     resp_tolerance=1e-5,
 )
     SolveMetabolicRateOptions(;
         respire,
-        simulsol_tolerance,
+        temperature_tolerance,
         resp_tolerance,
     )
 end
@@ -223,7 +230,7 @@ function example_thermoregulation_limits(;
     tolerance=0.005,
     max_iterations=1000,
     # Metabolic reference
-    Q_minimum_ref=77.61842u"W",
+    minimum_metabolic_heat_flow_ref=77.61842u"W",
     # Insulation (piloerection)
     insulation_depth_dorsal=2e-03u"m",
     insulation_depth_ventral=2e-03u"m",
@@ -233,24 +240,24 @@ function example_thermoregulation_limits(;
     insulation_depth_ventral_ref=2e-03u"m",
     insulation_step=0.0,
     # Shape (uncurl)
-    shape_b=1.1,
-    shape_b_step=0.1,
-    shape_b_max=5.0,
+    shape_coefficient_b=1.1,
+    shape_coefficient_b_step=0.1,
+    shape_coefficient_b_max=5.0,
     # Tissue conductivity (vasodilation)
-    k_flesh=0.9u"W/m/K",
-    k_flesh_step=0.1u"W/m/K",
-    k_flesh_max=2.8u"W/m/K",
+    flesh_conductivity=0.9u"W/m/K",
+    flesh_conductivity_step=0.1u"W/m/K",
+    flesh_conductivity_max=2.8u"W/m/K",
     # Core temperature (hyperthermia)
-    T_core=(37.0 + 273.15)u"K",
-    T_core_step=0.1u"K",
-    T_core_max=(39.0 + 273.15)u"K",
-    T_core_ref=(37.0 + 273.15)u"K",
+    core_temperature=(37.0 + 273.15)u"K",
+    core_temperature_step=0.1u"K",
+    core_temperature_max=(39.0 + 273.15)u"K",
+    core_temperature_ref=(37.0 + 273.15)u"K",
     # Panting
-    pant_current=1.0,
-    pant_step=0.1,
-    pant_max=10.0,
-    pant_cost=0.0u"W",
-    pant_multiplier=1.05,
+    panting_rate_current=1.0,
+    panting_rate_step=0.1,
+    panting_rate_max=10.0,
+    panting_cost=0.0u"W",
+    panting_multiplier=1.05,
     # Sweating
     skin_wetness=0.005,
     skin_wetness_step=0.001,
@@ -277,34 +284,34 @@ function example_thermoregulation_limits(;
         ),
     )
 
-    shape_b_param = SteppedParameter(;
-        current=shape_b,
-        max=shape_b_max,
-        step=shape_b_step,
+    shape_coefficient_b_param = SteppedParameter(;
+        current=shape_coefficient_b,
+        max=shape_coefficient_b_max,
+        step=shape_coefficient_b_step,
     )
 
-    k_flesh_param = SteppedParameter(;
-        current=k_flesh,
-        max=k_flesh_max,
-        step=k_flesh_step,
+    flesh_conductivity_param = SteppedParameter(;
+        current=flesh_conductivity,
+        max=flesh_conductivity_max,
+        step=flesh_conductivity_step,
     )
 
-    T_core_param = SteppedParameter(;
-        current=T_core,
-        reference=T_core_ref,
-        max=T_core_max,
-        step=T_core_step,
+    core_temperature_param = SteppedParameter(;
+        current=core_temperature,
+        reference=core_temperature_ref,
+        max=core_temperature_max,
+        step=core_temperature_step,
     )
 
     panting = PantingLimits(;
-        pant=SteppedParameter(;
-            current=pant_current,
-            max=pant_max,
-            step=pant_step,
+        panting_rate=SteppedParameter(;
+            current=panting_rate_current,
+            max=panting_rate_max,
+            step=panting_rate_step,
         ),
-        cost=pant_cost,
-        multiplier=pant_multiplier,
-        T_core_ref=T_core_ref,
+        cost=panting_cost,
+        multiplier=panting_multiplier,
+        core_temperature_ref=core_temperature_ref,
     )
 
     skin_wetness_param = SteppedParameter(;
@@ -315,11 +322,11 @@ function example_thermoregulation_limits(;
 
     ThermoregulationLimits(;
         control,
-        Q_minimum_ref,
+        minimum_metabolic_heat_flow_ref,
         insulation,
-        shape_b=shape_b_param,
-        k_flesh=k_flesh_param,
-        T_core=T_core_param,
+        shape_coefficient_b=shape_coefficient_b_param,
+        flesh_conductivity=flesh_conductivity_param,
+        core_temperature=core_temperature_param,
         panting,
         skin_wetness=skin_wetness_param,
     )

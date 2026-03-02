@@ -1,7 +1,7 @@
 name = "BiophysicalBehaviour"
 uuid = "17159459-d6a3-4a3d-a4c5-9872d9e70704"
-authors = ["Michael Kearney and Rafael Schouten"]
 version = "0.1.0"
+authors = ["Michael Kearney and Rafael Schouten"]
 
 [deps]
 BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
@@ -21,8 +21,8 @@ HeatExchange = {rev = "main", url = "https://github.com/BiophysicalEcology/HeatE
 [compat]
 Aqua = "0.8"
 BiophysicalGeometry = "0.1"
-ConstructionBase = "1.6"
 CSV = "0.10"
+ConstructionBase = "1.6"
 DataFrames = "1"
 FluidProperties = "0.1"
 HeatExchange = "0.1"

@@ -6,8 +6,8 @@ Reduce insulation depth toward reference values (flatten fur/feathers).
 Returns updated `InsulationLimits` and `organism`.
 """
 function piloerect(organism::Organism, insulation_limits::InsulationLimits)
-    insulation_pars = HeatExchange.insulationpars(organism)
-    shape_pars = HeatExchange.shapepars(organism)
+    insulation_pars = HeatExchange.insulation_pars(organism)
+    shape_pars = HeatExchange.shape_pars(organism)
     fibre_length_dorsal = insulation_pars.dorsal.length
     fibre_length_ventral = insulation_pars.ventral.length
 
@@ -26,7 +26,7 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
     insulation_limits = @set insulation_limits.ventral.current = insulation_depth_ventral
 
     # Compute mean insulation properties
-    ventral_frac = HeatExchange.radiationpars(organism).ventral_fraction
+    ventral_frac = HeatExchange.radiation_pars(organism).ventral_fraction
     mean_insulation_depth = insulation_depth_dorsal * (1 - ventral_frac) +
                             insulation_depth_ventral * ventral_frac
     mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - ventral_frac) +
@@ -48,69 +48,69 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
 end
 
 """
-    uncurl(organism::Organism, shape_b_limits::SteppedParameter)
+    uncurl(organism::Organism, shape_coefficient_b_limits::SteppedParameter)
 
 Increase body shape parameter (uncurl from ball to elongated).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function uncurl(organism::Organism, shape_b_limits::SteppedParameter)
-    shape_pars = HeatExchange.shapepars(organism)
+function uncurl(organism::Organism, shape_coefficient_b_limits::SteppedParameter)
+    shape_pars = HeatExchange.shape_pars(organism)
 
     # No meaning to uncurl a sphere
     if shape_pars isa Sphere
-        shape_b_limits = @set shape_b_limits.current = shape_b_limits.max
-        return shape_b_limits, organism
+        shape_coefficient_b_limits = @set shape_coefficient_b_limits.current = shape_coefficient_b_limits.max
+        return shape_coefficient_b_limits, organism
     end
 
-    shape_b = min(shape_b_limits.current + shape_b_limits.step, shape_b_limits.max)
-    shape_b_limits = @set shape_b_limits.current = shape_b
+    shape_coefficient_b = min(shape_coefficient_b_limits.current + shape_coefficient_b_limits.step, shape_coefficient_b_limits.max)
+    shape_coefficient_b_limits = @set shape_coefficient_b_limits.current = shape_coefficient_b
 
-    new_shape_pars = @set shape_pars.b = shape_b
+    new_shape_pars = @set shape_pars.b = shape_coefficient_b
     fat = BiophysicalGeometry.inner_insulation(organism.body.insulation)
     fur = BiophysicalGeometry.outer_insulation(organism.body.insulation)
     geometry = Body(new_shape_pars, CompositeInsulation(fur, fat))
     organism = @set organism.body = geometry
 
-    return shape_b_limits, organism
+    return shape_coefficient_b_limits, organism
 end
 
 """
-    vasodilate(organism::Organism, k_flesh_limits::SteppedParameter)
+    vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
 
 Increase tissue thermal conductivity (vasodilation).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function vasodilate(organism::Organism, k_flesh_limits::SteppedParameter)
-    k_flesh = min(k_flesh_limits.current + k_flesh_limits.step, k_flesh_limits.max)
-    k_flesh_limits = @set k_flesh_limits.current = k_flesh
+function vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
+    flesh_conductivity = min(flesh_conductivity_limits.current + flesh_conductivity_limits.step, flesh_conductivity_limits.max)
+    flesh_conductivity_limits = @set flesh_conductivity_limits.current = flesh_conductivity
 
-    organism = @set organism.traits.physiology.conduction_pars_internal.k_flesh = k_flesh
+    organism = @set organism.traits.physiology.conduction_pars_internal.flesh_conductivity = flesh_conductivity
 
-    return k_flesh_limits, organism
+    return flesh_conductivity_limits, organism
 end
 
 """
-    hyperthermia(organism::Organism, T_core_limits::SteppedParameter, pant_cost)
+    hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
 
 Allow core temperature to rise (hyperthermia).
 
-Returns updated `SteppedParameter`, new Q_minimum, and `organism`.
+Returns updated `SteppedParameter`, new minimum_metabolic_heat_flow, and `organism`.
 """
-function hyperthermia(organism::Organism, T_core_limits::SteppedParameter, pant_cost)
-    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
-    T_core = min(T_core_limits.current + T_core_limits.step, T_core_limits.max)
-    T_core_limits = @set T_core_limits.current = T_core
+function hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+    minimum_metabolic_heat_flow_ref = thermoregulation(organism).minimum_metabolic_heat_flow_ref
+    core_temperature = min(core_temperature_limits.current + core_temperature_limits.step, core_temperature_limits.max)
+    core_temperature_limits = @set core_temperature_limits.current = core_temperature
 
-    metabolism = HeatExchange.metabolismpars(organism)
-    q10mult = metabolism.q10^((ustrip(u"K", T_core - T_core_limits.reference)) / 10)
-    Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
+    metabolism = HeatExchange.metabolism_pars(organism)
+    q10mult = metabolism.q10^((ustrip(u"K", core_temperature - core_temperature_limits.reference)) / 10)
+    minimum_metabolic_heat_flow = (minimum_metabolic_heat_flow_ref + pant_cost) * q10mult
 
-    organism = @set organism.traits.physiology.metabolism_pars.T_core = T_core
-    organism = @set organism.traits.physiology.metabolism_pars.Q_metabolism = Q_minimum
+    organism = @set organism.traits.physiology.metabolism_pars.core_temperature = core_temperature
+    organism = @set organism.traits.physiology.metabolism_pars.metabolic_heat_flow = minimum_metabolic_heat_flow
 
-    return T_core_limits, Q_minimum, organism
+    return core_temperature_limits, minimum_metabolic_heat_flow, organism
 end
 
 """
@@ -118,27 +118,27 @@ end
 
 Increase panting rate for evaporative cooling.
 
-Returns updated `PantingLimits`, new Q_minimum, and `organism`.
+Returns updated `PantingLimits`, new minimum_metabolic_heat_flow, and `organism`.
 """
 function pant(organism::Organism, panting_limits::PantingLimits)
-    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
-    pant_rate_limits = panting_limits.pant
-    pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
+    minimum_metabolic_heat_flow_ref = thermoregulation(organism).minimum_metabolic_heat_flow_ref
+    panting_rate_limits = panting_limits.panting_rate
+    panting_rate = min(panting_rate_limits.current + panting_rate_limits.step, panting_rate_limits.max)
 
-    pant_cost = ((pant_rate - 1) / (pant_rate_limits.max + 1e-6 - 1)) *
-                (panting_limits.multiplier - 1) * Q_minimum_ref
+    pant_cost = ((panting_rate - 1) / (panting_rate_limits.max + 1e-6 - 1)) *
+                (panting_limits.multiplier - 1) * minimum_metabolic_heat_flow_ref
 
-    panting_limits = @set panting_limits.pant.current = pant_rate
+    panting_limits = @set panting_limits.panting_rate.current = panting_rate
     panting_limits = @set panting_limits.cost = pant_cost
 
-    metabolism = HeatExchange.metabolismpars(organism)
-    q10mult = metabolism.q10^((ustrip(u"K", metabolism.T_core - panting_limits.T_core_ref)) / 10)
-    Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
+    metabolism = HeatExchange.metabolism_pars(organism)
+    q10mult = metabolism.q10^((ustrip(u"K", metabolism.core_temperature - panting_limits.core_temperature_ref)) / 10)
+    minimum_metabolic_heat_flow = (minimum_metabolic_heat_flow_ref + pant_cost) * q10mult
 
-    organism = @set organism.traits.physiology.metabolism_pars.Q_metabolism = Q_minimum
-    organism = @set organism.traits.physiology.respiration_pars.pant = pant_rate
+    organism = @set organism.traits.physiology.metabolism_pars.metabolic_heat_flow = minimum_metabolic_heat_flow
+    organism = @set organism.traits.physiology.respiration_pars.pant = panting_rate
 
-    return panting_limits, Q_minimum, organism
+    return panting_limits, minimum_metabolic_heat_flow, organism
 end
 
 """
