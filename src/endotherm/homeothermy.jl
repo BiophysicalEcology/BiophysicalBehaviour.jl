@@ -222,18 +222,6 @@ function thermoregulate(
     error("PDEControl thermoregulation not yet implemented")
 end
 
-# Placeholder for future implementations
-function thermoregulate(
-    ::Ectotherm,
-    organism::Organism,
-    environment::NamedTuple,
-    Q_gen,
-    T_skin,
-    T_insulation,
-)
-    error("Ectotherm thermoregulation not yet implemented")
-end
-
 function thermoregulate(
     ::Heterotherm,
     organism::Organism,

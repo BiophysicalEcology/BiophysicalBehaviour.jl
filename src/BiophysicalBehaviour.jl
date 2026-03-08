@@ -6,12 +6,15 @@ import FluidProperties
 using BiophysicalGeometry
 using HeatExchange
 using ModelParameters
+using Roots
 using Unitful
 using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
 using ConstructionBase: getproperties, setproperties
+using HeatExchange: ectotherm
+using Roots: find_zero, Bisection
 using Setfield: @set
 
 # Organism and traits
@@ -26,7 +29,14 @@ export ActivityPeriod,
     Diurnal,
     Nocturnal,
     Crepuscular,
+    CombinedActivity,
     ResponsiveActivity
+
+# Organism states
+export OrganismState,
+    Resting,
+    Basking,
+    Active
 
 # Thermal strategies
 export AbstractThermalStrategy,
@@ -46,23 +56,43 @@ export BehavioralTraits,
 # Trait accessors
 export thermal_strategy,
     behavior,
-    physiology,
+    heat_exchange,
     thermoregulation,
-    activity,
+    activity_period,
     control_strategy
 
-# Thermoregulation functions
+# Endotherm thermoregulation functions
 export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
 
 export thermoregulate
 
-# Thermoregulation limit structs
+# Thermoregulation limit structs (shared)
 export SteppedParameter,
     InsulationLimits,
     PantingLimits,
     ThermoregulationLimits
 
-# Example constructors
+# Ectotherm types
+export EctothermBehavioralLimits,
+    AvailableEnvironments
+
+# Ectotherm behaviour functions
+export is_active,
+    seek_shade,
+    avoid_shade,
+    climb,
+    descend,
+    select_depth,
+    reset_position,
+    interpolate_environment,
+    solve_body_temperature,
+    darken,
+    lighten,
+    orient_perpendicular,
+    orient_parallel,
+    press_to_ground
+
+# Example constructors – endotherm
 export example_environment_vars,
     example_environment_pars,
     example_ellipsoid_shape_pars,
@@ -81,10 +111,28 @@ export example_environment_vars,
     example_organism_traits,
     example_heat_exchange_traits
 
+# Example constructors – ectotherm
+export example_ectotherm_behavioral_limits,
+    example_ectotherm_behavioral_traits,
+    example_ectotherm_organism_traits,
+    example_ectotherm_conduction_pars_external,
+    example_ectotherm_conduction_pars_internal,
+    example_ectotherm_radiation_pars,
+    example_ectotherm_evaporation_pars,
+    example_ectotherm_respiration_pars,
+    example_ectotherm_hydraulic_pars,
+    example_ectotherm_metabolism_pars,
+    example_ectotherm_heat_exchange_traits
+
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation.jl")
 include("endotherm/homeothermy.jl")
 include("endotherm/example_variables_and_parameters.jl")
+include("ectotherm/ectotherm_traits.jl")
+include("ectotherm/thermoregulation.jl")
+include("ectotherm/ectothermy.jl")
+include("ectotherm/example_variables_and_parameters.jl")
+include("endotherm/behavioural_homeothermy.jl")
 
 end # module BiophysicalBehaviour

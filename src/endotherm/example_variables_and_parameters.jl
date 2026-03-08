@@ -165,8 +165,6 @@ function example_metabolism_pars(;
 end
 
 function example_insulation_pars(;
-    insulation_conductivity_dorsal=nothing,
-    insulation_conductivity_ventral=nothing,
     fibre_diameter_dorsal=30e-06u"m",
     fibre_diameter_ventral=30e-06u"m",
     fibre_length_dorsal=23.9e-03u"m",
@@ -182,20 +180,23 @@ function example_insulation_pars(;
     longwave_depth_fraction=1.0,
 )
     InsulationParameters(;
-        insulation_conductivity_dorsal,
-        insulation_conductivity_ventral,
-        fibre_diameter_dorsal,
-        fibre_diameter_ventral,
-        fibre_length_dorsal,
-        fibre_length_ventral,
-        insulation_depth_dorsal,
-        insulation_depth_ventral,
-        fibre_density_dorsal,
-        fibre_density_ventral,
-        insulation_reflectance_dorsal,
-        insulation_reflectance_ventral,
-        insulation_depth_compressed,
-        fibre_conductivity,
+        dorsal=FibreProperties(;
+            diameter=fibre_diameter_dorsal,
+            length=fibre_length_dorsal,
+            density=fibre_density_dorsal,
+            depth=insulation_depth_dorsal,
+            reflectance=insulation_reflectance_dorsal,
+            conductivity=fibre_conductivity,
+        ),
+        ventral=FibreProperties(;
+            diameter=fibre_diameter_ventral,
+            length=fibre_length_ventral,
+            density=fibre_density_ventral,
+            depth=insulation_depth_ventral,
+            reflectance=insulation_reflectance_ventral,
+            conductivity=fibre_conductivity,
+        ),
+        depth_compressed=insulation_depth_compressed,
         longwave_depth_fraction,
     )
 end
@@ -332,30 +333,30 @@ Create example `BehavioralTraits` with sensible defaults.
 """
 function example_behavioral_traits(;
     thermoregulation=example_thermoregulation_limits(),
-    activity=Diurnal(),
+    activity_period=Diurnal(),
 )
-    BehavioralTraits(; thermoregulation, activity)
+    BehavioralTraits(; thermoregulation, activity_period)
 end
 
 """
-    example_organism_traits(; thermal_strategy=Endotherm(), physiology=nothing, behavior=nothing, kwargs...)
+    example_organism_traits(; thermal_strategy=Endotherm(), heat_exchange=nothing, behavior=nothing, kwargs...)
 
-Create example `OrganismTraits` combining thermal strategy, physiology and behavior.
+Create example `OrganismTraits` combining thermal strategy, heat exchange traits and behavior.
 
-If `physiology` is not provided, creates a default `HeatExchangeTraits`.
+If `heat_exchange` is not provided, creates a default `HeatExchangeTraits`.
 If `behavior` is not provided, creates a default `BehavioralTraits`.
 
 Additional keyword arguments are passed to `example_heat_exchange_traits`.
 """
 function example_organism_traits(;
     thermal_strategy=Endotherm(),
-    physiology=nothing,
+    heat_exchange=nothing,
     behavior=nothing,
     kwargs...,
 )
-    phys = isnothing(physiology) ? example_heat_exchange_traits(; kwargs...) : physiology
+    he = isnothing(heat_exchange) ? example_heat_exchange_traits(; kwargs...) : heat_exchange
     behav = isnothing(behavior) ? example_behavioral_traits() : behavior
-    OrganismTraits(thermal_strategy, phys, behav)
+    OrganismTraits(thermal_strategy, he, behav)
 end
 
 """
@@ -376,13 +377,13 @@ function example_heat_exchange_traits(;
     metabolism_pars=example_metabolism_pars(),
     options=example_metabolic_rate_options(),
 )
-    HeatExchange.HeatExchangeTraits(;
+    HeatExchange.HeatExchangeTraits(
         shape_pars,
         insulation_pars,
         conduction_pars_external,
         conduction_pars_internal,
-        convection_pars,
         radiation_pars,
+        convection_pars,
         evaporation_pars,
         hydraulic_pars,
         respiration_pars,

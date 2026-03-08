@@ -101,7 +101,7 @@ thermoregulation_limits = ThermoregulationLimits(;
 # Combine physiology and behavior into OrganismTraits
 behavioral_traits = BehavioralTraits(;
     thermoregulation=thermoregulation_limits,
-    activity=Diurnal(),
+    activity_period=Diurnal(),
 )
 organism_traits = OrganismTraits(Endotherm(), physiology_traits, behavioral_traits)
 

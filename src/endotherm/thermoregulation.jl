@@ -40,8 +40,8 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
     geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
     # Update organism
-    organism = @set organism.traits.physiology.insulation_pars.dorsal.depth = insulation_depth_dorsal
-    organism = @set organism.traits.physiology.insulation_pars.ventral.depth = insulation_depth_ventral
+    organism = @set organism.traits.heat_exchange.insulation_pars.dorsal.depth = insulation_depth_dorsal
+    organism = @set organism.traits.heat_exchange.insulation_pars.ventral.depth = insulation_depth_ventral
     organism = @set organism.body = geometry
 
     return insulation_limits, organism
@@ -86,7 +86,7 @@ function vasodilate(organism::Organism, k_flesh_limits::SteppedParameter)
     k_flesh = min(k_flesh_limits.current + k_flesh_limits.step, k_flesh_limits.max)
     k_flesh_limits = @set k_flesh_limits.current = k_flesh
 
-    organism = @set organism.traits.physiology.conduction_pars_internal.k_flesh = k_flesh
+    organism = @set organism.traits.heat_exchange.conduction_pars_internal.k_flesh = k_flesh
 
     return k_flesh_limits, organism
 end
@@ -107,8 +107,8 @@ function hyperthermia(organism::Organism, T_core_limits::SteppedParameter, pant_
     q10mult = metabolism.q10^((ustrip(u"K", T_core - T_core_limits.reference)) / 10)
     Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
 
-    organism = @set organism.traits.physiology.metabolism_pars.T_core = T_core
-    organism = @set organism.traits.physiology.metabolism_pars.Q_metabolism = Q_minimum
+    organism = @set organism.traits.heat_exchange.metabolism_pars.T_core = T_core
+    organism = @set organism.traits.heat_exchange.metabolism_pars.Q_metabolism = Q_minimum
 
     return T_core_limits, Q_minimum, organism
 end
@@ -135,8 +135,8 @@ function pant(organism::Organism, panting_limits::PantingLimits)
     q10mult = metabolism.q10^((ustrip(u"K", metabolism.T_core - panting_limits.T_core_ref)) / 10)
     Q_minimum = (Q_minimum_ref + pant_cost) * q10mult
 
-    organism = @set organism.traits.physiology.metabolism_pars.Q_metabolism = Q_minimum
-    organism = @set organism.traits.physiology.respiration_pars.pant = pant_rate
+    organism = @set organism.traits.heat_exchange.metabolism_pars.Q_metabolism = Q_minimum
+    organism = @set organism.traits.heat_exchange.respiration_pars.pant = pant_rate
 
     return panting_limits, Q_minimum, organism
 end
@@ -152,7 +152,7 @@ function sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
     skin_wetness = min(skin_wetness_limits.current + skin_wetness_limits.step, skin_wetness_limits.max)
     skin_wetness_limits = @set skin_wetness_limits.current = skin_wetness
 
-    organism = @set organism.traits.physiology.evaporation_pars.skin_wetness = skin_wetness
+    organism = @set organism.traits.heat_exchange.evaporation_pars.skin_wetness = skin_wetness
 
     return skin_wetness_limits, organism
 end

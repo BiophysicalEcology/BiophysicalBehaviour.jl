@@ -100,6 +100,50 @@ struct Nocturnal <: ActivityPeriod end
 struct Crepuscular <: ActivityPeriod end
 
 # =============================================================================
+# Organism State
+# =============================================================================
+
+"""
+    OrganismState
+
+Abstract supertype for the instantaneous activity state of an organism.
+
+Concrete subtypes mirror NicheMapR's `ACT` output column:
+- [`Resting`](@ref) — underground or thermally unable to be active (ACT = 0)
+- [`Basking`](@ref) — above ground, warming up; `T_bask ≤ Tb < T_preferred_min` (ACT = 1)
+- [`Active`](@ref) — above ground, within foraging thermal window;
+  `T_preferred_min ≤ Tb ≤ T_preferred_max` (ACT = 2)
+"""
+abstract type OrganismState end
+
+"Resting state: underground or outside the thermal window for surface activity."
+struct Resting <: OrganismState end
+
+"Basking state: above ground but below `T_preferred_min`; warming toward foraging temperature."
+struct Basking <: OrganismState end
+
+"Active state: above ground within the foraging thermal window `[T_preferred_min, T_preferred_max]`."
+struct Active <: OrganismState end
+
+"""
+    CombinedActivity{T<:Tuple} <: ActivityPeriod
+
+    CombinedActivity(periods...)
+
+Combines multiple activity periods: active if active in any of them.
+
+# Example
+```julia
+# Active during both day and dawn/dusk
+CombinedActivity(Diurnal(), Crepuscular())
+```
+"""
+struct CombinedActivity{T<:Tuple} <: ActivityPeriod
+    periods::T
+end
+CombinedActivity(periods::ActivityPeriod...) = CombinedActivity(periods)
+
+# =============================================================================
 # Thermal Strategy
 # =============================================================================
 
@@ -157,11 +201,11 @@ Behavioral traits of an organism.
 
 # Fields
 - `thermoregulation::T`: Thermoregulation limits and parameters
-- `activity::A`: Activity period (Diurnal, Nocturnal, etc.)
+- `activity_period::A`: Activity phase (Diurnal, Nocturnal, etc.)
 """
 Base.@kwdef struct BehavioralTraits{T,A}
     thermoregulation::T
-    activity::A = Diurnal()
+    activity_period::A = Diurnal()
 end
 
 """
@@ -175,7 +219,7 @@ in a single traits object.
 
 # Fields
 - `thermal_strategy::S`: Thermal strategy (Endotherm, Ectotherm, Heterotherm)
-- `physiology::P`: Physiological traits (HeatExchangeTraits)
+- `heat_exchange::P`: Heat exchange traits (HeatExchangeTraits) — morphology and physiology
 - `behavior::B`: Behavioral traits (BehavioralTraits)
 
 # Example
@@ -194,7 +238,7 @@ struct OrganismTraits{
     B<:BehavioralTraits,
 } <: HeatExchange.AbstractFunctionalTraits
     thermal_strategy::S
-    physiology::P
+    heat_exchange::P
     behavior::B
 end
 
@@ -202,22 +246,22 @@ end
 # Forwarding methods for physiology accessors
 # =============================================================================
 
-# Forward all physiology accessor methods to the physiology field
-HeatExchange.shapepars(t::OrganismTraits) = HeatExchange.shapepars(t.physiology)
-HeatExchange.insulationpars(t::OrganismTraits) = HeatExchange.insulationpars(t.physiology)
+# Forward all HeatExchange accessor methods to the heat_exchange field
+HeatExchange.shapepars(t::OrganismTraits) = HeatExchange.shapepars(t.heat_exchange)
+HeatExchange.insulationpars(t::OrganismTraits) = HeatExchange.insulationpars(t.heat_exchange)
 function HeatExchange.conductionpars_external(t::OrganismTraits)
-    HeatExchange.conductionpars_external(t.physiology)
+    HeatExchange.conductionpars_external(t.heat_exchange)
 end
 function HeatExchange.conductionpars_internal(t::OrganismTraits)
-    HeatExchange.conductionpars_internal(t.physiology)
+    HeatExchange.conductionpars_internal(t.heat_exchange)
 end
-HeatExchange.convectionpars(t::OrganismTraits) = HeatExchange.convectionpars(t.physiology)
-HeatExchange.radiationpars(t::OrganismTraits) = HeatExchange.radiationpars(t.physiology)
-HeatExchange.evaporationpars(t::OrganismTraits) = HeatExchange.evaporationpars(t.physiology)
-HeatExchange.hydraulicpars(t::OrganismTraits) = HeatExchange.hydraulicpars(t.physiology)
-HeatExchange.respirationpars(t::OrganismTraits) = HeatExchange.respirationpars(t.physiology)
-HeatExchange.metabolismpars(t::OrganismTraits) = HeatExchange.metabolismpars(t.physiology)
-HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.physiology)
+HeatExchange.convectionpars(t::OrganismTraits) = HeatExchange.convectionpars(t.heat_exchange)
+HeatExchange.radiationpars(t::OrganismTraits) = HeatExchange.radiationpars(t.heat_exchange)
+HeatExchange.evaporationpars(t::OrganismTraits) = HeatExchange.evaporationpars(t.heat_exchange)
+HeatExchange.hydraulicpars(t::OrganismTraits) = HeatExchange.hydraulicpars(t.heat_exchange)
+HeatExchange.respirationpars(t::OrganismTraits) = HeatExchange.respirationpars(t.heat_exchange)
+HeatExchange.metabolismpars(t::OrganismTraits) = HeatExchange.metabolismpars(t.heat_exchange)
+HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.heat_exchange)
 
 # =============================================================================
 # OrganismTraits accessors
@@ -242,13 +286,13 @@ behavior(t::OrganismTraits) = t.behavior
 behavior(o::Organism) = behavior(HeatExchange.traits(o))
 
 """
-    physiology(t::OrganismTraits)
-    physiology(o::Organism)
+    heat_exchange(t::OrganismTraits)
+    heat_exchange(o::Organism)
 
-Get the physiological traits from an OrganismTraits or Organism.
+Get the `HeatExchangeTraits` (morphology + physiology) from an OrganismTraits or Organism.
 """
-physiology(t::OrganismTraits) = t.physiology
-physiology(o::Organism) = physiology(HeatExchange.traits(o))
+heat_exchange(t::OrganismTraits) = t.heat_exchange
+heat_exchange(o::Organism) = heat_exchange(HeatExchange.traits(o))
 
 # =============================================================================
 # BehavioralTraits accessors
@@ -262,11 +306,11 @@ Get the thermoregulation limits from BehavioralTraits.
 thermoregulation(t::BehavioralTraits) = t.thermoregulation
 
 """
-    activity(t::BehavioralTraits)
+    activity_period(t::BehavioralTraits)
 
 Get the activity period from BehavioralTraits.
 """
-activity(t::BehavioralTraits) = t.activity
+activity_period(t::BehavioralTraits) = t.activity_period
 
 # =============================================================================
 # OrganismTraits accessors (forward to behavior)
@@ -282,13 +326,13 @@ thermoregulation(t::OrganismTraits) = thermoregulation(t.behavior)
 thermoregulation(o::Organism) = thermoregulation(HeatExchange.traits(o))
 
 """
-    activity(t::OrganismTraits)
-    activity(o::Organism)
+    activity_period(t::OrganismTraits)
+    activity_period(o::Organism)
 
 Get the activity period from an OrganismTraits or Organism.
 """
-activity(t::OrganismTraits) = activity(t.behavior)
-activity(o::Organism) = activity(HeatExchange.traits(o))
+activity_period(t::OrganismTraits) = activity_period(t.behavior)
+activity_period(o::Organism) = activity_period(HeatExchange.traits(o))
 
 """
     control_strategy(t::BehavioralTraits)

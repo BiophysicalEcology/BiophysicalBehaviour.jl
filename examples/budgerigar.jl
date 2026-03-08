@@ -47,20 +47,20 @@ evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
 fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
-mean_insulation_depth = insulation_pars.insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.insulation_depth_ventral * radiation_pars.ventral_fraction
-mean_fibre_diameter = insulation_pars.fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_diameter_ventral * radiation_pars.ventral_fraction
-mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_density_ventral * radiation_pars.ventral_fraction
+mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.density * radiation_pars.ventral_fraction
 fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
 # environmental conditions
 air_temperatures = (collect(0.0:1.0:50).+273.15)u"K"
 P_atmos = 101325.0u"Pa"
-ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).ρ_vap
-saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1.0, P_atmos)).ρ_vap
+ρ_vapour = wet_air_properties(40.0u"°C", 0.3, P_atmos).vapour_density
+saturated_ρ_vapours = DataFrame(wet_air_properties.(air_temperatures, 1.0, P_atmos)).vapour_density
 experimental_relative_humdities = ρ_vapour ./ saturated_ρ_vapours
 experimental_relative_humdities[experimental_relative_humdities .> 1.0] .= 1.0
 experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
@@ -110,15 +110,15 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
         Q_minimum_ref=Q_minimum,
         insulation=InsulationLimits(;
             dorsal=SteppedParameter(;
-                current=insulation_pars.insulation_depth_dorsal,
-                reference=insulation_pars.insulation_depth_dorsal,
-                max=insulation_pars.insulation_depth_dorsal,
+                current=insulation_pars.dorsal.depth,
+                reference=insulation_pars.dorsal.depth,
+                max=insulation_pars.dorsal.depth,
                 step=0.0,
             ),
             ventral=SteppedParameter(;
-                current=insulation_pars.insulation_depth_ventral,
-                reference=insulation_pars.insulation_depth_ventral,
-                max=insulation_pars.insulation_depth_ventral,
+                current=insulation_pars.ventral.depth,
+                reference=insulation_pars.ventral.depth,
+                max=insulation_pars.ventral.depth,
                 step=0.0,
             ),
         ),
@@ -157,7 +157,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
 
     behavioral_traits = BehavioralTraits(;
         thermoregulation=thermoregulation_limits,
-        activity=Diurnal(),
+        activity_period=Diurnal(),
     )
     organism_traits = OrganismTraits(Endotherm(), physiology_traits, behavioral_traits)
 
@@ -250,6 +250,15 @@ for (T_air, rh, q10) in zip(
         T_skin_ventral = tr.T_skin_ventral,
         T_insulation_dorsal = tr.T_insulation_dorsal,
         T_insulation_ventral = tr.T_insulation_ventral,
+
+        insulation_depth_dorsal = tr.insulation_depth_dorsal,
+        insulation_depth_ventral = tr.insulation_depth_ventral,
+        k_insulation_dorsal = tr.k_insulation_dorsal,
+        k_insulation_ventral = tr.k_insulation_ventral,
+        k_insulation_effective = tr.k_insulation_effective,
+
+        shape = tr.shape_b,
+        k_flesh = tr.k_flesh,
 
         pant = tr.pant,
         skin_wetness = tr.skin_wetness,

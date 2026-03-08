@@ -1,3 +1,5 @@
+using BiophysicalBehaviour
+using BiophysicalGeometry
 using HeatExchange
 using Microclimate
 using ModelParameters
@@ -7,6 +9,10 @@ using Test
 using Plots
 using CSV, DataFrames
 
+
+lizard = example_ectotherm_organism_traits(; 
+    thermal_strategy = Ectotherm(),
+)
 testdir = realpath(joinpath(dirname(pathof(HeatExchange)), "../test"))
 
 Tb_NMR = (DataFrame(CSV.File("$testdir/data/TC.csv")))[:, 2] .* u"°C"
