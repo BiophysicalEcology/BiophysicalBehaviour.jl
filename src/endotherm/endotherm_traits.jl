@@ -49,12 +49,32 @@ Base.@kwdef struct PantingLimits{P,S,C,M,T}
 end
 
 """
-    ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+    TorpidLimits{Tc,Ti,Tt}
+
+Parameters controlling heterotherm torpor entry and depth.
+
+Mirrors NicheMapR SOLVENDO.f TORPOR=1 parameters (TC_MIN, TC_INC, TORPTOL).
+
+# Fields
+- `T_core_min::Tc`: Minimum allowed core temperature during torpor (TC_MIN, default 19°C).
+  The torpor loop will not lower T_core below this floor.
+- `T_core_step::Ti`: Core temperature decrement per iteration (TC_INC, default 0.5 K).
+- `torptol::Tt`: Tolerance on the Q_gen/Q_basal ratio for the "environment too warm"
+  stopping condition (TORPTOL, default 0.05).
+"""
+Base.@kwdef struct TorpidLimits{Tc,Ti,Tt}
+    T_core_min::Tc  = u"K"(19.0u"°C")
+    T_core_step::Ti = 0.5u"K"
+    torptol::Tt     = 0.05
+end
+
+"""
+    ThermoregulationLimits{C,Q,I,Sh,K,Tc,P,Sw,To} <: AbstractBehaviourParameters
 
 Parameters controlling endotherm thermoregulation behavior.
 
 Contains limits for all adjustable parameters: insulation depth, body shape,
-tissue conductivity, core temperature, panting, and skin wetness.
+tissue conductivity, core temperature, panting, skin wetness, and torpor.
 
 # Fields
 - `control::C`: Control strategy (RuleBasedSequentialControl, PDEControl, etc.)
@@ -65,8 +85,9 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating limits
+- `torpid::TorpidLimits`: Torpor parameters (heterotherms only; ignored for pure endotherms)
 """
-Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw,To} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
     Q_minimum_ref::Q
     insulation::I
@@ -75,4 +96,5 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     T_core::Tc
     panting::P
     skin_wetness::Sw
+    torpid::To = TorpidLimits()
 end

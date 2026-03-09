@@ -256,6 +256,10 @@ function example_thermoregulation_limits(;
     skin_wetness=0.005,
     skin_wetness_step=0.001,
     skin_wetness_max=1.0,
+    # Torpor (heterotherms; NicheMapR TC_MIN / TC_INC / TORPTOL defaults)
+    T_core_min=u"K"(19.0u"°C"),
+    T_core_step_torpor=0.5u"K",
+    torptol=0.05,
 )
     control = RuleBasedSequentialControl(;
         mode=thermoregulation_mode,
@@ -314,6 +318,12 @@ function example_thermoregulation_limits(;
         step=skin_wetness_step,
     )
 
+    torpid = TorpidLimits(;
+        T_core_min,
+        T_core_step=T_core_step_torpor,
+        torptol,
+    )
+
     ThermoregulationLimits(;
         control,
         Q_minimum_ref,
@@ -323,6 +333,7 @@ function example_thermoregulation_limits(;
         T_core=T_core_param,
         panting,
         skin_wetness=skin_wetness_param,
+        torpid,
     )
 end
 

@@ -62,7 +62,7 @@ export thermal_strategy,
     control_strategy
 
 # Endotherm thermoregulation functions
-export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
+export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat, torpor
 
 export thermoregulate
 
@@ -70,7 +70,8 @@ export thermoregulate
 export SteppedParameter,
     InsulationLimits,
     PantingLimits,
-    ThermoregulationLimits
+    ThermoregulationLimits,
+    TorpidLimits
 
 # Ectotherm types
 export EctothermBehavioralLimits,
@@ -129,6 +130,7 @@ include("organism.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation.jl")
 include("endotherm/homeothermy.jl")
+include("endotherm/heterothermy.jl")
 include("endotherm/example_variables_and_parameters.jl")
 include("ectotherm/ectotherm_traits.jl")
 include("ectotherm/thermoregulation.jl")
