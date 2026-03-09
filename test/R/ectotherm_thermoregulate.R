@@ -13,7 +13,7 @@ fail <- 24 * 365 # how many restarts of the integrator before the Fortran progra
 
 ### Time and location parameters
 doynum <- 12 # number of time intervals to generate predictions for over a year (must be 12 <= x <=365)
-doy<-c(15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349) # middle day of each month
+doy<-c(15, 46, 196, 105, 135, 166, 74, 227, 258, 288, 319, 349) # middle day of each month
 idayst <- 1 # start month
 ida <- 12 # end month
 HEMIS <- 2 # chose hemisphere
@@ -67,14 +67,14 @@ ERR <- 1.5 # Integrator error for soil temperature calculations
 ### Time varying environmental data
 TIMINS <- c(0, 0, 1, 1)   # time of minima for air temp, wind, humidity and cloud cover (h), air & wind mins relative to sunrise, humidity and cloud cover mins relative to solar noon
 TIMAXS <- c(1, 1, 0, 0)   # time of maxima for air temp, wind, humidity and cloud cover (h), air temp & wind maxs relative to solar noon, humidity and cloud cover maxs relative to sunrise
-TMINN <- rep(25.0, 12) # minimum air temperatures (°C)
-TMAXX <- rep(42.0, 12) # maximum air temperatures (°C)
+TMINN <- c(25, rep(7, 11)) # minimum air temperatures (°C)
+TMAXX <- c(42, rep(15, 11)) # maximum air temperatures (°C)
 RHMINN <- rep(10, 12) # min relative humidity (%)
 RHMAXX <- rep(30, 12) # max relative humidity (%)
 WNMINN <- rep(0.5, 12) # min wind speed (m/s)
 WNMAXX <- rep(3.0, 12) # max wind speed (m/s)
-CCMINN <- rep(0.0, 12) # min cloud cover (%)
-CCMAXX <- rep(10, 12) # max cloud cover (%)
+CCMINN <- c(0, rep(20, 11)) # min cloud cover (%)
+CCMAXX <- c(10, rep(90, 11)) # max cloud cover (%)
 RAINFALL <- rep(0, 12) # monthly mean rainfall (mm)
 TAIRhr <- rep(0, 24*doynum) # hourly air temperatures (°C), not used unless 'hourly=1'
 RHhr <- rep(0, 24*doynum) # hourly relative humidity (%), not used unless 'hourly=1'
@@ -84,7 +84,7 @@ SOLRhr <- rep(0, 24*doynum) # hourly solar radiation (W/m2, not used unless 'hou
 RAINhr <- rep(0, 24*doynum) # hourly rainfall (mm), not used unless 'hourly=1'
 ZENhr <- rep(-1, 24*doynum) # hourly zenith angle (degrees), not used unless 'hourly=1'
 IRDhr <- rep(-1, 24*doynum) # hourly downwelling longwave radiation (W/m2), not used if '-1'
-tannul <- 33.5 # annual mean temperature for getting monthly deep soil temperature (°C)
+tannul <- mean(c(TMAXX, TMINN)) # annual mean temperature for getting monthly deep soil temperature (°C)
 tannulrun <- rep(tannul, doynum) # monthly deep soil temperature (2m) (°C)
 SoilMoist <- rep(0, doynum) # soil moisture (decimal %, 1 means saturated)
 # creating the arrays of environmental variables that are assumed not to change with month for this simulation
@@ -206,14 +206,14 @@ write.csv(shadsoil, file = '../data/ectotherm/shadsoil.csv')
 ### Ectotherm simulation – Desert iguana, matching examples/ectotherm.jl
 ## Julia parameter mapping:
 #   can_seek_shade      = false → shade_seek = 0
-#   can_burrow          = true  → burrow     = 1
+#   can_retreat_underground = true  → burrow     = 1
 #   can_climb           = false → climb      = 0
 #   can_solar_orient    = false → live = 2 (full behaviour, no sun orientation)
 #   can_press_to_ground = false → pct_cond left at default (10 %)
 
 # Behavioural / physiological thresholds (defined here so they can be used in the plot)
-T_F_min <- 24   # min foraging temperature (°C); T_preferred_min in Julia
-T_F_max <- 34   # max foraging temperature (°C); T_preferred_max in Julia
+T_F_min <- 24   # min activity temperature (°C); T_active_min in Julia
+T_F_max <- 34   # max activity temperature (°C); T_active_max in Julia
 CT_min  <- 6    # critical thermal minimum (°C)
 CT_max  <- 40   # critical thermal maximum (°C)
 
@@ -254,19 +254,19 @@ ecto <- ectotherm(
   T_F_max     = T_F_max,
   T_B_min     = 17.5,  # min basking temperature (°C); T_bask in Julia
   T_RB_min    = 15,  # min temp to move from retreat to bask (°C)
-  T_pref      = 30,    # preferred body temperature (°C)
+  T_pref      = 30,    # target body temperature (°C)
   CT_max      = CT_max,
   CT_min      = CT_min,
   diurn       = 1,     # diurnal activity
   nocturn     = 0,     # no nocturnal activity
   crepus      = 0,     # no crepuscular activity
   shade_seek  = 1,     # no shade seeking    (can_seek_shade      = false in Julia)
-  burrow      = 1,     # burrowing allowed   (can_burrow          = true  in Julia)
-  shdburrow   = 0,     # burrowing unshaded  (burrow_shade        = false  in Julia)
-  climb       = 0,     # no climbing         (can_climb           = false in Julia)
-  live        = 1,     # behave, no sun-orient (can_solar_orient=false in Julia)
-  mindepth    = 2,     # minimum burrow node (matches mindepth default)
-  maxdepth    = 10,    # maximum burrow node (matches maxdepth default)
+  burrow      = 1,     # burrowing allowed   (can_retreat_underground = true  in Julia)
+  shdburrow   = 0,     # burrowing unshaded  (underground_shaded       = false in Julia)
+  climb       = 0,     # no climbing         (can_climb               = false in Julia)
+  live        = 2,     # behave, no sun-orient (can_solar_orient=false in Julia)
+  mindepth    = 2,     # minimum underground node (matches mindepth default)
+  maxdepth    = 10,    # maximum underground node (matches maxdepth default)
   delta_shade = 3,      # shade step (%)
   postur      = 0,
 )
@@ -305,7 +305,7 @@ lines(steps_jan_feb, T_air, col = 'steelblue', lwd = 1, lty = 2)
 abline(h = c(T_F_min, T_F_max), col = 'orange', lty = 2)
 abline(h = c(CT_min,  CT_max),  col = 'grey',   lty = 3)
 legend('topright', bty = 'n',
-  legend = c('Tb', 'T_air (1 cm)', 'Tpref range', 'CT range'),
+  legend = c('Tb', 'T_air (1 cm)', 'T_target range', 'CT range'),
   col    = c('red', 'steelblue', 'orange', 'grey'),
   lty    = c(1, 2, 2, 3), lwd = c(2, 1, 1, 1))
 
@@ -322,11 +322,11 @@ legend('topright', bty = 'n',
   col    = c('forestgreen', 'blue'),
   lty    = c(1, NA), pch = c(NA, 16))
 
-# Panel 3: burrow depth
+# Panel 3: underground depth
 # NicheMapR environ DEP: positive = cm below ground surface, 0 = at surface
 plot(steps_jan_feb, dep,
   type = 'l', col = 'saddlebrown', lwd = 2,
-  xlab = 'time step (h)', ylab = 'Depth (cm, + = burrowed)',
-  main = 'Burrow depth')
+  xlab = 'time step (h)', ylab = 'Depth (cm, + = underground)',
+  main = 'Underground depth')
 abline(h = 0, col = 'black', lwd = 1)
 

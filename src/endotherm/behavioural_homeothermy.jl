@@ -14,26 +14,26 @@ followed by the inner physiological thermoregulation loop.
 ## Motivation
 
 Panting and sweating cost water. An endotherm should therefore exhaust cheap
-positional options (shade, climbing, burrowing, posture, absorptivity change)
+positional options (shade, climbing, retreating underground, posture, absorptivity change)
 **before** the physiology resorts to evaporative cooling.
 
 ## Behavioural loop trigger
 
 Operative temperature `Te` (= `solve_body_temperature`: the equilibrium body
 temperature of a passive body in the current environment) is compared to
-`behavioral_limits.T_preferred_min/max`:
+`behavioral_limits.T_active_min/max`:
 
-- `Te > T_preferred_max` → environment too hot in the open → seek cool microhabitat
-- `Te < T_preferred_min` → environment too cold → seek warm microhabitat
+- `Te > T_active_max` → environment too hot in the open → seek cool microhabitat
+- `Te < T_active_min` → environment too cold → seek warm microhabitat
 
 ## Priority sequences
 
 *Too hot* (water-loss avoidance first, no behavioural panting):
-`lighten` → `orient_parallel` → `seek_shade` → `climb` → `burrow`
+`lighten` → `orient_parallel` → `seek_shade` → `climb` → `retreat_underground`
 
 *Too cold*:
 `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-`burrow` (only if `Te < T_critical_min`)
+`retreat_underground` (only if `Te < T_critical_min`)
 
 ## After the behavioural loop
 
@@ -63,8 +63,8 @@ function thermoregulate(
     step::Int,
     prev_step_depth::Int = 1,
 )
-    min_r = available_environments.min_shade_result
-    max_r = available_environments.max_shade_result
+    low_shade = available_environments.min_shade_result
+    high_shade = available_environments.max_shade_result
     (; tolerance, max_iterations) = behavioral_limits.control
 
     # -------------------------------------------------------------------------
@@ -87,8 +87,8 @@ function thermoregulate(
     # -------------------------------------------------------------------------
     # 2. Determine activity period
     # -------------------------------------------------------------------------
-    zenith    = min_r.solar_radiation.zenith_angle[step]
-    solar_rad = min_r.global_radiation[step]
+    zenith    = low_shade.solar_radiation.zenith_angle[step]
+    solar_rad = low_shade.global_radiation[step]
     active    = is_active(activity_period(organism), zenith, solar_rad)
 
     # Blend factor helper
@@ -98,12 +98,12 @@ function thermoregulate(
         0.0
 
     # -------------------------------------------------------------------------
-    # 3a. Inactive period → retreat to optimal burrow depth (or stay above)
+    # 3a. Inactive period → retreat to optimal underground depth (or stay above)
     # -------------------------------------------------------------------------
     if !active
-        if behavioral_limits.can_burrow
+        if behavioral_limits.can_retreat_underground
             bf                = blend_factor_for(behavioral_limits.shade.current)
-            behavioral_limits = select_depth(behavioral_limits, min_r, max_r, step,
+            behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
                                              behavioral_limits.shade.current, bf)
         end
         env = interpolate_environment(available_environments, step, behavioral_limits, environmental_params)
@@ -112,13 +112,13 @@ function thermoregulate(
     end
 
     # -------------------------------------------------------------------------
-    # 3b. Active but was burrowed last step → check T_emerge condition
+    # 3b. Active but was underground last step → check T_emerge condition
     # -------------------------------------------------------------------------
     if prev_step_depth > behavioral_limits.depth.reference
         bf          = blend_factor_for(behavioral_limits.shade.reference)
         T_soil_prev = _blend(
-            min_r.soil_temperature[step, prev_step_depth],
-            max_r.soil_temperature[step, prev_step_depth],
+            low_shade.soil_temperature[step, prev_step_depth],
+            high_shade.soil_temperature[step, prev_step_depth],
             bf,
         )
         if T_soil_prev < behavioral_limits.T_emerge
@@ -139,13 +139,13 @@ function thermoregulate(
     while iteration < max_iterations
         iteration += 1
         Te_strip  = ustrip(u"K", Te)
-        Tpref_max = ustrip(u"K", behavioral_limits.T_preferred_max)
-        Tpref_min = ustrip(u"K", behavioral_limits.T_preferred_min)
-        Tcrit_min = ustrip(u"K", behavioral_limits.T_critical_min)
+        T_active_max_cur = ustrip(u"K", behavioral_limits.T_active_max)
+        T_active_min_cur = ustrip(u"K", behavioral_limits.T_active_min)
+        Tcrit_min        = ustrip(u"K", behavioral_limits.T_critical_min)
 
-        if Te_strip > Tpref_max * (1 - tolerance)
+        if Te_strip > T_active_max_cur * (1 - tolerance)
             # Too hot: seek cool microhabitat before panting (water-loss avoidance)
-            # lighten → parallel → shade → climb → burrow
+            # lighten → parallel → shade → climb → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
                behavioral_limits.absorptivity.current > behavioral_limits.absorptivity.reference
                 behavioral_limits, organism_current = lighten(organism_current, behavioral_limits)
@@ -162,18 +162,18 @@ function thermoregulate(
                 behavioral_limits = @set behavioral_limits.shade.current = behavioral_limits.shade.reference
                 behavioral_limits = climb(behavioral_limits)
 
-            elseif behavioral_limits.can_burrow
+            elseif behavioral_limits.can_retreat_underground
                 bf                = blend_factor_for(behavioral_limits.shade.current)
-                behavioral_limits = select_depth(behavioral_limits, min_r, max_r, step,
+                behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
                                                  behavioral_limits.shade.current, bf)
                 break
             else
                 break
             end
 
-        elseif Te_strip < Tpref_min * (1 + tolerance)
+        elseif Te_strip < T_active_min_cur * (1 + tolerance)
             # Too cold: seek warm microhabitat
-            # darken → perpendicular → press to ground → bask → burrow
+            # darken → perpendicular → press to ground → avoid shade → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
                behavioral_limits.absorptivity.current < behavioral_limits.absorptivity.max
                 behavioral_limits, organism_current = darken(organism_current, behavioral_limits)
@@ -187,9 +187,9 @@ function thermoregulate(
             elseif behavioral_limits.shade.current > behavioral_limits.shade.reference
                 behavioral_limits = avoid_shade(behavioral_limits)
 
-            elseif behavioral_limits.can_burrow && Te_strip < Tcrit_min
+            elseif behavioral_limits.can_retreat_underground && Te_strip < Tcrit_min
                 bf                = blend_factor_for(behavioral_limits.shade.current)
-                behavioral_limits = select_depth(behavioral_limits, min_r, max_r, step,
+                behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
                                                  behavioral_limits.shade.current, bf)
                 break
             else
@@ -197,7 +197,7 @@ function thermoregulate(
             end
 
         else
-            break  # operative temperature within preferred range
+            break  # operative temperature within target range
         end
 
         env = interpolate_environment(available_environments, step, behavioral_limits, environmental_params)

@@ -90,7 +90,8 @@ export is_active,
     lighten,
     orient_perpendicular,
     orient_parallel,
-    press_to_ground
+    press_to_ground,
+    increment_T_target
 
 # Example constructors – endotherm
 export example_environment_vars,

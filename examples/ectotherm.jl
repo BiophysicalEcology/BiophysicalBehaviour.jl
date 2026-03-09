@@ -2,7 +2,7 @@
 #
 # Simulates 2 summer days at Alice Springs, Australia (lat -23.7°, lon 133.9°).
 # Microclimate is solved at 0% and 90% shade; the ectotherm thermoregulation
-# loop then chooses shade, height and burrow depth each hour.
+# loop then chooses shade, height and underground depth each hour.
 
 using BiophysicalBehaviour
 using BiophysicalGeometry
@@ -134,10 +134,10 @@ end
 
 # ── Solve microclimate at 0% shade and 90% shade ──────────────────────────
 println("Solving microclimate (0% shade)...")
-min_result = Microclimate.solve(make_problem(make_daily_env(minimum_shade)))
+low_shade_result = Microclimate.solve(make_problem(make_daily_env(minimum_shade)))
 
 println("Solving microclimate (90% shade)...")
-max_result = Microclimate.solve(make_problem(make_daily_env(maximum_shade)))
+high_shade_result = Microclimate.solve(make_problem(make_daily_env(maximum_shade)))
 
 
 # ── Comparison mode ───────────────────────────────────────────────────────
@@ -151,12 +151,12 @@ use_nmr_microclimate = true
 organism_traits = example_ectotherm_organism_traits(
     activity_period     = Diurnal(),
     can_climb           = false,
-    can_burrow          = true,
+    can_retreat_underground = true,
     can_seek_shade      = true,
     can_solar_orient    = false,
-    can_press_to_ground = true,
-    burrow_shaded       = false,
-    alpha_min           = 0.9,   # matches NicheMapR alpha_min / alpha_max = 0.85
+    can_press_to_ground = false,
+    underground_shaded  = false,
+    alpha_min           = 0.9, 
     alpha_max           = 0.9,
     heat_exchange = example_heat_exchange_traits(;
         #metabolism_pars = example_ectotherm_metabolism_pars(model = nothing),
@@ -212,12 +212,12 @@ if use_nmr_microclimate
         )
     end
 
-    nmr_min = build_nmr_micro(r_met0,  r_soil0;  fallback = min_result)
-    nmr_max = build_nmr_micro(r_met90, r_soil90; fallback = max_result)
+    nmr_min = build_nmr_micro(r_met0,  r_soil0;  fallback = low_shade_result)
+    nmr_max = build_nmr_micro(r_met90, r_soil90; fallback = high_shade_result)
     available_environments = AvailableEnvironments(nmr_min, nmr_max, minimum_shade, maximum_shade, depths, heights)
     run_label = "Julia / NMR μC"
 else
-    available_environments = AvailableEnvironments(min_result, max_result, minimum_shade, maximum_shade, depths, heights)
+    available_environments = AvailableEnvironments(low_shade_result, high_shade_result, minimum_shade, maximum_shade, depths, heights)
     run_label = "Julia / Julia μC"
 end
 
@@ -252,7 +252,7 @@ height = [r.height  for r in results]
 state  = [r.state   for r in results]
 orientation = [r.sun_orientation  for r in results]
 
-T_air = [min_result.profile[i].air_temperature[1] for i in 1:nsteps]
+T_air = [low_shade_result.profile[i].air_temperature[1] for i in 1:nsteps]
 
 # ── Load NicheMapR (R) results for comparison ─────────────────────────────
 # R script: test/R/ectotherm_thermoregulate.R writes environ.csv with 12 months
@@ -265,11 +265,12 @@ r         = r_environ[1:nsteps, :]        # first 48 hours only
 # Unit conversions to match Julia outputs:
 #   TC   (°C)           → already in °C; Julia T_body is in K → convert below
 #   SHADE (%)           → divide by 100 to get fraction (like Julia `shade`)
-#   DEP  (cm, neg=down) → divide by 100 → m (Julia `height` is neg when burrowed)
+#   DEP  (cm, neg=down) → divide by 100 → m; DEP==0 (surface) → 0.01 m to match
+#                          Julia heights[1] = 1 cm above ground
 #   ACT  (0=Resting, 1=Basking, 2=Active) → Julia `state` is OrganismState
 r_T_body_C = r.TC
 r_shade    = r.SHADE ./ 100
-r_height_m = r.DEP   ./ 100
+r_height_m = ifelse.(r.DEP .== 0, ustrip(u"m", heights[1]), r.DEP ./ 100)
 r_act      = r.ACT   # 0/1/2
 julia_act  = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
 
@@ -291,46 +292,52 @@ println("  Julia:     Resting=$(sum(julia_act.==0)), Basking=$(sum(julia_act.==1
 println("  NicheMapR: Resting=$(sum(r_act.==0)), Basking=$(sum(r_act.==1)), Active=$(sum(r_act.==2))")
 
 # ── Plot ──────────────────────────────────────────────────────────────────
+show_legend = false   # set false to hide all plot legends
+
 t         = 1:nsteps
-Tpref_min = ustrip(u"°C", limits.T_preferred_min)
-Tpref_max = ustrip(u"°C", limits.T_preferred_max)
+T_target_min = ustrip(u"°C", limits.T_active_min)
+T_target_max = ustrip(u"°C", limits.T_active_max)
 Tcrit_min = ustrip(u"°C", limits.T_critical_min)
 Tcrit_max = ustrip(u"°C", limits.T_critical_max)
 
+lbl(s) = show_legend ? s : ""   # suppress label strings when legend hidden
+
 p1 = plot(t, T_body_C;
-    ylabel = "°C", label = "Tb ($run_label)", lw = 2, color = :red,
-    title  = "Body temperature")
+    ylabel = "°C", label = lbl("Tb ($run_label)"), lw = 2, color = :red,
+    title  = "Body temperature", legend = show_legend)
 plot!(p1, t, r_T_body_C;
-    label = "Tb (NicheMapR)", lw = 2, color = :darkred, linestyle = :dash)
+    label = lbl("Tb (NicheMapR)"), lw = 2, color = :darkred, linestyle = :dash)
 plot!(p1, t, u"°C".(T_air);
-    label = "T_air (1 cm)", lw = 1, color = :steelblue, linestyle = :dash)
-hline!(p1, [Tpref_min, Tpref_max];
-    label = "Tpref range", color = :orange, linestyle = :dash)
+    label = lbl("T_air (1 cm)"), lw = 1, color = :steelblue, linestyle = :dash)
+hline!(p1, [T_target_min, T_target_max];
+    label = lbl("T_target range"), color = :orange, linestyle = :dash)
 hline!(p1, [Tcrit_min, Tcrit_max];
-    label = "Tcrit range", color = :grey, linestyle = :dot)
+    label = lbl("Tcrit range"), color = :grey, linestyle = :dot)
 
 p2 = plot(t, shade .* 100;
     ylabel = "%", ylim = (0, 100),
-    label = "shade ($run_label)", color = :green, title = "Shade selection")
+    label = lbl("shade ($run_label)"), color = :green, title = "Shade selection",
+    legend = show_legend)
 plot!(p2, t, r_shade .* 100;
-    label = "shade (NicheMapR)", color = :darkgreen, linestyle = :dash)
+    label = lbl("shade (NicheMapR)"), color = :darkgreen, linestyle = :dash)
 scatter!(p2, t[julia_act.==1], fill(65.0, sum(julia_act.==1));
-    ms = 2, color = :orange, label = "basking ($run_label)")
+    ms = 2, color = :orange, label = lbl("basking ($run_label)"))
 scatter!(p2, t[julia_act.==0], fill(60.0, sum(julia_act.==0));
-    ms = 2, color = :blue, label = "resting ($run_label)")
+    ms = 2, color = :blue, label = lbl("resting ($run_label)"))
 scatter!(p2, t[r_act.==1], fill(45.0, sum(r_act.==1));
-    ms = 2, color = :goldenrod, label = "basking (NicheMapR)")
+    ms = 2, color = :goldenrod, label = lbl("basking (NicheMapR)"))
 scatter!(p2, t[r_act.==0], fill(40.0, sum(r_act.==0));
-    ms = 2, color = :purple, label = "resting (NicheMapR)")
+    ms = 2, color = :purple, label = lbl("resting (NicheMapR)"))
 
-# Height comparison: Julia uses organism height in m (positive=above, neg=burrowed);
-# NicheMapR DEP is depth below ground (neg=burrowed, 0=surface, no above-ground height).
+# Height comparison: Julia uses organism height in m (positive=above, neg=underground);
+# NicheMapR DEP is depth below ground (neg=underground, 0=surface, no above-ground height).
 p3 = plot(t, ustrip.(u"m", height);
-    ylabel = "m", label = "height ($run_label)",
-    color = :brown, title = "Height / depth (+ above ground, − burrowed)")
+    ylabel = "m", label = lbl("height ($run_label)"),
+    color = :brown, title = "Height / depth (+ above ground, − underground)",
+    legend = show_legend)
 plot!(p3, t, r_height_m;
-    label = "depth (NicheMapR)", color = :chocolate, linestyle = :dash)
-hline!(p3, [0.0]; color = :black, lw = 1, label = "ground")
+    label = lbl("depth (NicheMapR)"), color = :chocolate, linestyle = :dash)
+hline!(p3, [0.0]; color = :black, lw = 1, label = lbl("ground"))
 
 plot(p1, p2, p3;
     layout      = (3, 1),

@@ -4,3 +4,5 @@ Manifest.toml
 .DS_Store
 .vscode/
 test/R/.Rhistory
+.claude/settings.json
+.claude/settings.local.json

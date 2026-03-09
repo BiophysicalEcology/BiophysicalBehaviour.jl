@@ -1,5 +1,5 @@
 """
-    EctothermBehavioralLimits{C,Sh,D,H,T,Ab,Pa} <: AbstractBehaviourParameters
+    EctothermBehavioralLimits{C,Sh,D,H,T,Tp,Ab,Pa} <: AbstractBehaviourParameters
 
 Parameters controlling ectotherm thermoregulation through position and physiological
 state changes.
@@ -20,10 +20,10 @@ panting parameters).
   are the starting shade; `max` is maximum available shade; `step` is the increment
   per iteration (SHADEADJUST.f `DSHD`).
 - `depth::D`: `SteppedParameter` for soil-node index. `reference` = 1 (surface node);
-  `max` is the deepest accessible burrow node; `step` = 1.
-- `depth_min_burrow::Int`: Shallowest accessible burrow node (SELDEP.f `MINNODE`,
+  `max` is the deepest accessible underground node; `step` = 1.
+- `depth_min_underground::Int`: Shallowest accessible underground node (SELDEP.f `MINNODE`,
   NicheMapR `mindepth`). Active animals reset to `depth.reference` (surface = 1);
-  burrowing begins at `depth_min_burrow`.
+  retreating underground begins at `depth_min_underground`.
 - `height::H`: `SteppedParameter` for atmospheric profile height-node index.
   `reference` = 1 (lowest node); `max` is the highest accessible node; `step` = 1.
 
@@ -38,20 +38,26 @@ panting parameters).
   too hot via `pant`.
 
 # Fields – thermal thresholds
-Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_preferred_min` ≤ `T_preferred_max` ≤ `T_critical_max`
+Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_active_min` ≤ `T_active_max` ≤ `T_critical_max`
 
-- `T_preferred_min::T`: Lower foraging temperature, TMINPR (T_F_min). Below this the animal
+- `T_target::Tp`: `SteppedParameter` for the operative target body temperature
+  (NicheMapR TPREF). `reference`/`current` = starting target temperature;
+  `max` = `T_active_max`; `step` = increment per iteration. When Tb > `T_target.current`
+  but < `T_active_max`, the target temperature steps up (hyperthermia tolerance) before
+  cooling behaviours are triggered. Reset each hour to `reference`.
+- `T_active_min::T`: Lower activity temperature, TMINPR (T_F_min). Below this the animal
   is basking rather than active.
-- `T_preferred_max::T`: Upper foraging temperature, TMAXPR (T_F_max).
+- `T_active_max::T`: Upper activity temperature, TMAXPR (T_F_max). When `T_target`
+  has stepped up to this value and Tb is still above it, cooling behaviours begin.
 - `T_bask::T`: Minimum basking temperature, TBASK (T_B_min). Thermoregulation loop warms the
-  animal to at least `T_bask`; the animal is basking (not foraging) while `T_bask ≤ Tb < T_preferred_min`.
+  animal to at least `T_bask`; the animal is basking (not active) while `T_bask ≤ Tb < T_active_min`.
 - `T_critical_min::T`: Critical thermal minimum, CTMIN (lethal lower limit).
 - `T_critical_max::T`: Critical thermal maximum, CTMAX (lethal upper limit).
-- `T_emerge::T`: Minimum soil temperature at the previous-hour burrow depth to
+- `T_emerge::T`: Minimum soil temperature at the previous-hour underground depth to
   allow emergence, TEMERGE (T_RB_min).
 
 # Fields – capability flags
-- `can_burrow::Bool`: Whether the animal can use burrows (BURROW flag).
+- `can_retreat_underground::Bool`: Whether the animal can retreat underground (BURROW flag).
 - `can_climb::Bool`: Whether the animal can climb to elevated height nodes (CLIMB flag).
 - `can_seek_shade::Bool`: Whether the animal seeks shade.
 - `can_change_absorptivity::Bool`: Whether the animal can darken/lighten (NicheMapR
@@ -72,34 +78,35 @@ Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_preferred_min` �
 # Fields – conduction state
 - `pressed_to_ground::Bool`: `true` if currently pressed to substrate. Reset each hour.
   Conduction fraction is controlled via organism physiology (`conduction_pars_external`).
-- `burrow_tb_equals_soil::Bool`: When `true` (default), body temperature in a burrow is set
-  equal to the soil temperature at the chosen node (NicheMapR BELOWGROUND.f behaviour).
+- `underground_tb_equals_soil::Bool`: When `true` (default), body temperature when underground
+  is set equal to the soil temperature at the chosen node (NicheMapR BELOWGROUND.f behaviour).
   When `false`, the full heat balance is solved underground, which gives `Tb > T_soil`
   because metabolic heat has no way to dissipate when all surrounding temperatures equal
   `T_soil`.
-- `burrow_shaded::Bool`: When `true` (default, matches NicheMapR `shade_burrow=1`), soil
-  temperatures in the burrow come from the maximum-shade microclimate run (burrow is in a
-  shaded location, e.g. under vegetation). When `false`, soil temperatures come from the
-  minimum-shade run (exposed, unshaded burrow). No blending — always one extreme or the other.
+- `underground_shaded::Bool`: When `true` (default, matches NicheMapR `shade_burrow=1`), soil
+  temperatures in the underground retreat come from the maximum-shade microclimate run (retreat
+  is in a shaded location, e.g. under vegetation). When `false`, soil temperatures come from the
+  minimum-shade run (exposed, unshaded location). No blending — always one extreme or the other.
 """
 Base.@kwdef struct EctothermBehavioralLimits{
-    C<:AbstractControlStrategy,Sh,D,H,T,Ab,Pa
+    C<:AbstractControlStrategy,Sh,D,H,T,Tp,Ab,Pa
 } <: AbstractBehaviourParameters
     control::C          = RuleBasedSequentialControl()
     shade::Sh
     depth::D
-    depth_min_burrow::Int = 2
+    depth_min_underground::Int = 2
     height::H
     absorptivity::Ab    = SteppedParameter(; current=0.9, reference=0.9, max=0.9, step=0.0)
     pant_rate::Pa       = SteppedParameter(; current=1.0, reference=1.0, max=1.0, step=0.1)
-    T_preferred_min::T
-    T_preferred_max::T
+    T_target::Tp            # SteppedParameter: rises from reference toward T_active_max each iteration
+    T_active_min::T
+    T_active_max::T
     T_bask::T
     T_critical_min::T
     T_critical_max::T
     T_emerge::T
     # Capability flags
-    can_burrow::Bool                = true
+    can_retreat_underground::Bool                = true
     can_climb::Bool                 = false
     can_seek_shade::Bool            = true
     can_change_absorptivity::Bool   = false
@@ -110,14 +117,13 @@ Base.@kwdef struct EctothermBehavioralLimits{
     sun_orientation::Float64        = 90.0  # degrees; 90 = NormalToSun, 0 = ParallelToSun
     # Conduction state (reset each hour)
     pressed_to_ground::Bool         = false
-    # Body temperature model when burrowed
+    # Body temperature model when underground
     # true  → Tb = T_soil directly (NicheMapR behaviour; no heat balance solved underground)
     # false → solve full heat balance underground (Tb > T_soil due to metabolic heat)
-    burrow_tb_equals_soil::Bool     = true
-    # Shaded burrow flag (NicheMapR shade_burrow)
-    # true  → soil temperatures in the burrow come from the maximum-shade microclimate run
-    #         (burrow located under vegetation / shade cover; NicheMapR default)
-    # false → soil temperatures in the burrow come from the minimum-shade microclimate run
-    #         (burrow in an exposed, unshaded location)
-    burrow_shaded::Bool             = true
+    underground_tb_equals_soil::Bool     = true
+    # Shaded underground flag (NicheMapR shade_burrow)
+    # true  → soil temperatures in the underground retreat come from the maximum-shade run
+    #         (retreat located under vegetation / shade cover; NicheMapR default)
+    # false → soil temperatures come from the minimum-shade run (exposed, unshaded location)
+    underground_shaded::Bool             = true
 end

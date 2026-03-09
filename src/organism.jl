@@ -78,7 +78,7 @@ abstract type AbstractBehavior end
 
 Abstract supertype behaviors that modify location based
 on inforation from the environment, such as moving up into
-cooler air or moving underground into a warmer/cooler burrow.
+cooler air or moving underground into a warmer/cooler retreat.
 """
 abstract type AbstractMovementBehavior <: AbstractBehavior end
 
@@ -110,19 +110,19 @@ Abstract supertype for the instantaneous activity state of an organism.
 
 Concrete subtypes mirror NicheMapR's `ACT` output column:
 - [`Resting`](@ref) — underground or thermally unable to be active (ACT = 0)
-- [`Basking`](@ref) — above ground, warming up; `T_bask ≤ Tb < T_preferred_min` (ACT = 1)
-- [`Active`](@ref) — above ground, within foraging thermal window;
-  `T_preferred_min ≤ Tb ≤ T_preferred_max` (ACT = 2)
+- [`Basking`](@ref) — above ground, warming up; `T_bask ≤ Tb < T_active_min` (ACT = 1)
+- [`Active`](@ref) — above ground, within activity thermal window;
+  `T_active_min ≤ Tb ≤ T_active_max` (ACT = 2)
 """
 abstract type OrganismState end
 
 "Resting state: underground or outside the thermal window for surface activity."
 struct Resting <: OrganismState end
 
-"Basking state: above ground but below `T_preferred_min`; warming toward foraging temperature."
+"Basking state: above ground but below `T_active_min`; warming toward activity temperature."
 struct Basking <: OrganismState end
 
-"Active state: above ground within the foraging thermal window `[T_preferred_min, T_preferred_max]`."
+"Active state: above ground within the activity thermal window `[T_active_min, T_active_max]`."
 struct Active <: OrganismState end
 
 """

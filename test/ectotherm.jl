@@ -236,8 +236,8 @@ function set_environment(; i, shade, depth, height, min_shade_habitat, max_shade
     return env_i
 end
 
-T_forage_min = u"K"(24.5u"°C")
-T_forage_max = u"K"(34.5u"°C")
+T_active_min = u"K"(24.5u"°C")
+T_active_max = u"K"(34.5u"°C")
 T_lethal_min = u"K"(0.1u"°C")
 shade = 0.0
 Δshade = 0.01
@@ -246,7 +246,7 @@ max_height = 2
 depth = 1
 height = 1
 climber = false
-burrower = false
+retreats_underground = false
 shadeseeker = false
 
 Tb = nothing
@@ -260,7 +260,7 @@ balances = map(1:n) do i
     Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
     # check if too hot and, if so, seek shade
     if shadeseeker
-    while Tb > T_forage_max && shade <= maximum_shade && depth == 1
+    while Tb > T_active_max && shade <= maximum_shade && depth == 1
         shade += Δshade
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
@@ -269,13 +269,13 @@ balances = map(1:n) do i
     shade = clamp(shade, minimum_shade, maximum_shade)
     end
     if climber
-    while Tb > T_forage_max && (shade >= maximum_shade || !shadeseeker) && height < max_height
-        shade = minimum_shade # reset to minimum shade burrow
+    while Tb > T_active_max && (shade >= maximum_shade || !shadeseeker) && height < max_height
+        shade = minimum_shade # reset to minimum shade when climbing
         height = height + 1
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
         Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
-        while (Tb > T_forage_max || Tb < T_lethal_min) && height < max_height
+        while (Tb > T_active_max || Tb < T_lethal_min) && height < max_height
             height = height + 1
             env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
             variables_i = (organism=OrganismalVars(), environment=env_i)
@@ -284,14 +284,14 @@ balances = map(1:n) do i
     end
     end
     # check if too cold or too hot and shade maxed out, and, if so, go underground
-    if burrower
-    while (Tb < T_forage_min || (Tb > T_forage_max && shade >= maximum_shade) || (Tb > T_forage_max && height >= max_height)) && depth == 1
-        shade = minimum_shade # reset to minimum shade burrow
+    if retreats_underground
+    while (Tb < T_active_min || (Tb > T_active_max && shade >= maximum_shade) || (Tb > T_active_max && height >= max_height)) && depth == 1
+        shade = minimum_shade # reset to minimum shade when going underground
         depth = max(min_depth, depth + 1)
         env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
         variables_i = (organism=OrganismalVars(), environment=env_i)
         Tb = get_Tb(lizard, environmental_params, variables_i).T_core;
-        while (Tb > T_forage_max || Tb < T_lethal_min) && depth < 10
+        while (Tb > T_active_max || Tb < T_lethal_min) && depth < 10
             depth = max(min_depth, depth + 1)
             env_i = set_environment(; i, shade, depth, height, min_shade_habitat, max_shade_habitat)
             variables_i = (organism=OrganismalVars(), environment=env_i)
