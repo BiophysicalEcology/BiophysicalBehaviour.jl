@@ -32,8 +32,8 @@ nsteps = length(days) * length(hours)
 # reference in ABOVEGROUND.f (blend = SHADE/MAXSHD).  Setting min_shade_fraction=0.0
 # replicates this — blend_factor = (shade - 0) / (0.9 - 0) = shade / maxshade.
 # The organism's behavioural floor (shade_min below) is set to 0.2 = NicheMapR minshade=20.
-minimum_shade = 0.0   # AvailableEnvironments fraction (0 = treat min-shade run as 0% reference)
-minimum_shade_behaviour = 0.0  # organism's behavioural floor (NicheMapR minshade = 20 %)
+minimum_shade = 0.20   # AvailableEnvironments fraction (0 = treat min-shade run as 0% reference)
+minimum_shade_behaviour = 0.20  # organism's behavioural floor (NicheMapR minshade = 20 %)
 maximum_shade = 0.9
 
 # ── Soil depths and atmospheric heights ───────────────────────────────────
