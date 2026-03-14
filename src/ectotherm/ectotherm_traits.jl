@@ -62,22 +62,25 @@ Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_active_min` ≤ `
 - `can_seek_shade::Bool`: Whether the animal seeks shade.
 - `can_change_absorptivity::Bool`: Whether the animal can darken/lighten (NicheMapR
   `alpha_max ≠ alpha_min`).
-- `can_solar_orient::Bool`: Whether the animal can orient toward/away from the sun
-  (NicheMapR `postur`). When `false`, the silhouette area is fixed at `Intermediate()` —
-  the average of `NormalToSun` and `ParallelToSun` areas computed from body geometry.
+- `can_solar_orient::Bool`: Whether the animal can dynamically orient toward/away from the sun
+  (NicheMapR `postur`). When `true`, the thermoregulation loop starts each hour at `Intermediate()`
+  (neutral/active posture) and can shift to `NormalToSun` (too cold/basking) or `ParallelToSun`
+  (too hot). When `false`, `solar_orientation` in `radiation_pars` is used as a fixed orientation
+  each hour: `NormalToSun`, `ParallelToSun`, `Intermediate`, or `ZenithAngleVarying` (silhouette
+  area computed from sun elevation angle via HeatExchange using `e_vars.zenith_angle`).
 - `can_press_to_ground::Bool`: Whether the animal presses against the substrate (tracked
   in output). Conduction fraction is set via organism physiology (`conduction_pars_external`).
 - `can_pant::Bool`: Whether the animal can pant for evaporative cooling.
 
 # Fields – posture state
 - `sun_orientation::Float64`: Angle (degrees) between body axis and sun direction.
-  90.0 = perpendicular (`NormalToSun`, maximum silhouette, too-cold response);
-  0.0 = parallel (`ParallelToSun`, minimum silhouette, too-hot response).
-  Reset to 90.0 each hour by `reset_position`.
+  45.0 = `Intermediate` (neutral/active start); 90.0 = `NormalToSun` (maximum silhouette,
+  too-cold/basking response); 0.0 = `ParallelToSun` (minimum silhouette, too-hot response).
+  Reset to 45.0 each hour by `reset_position`.
 
 # Fields – conduction state
 - `pressed_to_ground::Bool`: `true` if currently pressed to substrate. Reset each hour.
-  Conduction fraction is controlled via organism physiology (`conduction_pars_external`).
+  Conduction fraction is controlled via organism morphology (`conduction_pars_external`).
 - `underground_tb_equals_soil::Bool`: When `true` (default), body temperature when underground
   is set equal to the soil temperature at the chosen node (NicheMapR BELOWGROUND.f behaviour).
   When `false`, the full heat balance is solved underground, which gives `Tb > T_soil`
@@ -106,7 +109,7 @@ Base.@kwdef struct EctothermBehavioralLimits{
     T_critical_max::T
     T_emerge::T
     # Capability flags
-    can_retreat_underground::Bool                = true
+    can_retreat_underground::Bool   = true
     can_climb::Bool                 = false
     can_seek_shade::Bool            = true
     can_change_absorptivity::Bool   = false
@@ -114,7 +117,7 @@ Base.@kwdef struct EctothermBehavioralLimits{
     can_press_to_ground::Bool       = true
     can_pant::Bool                  = false
     # Posture state (reset each hour)
-    sun_orientation::Float64        = 90.0  # degrees; 90 = NormalToSun, 0 = ParallelToSun
+    sun_orientation::Float64        = 45.0  # degrees; 45 = Intermediate (neutral), 90 = NormalToSun, 0 = ParallelToSun
     # Conduction state (reset each hour)
     pressed_to_ground::Bool         = false
     # Body temperature model when underground

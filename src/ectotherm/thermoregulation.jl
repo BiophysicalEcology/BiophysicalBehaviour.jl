@@ -127,7 +127,7 @@ function reset_position(limits::EctothermBehavioralLimits)
     limits = @set limits.absorptivity.current  = limits.absorptivity.reference
     limits = @set limits.pant_rate.current     = limits.pant_rate.reference
     limits = @set limits.T_target.current   = limits.T_target.reference
-    limits = @set limits.sun_orientation    = 90.0
+    limits = @set limits.sun_orientation    = 45.0
     limits = @set limits.pressed_to_ground = false
     return limits
 end
@@ -225,6 +225,29 @@ function orient_perpendicular(organism::Organism, limits::EctothermBehavioralLim
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = NormalToSun()
     organism = @set organism.traits.heat_exchange.radiation_pars.A_silhouette =
                _silhouette_area(organism.body, NormalToSun())
+    return limits, organism
+end
+
+"""
+    orient_intermediate(organism, limits) → (limits, organism)
+
+Revert solar orientation to the neutral/foraging posture (`sun_orientation = 45.0°`).
+
+Sets `solar_orientation = Intermediate()` and `A_silhouette` to the average of
+normal and parallel areas. Called when body temperature re-enters the active range
+after basking (perpendicular → intermediate) or when Tb drops back to T_target
+after parallel cooling (parallel → intermediate).
+
+Mirrors NicheMapR THERMO.f lines 119-128: revert when TC ≥ TMINPR (from perpendicular)
+or TC ≤ TPREF (from parallel).
+Returns updated limits and organism.
+"""
+function orient_intermediate(organism::Organism, limits::EctothermBehavioralLimits)
+    A_intermediate = (_silhouette_area(organism.body, NormalToSun()) +
+                      _silhouette_area(organism.body, ParallelToSun())) * 0.5
+    limits   = @set limits.sun_orientation = 45.0
+    organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
+    organism = @set organism.traits.heat_exchange.radiation_pars.A_silhouette = A_intermediate
     return limits, organism
 end
 
@@ -363,7 +386,7 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
 
     # Common fields regardless of position
     zenith_angle = low_shade.solar_radiation.zenith_angle[step]
-    P_atmos      = _blend(low_shade.pressure[step], high_shade.pressure[step], blend_factor)
+    P_atmos      = low_shade.pressure[step]
 
     if is_underground
         # ---- BELOWGROUND environment (BELOWGROUND.f) ----
@@ -440,8 +463,9 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
             high_shade.soil_thermal_conductivity[step, limits.depth.reference],
             blend_factor,
         )
-        # Solar radiation: stored pre-shade in MicroResult; reduce by chosen shade
-        global_radiation = low_shade.global_radiation[step] * (1 - chosen_shade)
+        # Solar radiation: stored pre-shade in MicroResult. HeatExchange applies
+        # (1 - shade) internally, so pass the raw pre-shade value here.
+        global_radiation = low_shade.global_radiation[step]
         diffuse_fraction = _blend(
             low_shade.diffuse_fraction[step],
             high_shade.diffuse_fraction[step],

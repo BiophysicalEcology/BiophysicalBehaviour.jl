@@ -48,7 +48,7 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `pant_max`                   | 1.0       | (panting multiplier max)      |
 | `pant_step`                  | 0.1       | (panting step)                |
 | `T_target`                   | 30.0 °C   | T_pref (TPREF, rises to T_F_max)|
-| `T_target_step`              | 1.0 K     | TBIG (TPREF increment)        |
+| `T_target_step`              | 1.0 K     | TBIG (TPREF increment, 0.5 in NicheMapR THERMOREG)|
 | `T_active_min`               | 24.0 °C   | T_F_min                       |
 | `T_active_max`               | 34.0 °C   | T_F_max                       |
 | `T_bask`                     | 17.5 °C   | T_B_min                       |
@@ -84,7 +84,7 @@ function example_ectotherm_behavioral_limits(;
     height_max       = typemax(Int), # default = use all available height nodes
     # Thermal thresholds
     T_target      = u"K"(30.0u"°C"),   # TPREF: starting target temp (rises to T_active_max)
-    T_target_step = 1.0u"K",           # TBIG: step size for TPREF increment
+    T_target_step = 1.0u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
     T_active_min  = u"K"(24.0u"°C"),
     T_active_max  = u"K"(34.0u"°C"),
     T_bask           = u"K"(17.5u"°C"),

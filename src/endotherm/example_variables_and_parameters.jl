@@ -6,7 +6,7 @@ function example_environment_vars(;
     zenith_angle=20.0u"°",
     k_substrate=2.79u"W/m/K",
     global_radiation=0.0u"W/m^2",
-    diffuse_fraction=0.0,
+    diffuse_fraction=0.1,
     shade=0,
 )
     EnvironmentalVars(;

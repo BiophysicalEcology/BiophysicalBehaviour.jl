@@ -28,7 +28,12 @@ hours = collect(0.0:1:23.0)
 nsteps = length(days) * length(hours)
 
 # ── Shade ─────────────────────────────────────────────────────────────────
-minimum_shade = 0.0
+# NicheMapR convention: min-shade microclimate run is treated as the 0%-shade
+# reference in ABOVEGROUND.f (blend = SHADE/MAXSHD).  Setting min_shade_fraction=0.0
+# replicates this — blend_factor = (shade - 0) / (0.9 - 0) = shade / maxshade.
+# The organism's behavioural floor (shade_min below) is set to 0.2 = NicheMapR minshade=20.
+minimum_shade = 0.0   # AvailableEnvironments fraction (0 = treat min-shade run as 0% reference)
+minimum_shade_behaviour = 0.0  # organism's behavioural floor (NicheMapR minshade = 20 %)
 maximum_shade = 0.9
 
 # ── Soil depths and atmospheric heights ───────────────────────────────────
@@ -146,22 +151,52 @@ high_shade_result = Microclimate.solve(make_problem(make_daily_env(maximum_shade
 # false = use Julia microclimate (full end-to-end Julia vs NicheMapR comparison)
 use_nmr_microclimate = true
 
+function build_nmr_micro(met_df, soil_df; fallback)
+    n = nrow(met_df)
+    soil_cols = ["D0cm", "D2.5cm", "D5cm", "D10cm", "D15cm",
+                    "D20cm", "D30cm", "D50cm", "D100cm", "D200cm"]
+    soil_T = hcat([(soil_df[!, col] .+ 273.15) .* u"K" for col in soil_cols]...)
+    profiles = [(
+        air_temperature   = [(met_df.TALOC[i] + 273.15)u"K",
+                                (met_df.TAREF[i] + 273.15)u"K"],
+        relative_humidity = [met_df.RHLOC[i] / 100.0,
+                                met_df.RH[i]    / 100.0],
+        wind_speed        = [met_df.VLOC[i]  * u"m/s",
+                                met_df.VREF[i]  * u"m/s"],
+    ) for i in 1:n]
+    (
+        solar_radiation           = (zenith_angle = met_df.ZEN .* u"°",),
+        pressure                  = fill(atmospheric_pressure(elevation), n),
+        profile                   = profiles,
+        sky_temperature           = (met_df.TSKYC .+ 273.15) .* u"K",
+        soil_temperature          = soil_T,
+        soil_thermal_conductivity = fallback.soil_thermal_conductivity,
+        soil_humidity             = fallback.soil_humidity,
+        global_radiation          = met_df.SOLR .* u"W/m^2",
+        diffuse_fraction          = fill(0.1, n),  # NicheMapR PDIF default
+        reference_temperature     = (met_df.TAREF .+ 273.15) .* u"K",
+    )
+end
+
 # ── Organism ──────────────────────────────────────────────────────────────
 # 40 g desert iguana (DesertIguana shape: allometric surface areas, NicheMapR defaults)
 organism_traits = example_ectotherm_organism_traits(
-    activity_period     = Diurnal(),
+    activity_period     = CombinedActivity(Diurnal(), Nocturnal(), Crepuscular()),
     can_climb           = false,
-    can_retreat_underground = true,
-    can_seek_shade      = true,
-    can_solar_orient    = false,
+    can_retreat_underground = false,
+    can_seek_shade      = false,
+    can_solar_orient    = true,
     can_press_to_ground = false,
     underground_shaded  = false,
-    alpha_min           = 0.9, 
+    shade_min           = minimum_shade_behaviour,  # organism can't be below 20% (NicheMapR minshade=20)
+    shade_max           = maximum_shade,
+    alpha_min           = 0.9,
     alpha_max           = 0.9,
-    heat_exchange = example_heat_exchange_traits(;
-        #metabolism_pars = example_ectotherm_metabolism_pars(model = nothing),
-        #evaporation_pars = example_ectotherm_evaporation_pars(skin_wetness = 0.0, eye_fraction = 0.0),
-        radiation_pars = example_ectotherm_radiation_pars(α_body_dorsal = 0.9, α_body_ventral = 0.9),
+    heat_exchange = example_ectotherm_heat_exchange_traits(;
+        conduction_pars_external = example_ectotherm_conduction_pars_external(conduction_fraction = 0.0), # pct_cond=0 in R test
+        evaporation_pars = example_ectotherm_evaporation_pars(eye_fraction = 0.0), # NicheMapR live=2: WEYES=0 (eyes only open in live=1)
+        radiation_pars = example_ectotherm_radiation_pars(α_body_dorsal = 0.9, α_body_ventral = 0.9,
+        solar_orientation = NormalToSun(), ϵ_body_dorsal = 0.95, ϵ_body_ventral = 0.95),
     )
 )
 body     = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
@@ -173,6 +208,9 @@ env_pars = example_environment_pars(; elevation)
 # ── Available environments ─────────────────────────────────────────────────
 if use_nmr_microclimate
     # Read NicheMapR microclimate CSVs (288 rows = 12 months × 24 h).
+    # metout/soil = NicheMapR run at minshade=20%; shadmet/shadsoil = at maxshade=90%.
+    # min_shade_fraction=0.0 in AvailableEnvironments treats the 20%-shade run as the
+    # 0%-shade reference, matching NicheMapR ABOVEGROUND.f blend = SHADE/MAXSHD.
     # Fields not in the R CSVs (soil_thermal_conductivity, soil_humidity,
     # diffuse_fraction) fall back to the Julia MicroResult.
     r_metout_df   = CSV.read(joinpath(@__DIR__, "..", "test", "data", "ectotherm", "metout.csv"),   DataFrame)
@@ -184,33 +222,6 @@ if use_nmr_microclimate
     r_soil0  = r_soil_df[1:nsteps, :]
     r_met90  = r_shadmet_df[1:nsteps, :]
     r_soil90 = r_shadsoil_df[1:nsteps, :]
-
-    function build_nmr_micro(met_df, soil_df; fallback)
-        n = nrow(met_df)
-        soil_cols = ["D0cm", "D2.5cm", "D5cm", "D10cm", "D15cm",
-                     "D20cm", "D30cm", "D50cm", "D100cm", "D200cm"]
-        soil_T = hcat([(soil_df[!, col] .+ 273.15) .* u"K" for col in soil_cols]...)
-        profiles = [(
-            air_temperature   = [(met_df.TALOC[i] + 273.15)u"K",
-                                 (met_df.TAREF[i] + 273.15)u"K"],
-            relative_humidity = [met_df.RHLOC[i] / 100.0,
-                                 met_df.RH[i]    / 100.0],
-            wind_speed        = [met_df.VLOC[i]  * u"m/s",
-                                 met_df.VREF[i]  * u"m/s"],
-        ) for i in 1:n]
-        (
-            solar_radiation           = (zenith_angle = met_df.ZEN .* u"°",),
-            pressure                  = fill(atmospheric_pressure(elevation), n),
-            profile                   = profiles,
-            sky_temperature           = (met_df.TSKYC .+ 273.15) .* u"K",
-            soil_temperature          = soil_T,
-            soil_thermal_conductivity = fallback.soil_thermal_conductivity,
-            soil_humidity             = fallback.soil_humidity,
-            global_radiation          = met_df.SOLR .* u"W/m^2",
-            diffuse_fraction          = fill(0.1, n),  # NicheMapR PDIF default
-            reference_temperature     = (met_df.TAREF .+ 273.15) .* u"K",
-        )
-    end
 
     nmr_min = build_nmr_micro(r_met0,  r_soil0;  fallback = low_shade_result)
     nmr_max = build_nmr_micro(r_met90, r_soil90; fallback = high_shade_result)
@@ -291,6 +302,50 @@ println("  Matching hours = $state_match / $nsteps")
 println("  Julia:     Resting=$(sum(julia_act.==0)), Basking=$(sum(julia_act.==1)), Active=$(sum(julia_act.==2))")
 println("  NicheMapR: Resting=$(sum(r_act.==0)), Basking=$(sum(r_act.==1)), Active=$(sum(r_act.==2))")
 
+# ── Heat flux comparison ──────────────────────────────────────────────────────
+r_enbal_path = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "enbal.csv")
+r_enbal = CSV.read(r_enbal_path, DataFrame)
+r_eb    = r_enbal[1:nsteps, :]
+
+# Julia heat fluxes (W). Sign convention — same in both Julia and NicheMapR (FUN.f):
+#   gains: Q_solar, Q_ir_in, Q_metab  (positive)
+#   losses: Q_ir_out, Q_conv, Q_cond, Q_resp, Q_evap  (positive magnitudes)
+#   balance: Q_bal = ENB = QIN − QOUT  (≈ 0 at equilibrium; negative when cooling)
+# Q_conv can be negative when air is warmer than skin (convective gain).
+# NicheMapR keeps QRESP separate from QEVAP (cutaneous only) — same as Julia.
+jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.enbal.Q_solar)  for r in results]
+jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_in)  for r in results]
+jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_out) for r in results]
+jl_Q_conv   = [ustrip(u"W", r.ectotherm_out.enbal.Q_conv)   for r in results]
+jl_Q_cond   = [ustrip(u"W", r.ectotherm_out.enbal.Q_cond)   for r in results]
+jl_Q_metab  = [ustrip(u"W", r.ectotherm_out.enbal.Q_metab)  for r in results]
+jl_Q_evap   = [ustrip(u"W", r.ectotherm_out.enbal.Q_evap)   for r in results]
+jl_Q_resp   = [ustrip(u"W", r.ectotherm_out.enbal.Q_resp)   for r in results]
+jl_Q_bal    = [ustrip(u"W", r.ectotherm_out.enbal.Q_bal)    for r in results]
+
+# (label, Julia W, NicheMapR W) — no sign flips needed; both use same convention
+flux_pairs = [
+    ("Solar",        jl_Q_solar,   r_eb.QSOL),
+    ("IR in",        jl_Q_ir_in,   r_eb.QIRIN),
+    ("IR out",       jl_Q_ir_out,  r_eb.QIROUT),
+    ("Convection",   jl_Q_conv,    r_eb.QCONV),
+    ("Conduction",   jl_Q_cond,    r_eb.QCOND),
+    ("Metabolic",    jl_Q_metab,   r_eb.QMET),
+    ("Respiratory",  jl_Q_resp,    r_eb.QRESP),
+    ("Evap",         jl_Q_evap,    r_eb.QEVAP),
+    ("Net balance",  jl_Q_bal,     r_eb.ENB),
+]
+
+println("\n── Heat fluxes ($run_label vs NicheMapR) ──────────────────────────")
+println("  $(rpad("Component", 14))  $(rpad("Jl mean (W)", 13))  $(rpad("NMR mean (W)", 13))  $(rpad("RMSE (W)", 10))  Bias (W)")
+for (name, jl, nmr) in flux_pairs
+    rmse_f = sqrt(mean((jl .- nmr).^2))
+    bias_f = mean(jl .- nmr)
+    println("  $(rpad(name, 14))  $(rpad(string(round(mean(jl),  digits=4)), 13))  " *
+            "$(rpad(string(round(mean(nmr), digits=4)), 13))  " *
+            "$(rpad(string(round(rmse_f,   digits=4)), 10))  $(round(bias_f, digits=4))")
+end
+
 # ── Plot ──────────────────────────────────────────────────────────────────
 show_legend = false   # set false to hide all plot legends
 
@@ -299,35 +354,39 @@ T_target_min = ustrip(u"°C", limits.T_active_min)
 T_target_max = ustrip(u"°C", limits.T_active_max)
 Tcrit_min = ustrip(u"°C", limits.T_critical_min)
 Tcrit_max = ustrip(u"°C", limits.T_critical_max)
+T_emerge = ustrip(u"°C", limits.T_emerge)
+T_bask = ustrip(u"°C", limits.T_bask)
 
 lbl(s) = show_legend ? s : ""   # suppress label strings when legend hidden
 
 p1 = plot(t, T_body_C;
-    ylabel = "°C", label = lbl("Tb ($run_label)"), lw = 2, color = :red,
+    label = lbl("Tb ($run_label)"), lw = 2, color = :red,
     title  = "Body temperature", legend = show_legend)
-plot!(p1, t, r_T_body_C;
-    label = lbl("Tb (NicheMapR)"), lw = 2, color = :darkred, linestyle = :dash)
+scatter!(p1, t, r_T_body_C;
+    label = lbl("Tb (NicheMapR)"), ms = 2, color = :darkred)
 plot!(p1, t, u"°C".(T_air);
     label = lbl("T_air (1 cm)"), lw = 1, color = :steelblue, linestyle = :dash)
 hline!(p1, [T_target_min, T_target_max];
     label = lbl("T_target range"), color = :orange, linestyle = :dash)
 hline!(p1, [Tcrit_min, Tcrit_max];
     label = lbl("Tcrit range"), color = :grey, linestyle = :dot)
+hline!(p1, [T_emerge, T_bask];
+    label = lbl("Tcrit range"), color = :gold, linestyle = :dot)
 
 p2 = plot(t, shade .* 100;
     ylabel = "%", ylim = (0, 100),
     label = lbl("shade ($run_label)"), color = :green, title = "Shade selection",
     legend = show_legend)
-plot!(p2, t, r_shade .* 100;
-    label = lbl("shade (NicheMapR)"), color = :darkgreen, linestyle = :dash)
+scatter!(p2, t, r_shade .* 100;
+    label = lbl("shade (NicheMapR)"), ms = 2, color = :darkgreen)
 scatter!(p2, t[julia_act.==1], fill(65.0, sum(julia_act.==1));
-    ms = 2, color = :orange, label = lbl("basking ($run_label)"))
+    ms = 3, marker = :xcross, color = :orange, label = lbl("basking ($run_label)"))
 scatter!(p2, t[julia_act.==0], fill(60.0, sum(julia_act.==0));
-    ms = 2, color = :blue, label = lbl("resting ($run_label)"))
+    ms = 3, marker = :xcross, color = :blue, label = lbl("resting ($run_label)"))
 scatter!(p2, t[r_act.==1], fill(45.0, sum(r_act.==1));
-    ms = 2, color = :goldenrod, label = lbl("basking (NicheMapR)"))
+    ms = 3, marker = :xcross, color = :goldenrod, label = lbl("basking (NicheMapR)"))
 scatter!(p2, t[r_act.==0], fill(40.0, sum(r_act.==0));
-    ms = 2, color = :purple, label = lbl("resting (NicheMapR)"))
+    ms = 3, marker = :xcross, color = :purple, label = lbl("resting (NicheMapR)"))
 
 # Height comparison: Julia uses organism height in m (positive=above, neg=underground);
 # NicheMapR DEP is depth below ground (neg=underground, 0=surface, no above-ground height).
@@ -335,9 +394,13 @@ p3 = plot(t, ustrip.(u"m", height);
     ylabel = "m", label = lbl("height ($run_label)"),
     color = :brown, title = "Height / depth (+ above ground, − underground)",
     legend = show_legend)
-plot!(p3, t, r_height_m;
-    label = lbl("depth (NicheMapR)"), color = :chocolate, linestyle = :dash)
+scatter!(p3, t, r_height_m;
+    label = lbl("depth (NicheMapR)"), ms = 2, color = :chocolate)
 hline!(p3, [0.0]; color = :black, lw = 1, label = lbl("ground"))
+
+for p in (p1, p2, p3)
+    vline!(p, collect(t); color = :grey, lw = 0.5, linestyle = :dash, label = "")
+end
 
 plot(p1, p2, p3;
     layout      = (3, 1),
@@ -345,3 +408,21 @@ plot(p1, p2, p3;
     size        = (900, 800),
     left_margin = 5Plots.mm,
 )
+
+# # ── Heat flux plot ────────────────────────────────────────────────────────────
+# flux_plots = map(flux_pairs) do (name, jl, nmr)
+#     p = plot(t, jl;
+#         lw=2, color=:steelblue, label=lbl(run_label),
+#         ylabel="W", title=name, legend=show_legend)
+#     scatter!(p, t, nmr; ms=2, color=:darkred, label=lbl("NicheMapR"))
+#     hline!(p, [0.0]; color=:grey, lw=0.5, label="")
+#     vline!(p, collect(t); color=:grey, lw=0.5, linestyle=:dash, label="")
+#     p
+# end
+
+# plot(flux_plots...;
+#     layout      = (5, 2),
+#     xlabel      = "time step (h)",
+#     size        = (1100, 1200),
+#     left_margin = 5Plots.mm,
+# )

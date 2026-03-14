@@ -161,12 +161,14 @@ function thermoregulate(
     limits           = reset_position(limits)
     organism_current = organism   # fresh reference each hour
 
-    # When sun orientation is disabled, fix silhouette at Intermediate() —
-    # the geometric mean of NormalToSun and ParallelToSun areas.
-    if !limits.can_solar_orient
-        organism_current = @set organism_current.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
-        organism_current = @set organism_current.traits.heat_exchange.radiation_pars.A_silhouette =
-            _silhouette_area(organism_current.body, Intermediate())
+    # When solar orientation is enabled, reset to Intermediate (neutral/active) each hour so
+    # the loop can shift to NormalToSun (too cold/basking) or ParallelToSun (too hot) as needed.
+    # When disabled, solar_orientation in radiation_pars is used as-is each hour:
+    # NormalToSun, ParallelToSun, Intermediate → fixed area via HeatExchange dispatch;
+    # ZenithAngleVarying → area computed from e_vars.zenith_angle inside HeatExchange.
+    if limits.can_solar_orient
+        organism_current = @set organism_current.traits.heat_exchange.radiation_pars.solar_orientation =
+            Intermediate()
     end
 
     # Clamp height/depth max to actual environment array sizes so that the
@@ -234,16 +236,26 @@ function thermoregulate(
         Tcrit_min        = ustrip(u"K", limits.T_critical_min)
 
         if Tb_strip > T_target_cur
-            # -- Too hot: lighten → parallel → seek shade → climb → pant →
-            #            increment_T_target → retreat_underground
-            # (NicheMapR order: cooling behaviors first; TPREF increment only
-            #  after above-ground options are exhausted, before retreating underground)
-            if limits.can_change_absorptivity &&
-               limits.absorptivity.current > limits.absorptivity.reference
-                limits, organism_current = lighten(organism_current, limits)
+            # -- Too hot --
+            # NicheMapR ECTOTHERM.f: increment TPREF FIRST (ENB>0 block, before any behavioral
+            # adjustment). Cooling behaviors begin after TPREF has reached T_active_max.
+            #
+            # NicheMapR THERMO.f: with LIVE=1 (can_solar_orient=true), parallel orientation is
+            # structurally unreachable. The revert-to-intermediate check (lines 119-128) fires
+            # BEFORE the parallel check (lines 173-176), and the parallel check requires
+            # ASIL > (ASILN+ASILP)/2 (i.e., currently perpendicular). Since the revert always
+            # fires when TC >= TMINPR, leaving ASIL = intermediate, the parallel condition always
+            # fails with LIVE=1. Only lighten, shade, climb, pant, and burrow are available.
+            #
+            # When can_solar_orient=false, solar_orientation is a user-set fixed value and
+            # should not be overridden by the behavioral loop. orient_parallel is therefore
+            # excluded from the hot sequence entirely.
+            if limits.T_target.current < limits.T_target.max
+                limits = increment_T_target(limits)
 
-            elseif limits.can_solar_orient && limits.sun_orientation > 0.0
-                limits, organism_current = orient_parallel(organism_current, limits)
+            elseif limits.can_change_absorptivity &&
+                   limits.absorptivity.current > limits.absorptivity.reference
+                limits, organism_current = lighten(organism_current, limits)
 
             elseif limits.can_seek_shade && limits.shade.current < limits.shade.max
                 limits = seek_shade(limits)
@@ -253,11 +265,6 @@ function thermoregulate(
 
             elseif limits.can_pant && limits.pant_rate.current < limits.pant_rate.max
                 limits, organism_current = pant(organism_current, limits)
-
-            elseif limits.T_target.current < limits.T_target.max
-                # All above-ground cooling exhausted: increment T_target threshold
-                # (NicheMapR ECTOTHERM.f TPREF += 1 when ENB > 0 after adjustments)
-                limits = increment_T_target(limits)
 
             elseif limits.can_retreat_underground
                 underground_bf = limits.underground_shaded ? 1.0 : 0.0
@@ -293,8 +300,24 @@ function thermoregulate(
                 break
             end
 
+        elseif limits.can_solar_orient && limits.sun_orientation < 90.0 &&
+               Tb_strip < ustrip(u"K", limits.T_active_min)
+            # -- Basking range [T_bask, T_active_min): orient NormalToSun to maximise solar gain --
+            # NicheMapR THERMO.f line 107: orient perpendicular whenever TC < TMINPR (T_active_min),
+            # not just when TC < TBASK. This ensures the animal is oriented toward the sun throughout
+            # the basking phase, speeding up warming.
+            limits, organism_current = orient_perpendicular(organism_current, limits)
+
+        elseif limits.can_solar_orient && limits.sun_orientation == 90.0 &&
+               Tb_strip >= ustrip(u"K", limits.T_active_min)
+            # -- Revert perpendicular → Intermediate when entering active range --
+            # NicheMapR THERMO.f lines 119-128: when TC ≥ TMINPR and POSTUR=1 (perpendicular),
+            # revert to foraging/neutral posture (ASIL = average). This prevents the animal from
+            # staying perpendicular through the hot active phase, which would over-heat it.
+            limits, organism_current = orient_intermediate(organism_current, limits)
+
         else
-            break  # within basking/active range [T_bask, T_active_max]
+            break  # within active range or orientation already set
         end
 
         env = interpolate_environment(available_environments, step, limits, environmental_params)
@@ -325,11 +348,15 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
         available_environments.heights[limits.height.current]
     end
     # Classify organism state (mirrors NicheMapR ACT column: 0=Resting, 1=Basking, 2=Active)
+    # NicheMapR ECTOTHERM.f lines 3645-3684 (ACTHR logic):
+    #   ACT=0 (Resting):  Tc < T_B_min (TBASK=17.5°C) OR Tc > T_F_max (TMAXPR=34°C)
+    #   ACT=1 (Basking):  T_B_min <= Tc < T_F_min (TMINPR=24°C)
+    #   ACT=2 (Active):   T_F_min <= Tc <= T_F_max
     state = if !in_active_period || is_underground
         Resting()
     elseif limits.T_active_min <= Tb <= limits.T_active_max
         Active()
-    elseif limits.T_bask <= Tb
+    elseif limits.T_bask <= Tb < limits.T_active_min
         Basking()
     else
         Resting()
