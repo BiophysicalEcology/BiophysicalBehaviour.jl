@@ -6,15 +6,13 @@ import FluidProperties
 using BiophysicalGeometry
 using HeatExchange
 using ModelParameters
-using Roots
 using Unitful
 using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: ectotherm
-using Roots: find_zero, Bisection
+using HeatExchange: ectotherm, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
 using Setfield: @set
 
 # Organism and traits

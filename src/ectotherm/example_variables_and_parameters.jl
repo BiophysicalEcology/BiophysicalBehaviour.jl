@@ -84,7 +84,7 @@ function example_ectotherm_behavioral_limits(;
     height_max       = typemax(Int), # default = use all available height nodes
     # Thermal thresholds
     T_target      = u"K"(30.0u"°C"),   # TPREF: starting target temp (rises to T_active_max)
-    T_target_step = 1.0u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
+    T_target_step = 0.5u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
     T_active_min  = u"K"(24.0u"°C"),
     T_active_max  = u"K"(34.0u"°C"),
     T_bask           = u"K"(17.5u"°C"),

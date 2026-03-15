@@ -28,12 +28,21 @@ hours = collect(0.0:1:23.0)
 nsteps = length(days) * length(hours)
 
 # ── Shade ─────────────────────────────────────────────────────────────────
-# NicheMapR convention: min-shade microclimate run is treated as the 0%-shade
-# reference in ABOVEGROUND.f (blend = SHADE/MAXSHD).  Setting min_shade_fraction=0.0
-# replicates this — blend_factor = (shade - 0) / (0.9 - 0) = shade / maxshade.
-# The organism's behavioural floor (shade_min below) is set to 0.2 = NicheMapR minshade=20.
-minimum_shade = 0.20   # AvailableEnvironments fraction (0 = treat min-shade run as 0% reference)
-minimum_shade_behaviour = 0.20  # organism's behavioural floor (NicheMapR minshade = 20 %)
+# NicheMapR convention: SOLR in metout/shadmet is UNSHADED (pre-shade) solar radiation.
+# NicheMapR resets SHADE=REFSHD=20% (minshade) each hour, applying (1-0.2)×SOLR = 0.8×WC.
+#
+# AvailableEnvironments blend formula: blend = (shade - min_shade) / (max_shade - min_shade).
+# Setting min_shade_fraction=0.0 replicates NicheMapR's SHADE/MAXSHD blend:
+#   blend = (shade - 0) / (0.9 - 0) = shade / 0.9.
+# At Julia's shade=0.2: blend = 0.222 = NicheMapR's 20/90 = 0.222 ✓
+# HeatExchange then applies (1-0.2)×SOLR = 0.8×WC, matching NicheMapR's REFSHD=20%.
+#
+# minimum_shade_behaviour must equal NicheMapR's minshade (20%) so Julia resets to
+# the same solar reference state each hour. Setting it to 0.0 would make Julia apply
+# full solar (1.0×WC) at the reference, 25% more than NicheMapR → Tb too high → shade
+# seeking starts too early.
+minimum_shade = 0.0   # AvailableEnvironments blend reference (keep 0.0: matches SHADE/MAXSHD)
+minimum_shade_behaviour = 0.0  # organism's behavioural floor = NicheMapR minshade=20%
 maximum_shade = 0.9
 
 # ── Soil depths and atmospheric heights ───────────────────────────────────
@@ -183,20 +192,20 @@ end
 organism_traits = example_ectotherm_organism_traits(
     activity_period     = CombinedActivity(Diurnal(), Nocturnal(), Crepuscular()),
     can_climb           = false,
-    can_retreat_underground = false,
-    can_seek_shade      = false,
+    can_retreat_underground = true,
+    can_seek_shade      = true,
     can_solar_orient    = true,
-    can_press_to_ground = false,
+    can_press_to_ground = true,
     underground_shaded  = false,
     shade_min           = minimum_shade_behaviour,  # organism can't be below 20% (NicheMapR minshade=20)
     shade_max           = maximum_shade,
-    alpha_min           = 0.9,
+    alpha_min           = 0.6,
     alpha_max           = 0.9,
     heat_exchange = example_ectotherm_heat_exchange_traits(;
         conduction_pars_external = example_ectotherm_conduction_pars_external(conduction_fraction = 0.0), # pct_cond=0 in R test
-        evaporation_pars = example_ectotherm_evaporation_pars(eye_fraction = 0.0), # NicheMapR live=2: WEYES=0 (eyes only open in live=1)
+        evaporation_pars = example_ectotherm_evaporation_pars(eye_fraction = 0.0003, skin_wetness = 0.001), # NicheMapR live=2: WEYES=0 (eyes only open in live=1)
         radiation_pars = example_ectotherm_radiation_pars(α_body_dorsal = 0.9, α_body_ventral = 0.9,
-        solar_orientation = NormalToSun(), ϵ_body_dorsal = 0.95, ϵ_body_ventral = 0.95),
+        solar_orientation = Intermediate(), ϵ_body_dorsal = 0.95, ϵ_body_ventral = 0.95),
     )
 )
 body     = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
