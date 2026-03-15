@@ -201,6 +201,8 @@ organism_traits = example_ectotherm_organism_traits(
     can_solar_orient         = true,
     can_change_absorptivity  = true,
     can_press_to_ground      = false,
+    can_pant                 = true,
+    pant_max                 = 2.0,
     burrow_shade_mode   = AdaptiveBurrowShade(),
     shade_min           = minimum_shade_behaviour,  # organism can't be below 20% (NicheMapR minshade=20)
     shade_max           = maximum_shade,
@@ -213,6 +215,7 @@ organism_traits = example_ectotherm_organism_traits(
         evaporation_pars = example_ectotherm_evaporation_pars(eye_fraction = 0.0003, skin_wetness = 0.001), # NicheMapR live=2: WEYES=0 (eyes only open in live=1)
         radiation_pars = example_ectotherm_radiation_pars(α_body_dorsal = 0.9, α_body_ventral = 0.9,
         solar_orientation = Intermediate(), ϵ_body_dorsal = 0.95, ϵ_body_ventral = 0.95),
+        respiration_pars = example_ectotherm_respiration_pars(mouth_fraction = 0.05),
     )
 )
 body     = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
@@ -230,10 +233,11 @@ if use_nmr_microclimate
     # 0%-shade reference, matching NicheMapR ABOVEGROUND.f blend = SHADE/MAXSHD.
     # Fields not in the R CSVs (soil_thermal_conductivity, soil_humidity,
     # diffuse_fraction) fall back to the Julia MicroResult.
-    r_metout_df   = CSV.read(joinpath(@__DIR__, "..", "test", "data", "ectotherm", "metout.csv"),   DataFrame)
-    r_soil_df     = CSV.read(joinpath(@__DIR__, "..", "test", "data", "ectotherm", "soil.csv"),     DataFrame)
-    r_shadmet_df  = CSV.read(joinpath(@__DIR__, "..", "test", "data", "ectotherm", "shadmet.csv"),  DataFrame)
-    r_shadsoil_df = CSV.read(joinpath(@__DIR__, "..", "test", "data", "ectotherm", "shadsoil.csv"), DataFrame)
+    nmr_dir       = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "baseline")
+    r_metout_df   = CSV.read(joinpath(nmr_dir, "metout.csv"),   DataFrame)
+    r_soil_df     = CSV.read(joinpath(nmr_dir, "soil.csv"),     DataFrame)
+    r_shadmet_df  = CSV.read(joinpath(nmr_dir, "shadmet.csv"),  DataFrame)
+    r_shadsoil_df = CSV.read(joinpath(nmr_dir, "shadsoil.csv"), DataFrame)
 
     r_met0   = r_metout_df[1:nsteps, :]
     r_soil0  = r_soil_df[1:nsteps, :]
@@ -291,7 +295,7 @@ T_air = [low_shade_result.profile[i].air_temperature[1] for i in 1:nsteps]
 # R script: test/R/ectotherm_thermoregulate.R writes environ.csv with 12 months
 # of hourly output. Rows 1:nsteps correspond to doy 15 (Jan 15) and doy 46
 # (Feb 15), matching this Julia simulation exactly.
-r_path    = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "environ.csv")
+r_path    = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "baseline", "environ.csv")
 r_environ = CSV.read(r_path, DataFrame)
 r         = r_environ[1:nsteps, :]        # first 48 hours only
 
@@ -325,7 +329,7 @@ println("  Julia:     Resting=$(sum(julia_act.==0)), Basking=$(sum(julia_act.==1
 println("  NicheMapR: Resting=$(sum(r_act.==0)), Basking=$(sum(r_act.==1)), Active=$(sum(r_act.==2))")
 
 # ── Heat flux comparison ──────────────────────────────────────────────────────
-r_enbal_path = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "enbal.csv")
+r_enbal_path = joinpath(@__DIR__, "..", "test", "data", "ectotherm", "baseline", "enbal.csv")
 r_enbal = CSV.read(r_enbal_path, DataFrame)
 r_eb    = r_enbal[1:nsteps, :]
 

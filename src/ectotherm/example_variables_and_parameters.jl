@@ -270,22 +270,24 @@ end
 
 Create example `RespirationParameters` for an ectotherm with NicheMapR defaults.
 
-| Parameter      | Default  | NicheMapR equivalent            |
-|----------------|----------|---------------------------------|
-| `fO2_extract`  | 0.2      | F_O2 = 20 (%)                   |
-| `rq`           | 0.8      | RQ = 0.8                        |
-| `pant`         | 1.0      | pantmax = 1 (no panting)        |
-| `Δ_breath`     | 0.1 K    | delta_air = 0.1 (°C above Tair) |
-| `rh_exit`      | 1.0      | (saturated exhaled air)         |
+| Parameter        | Default  | NicheMapR equivalent                             |
+|------------------|----------|--------------------------------------------------|
+| `fO2_extract`    | 0.2      | F_O2 = 20 (%)                                    |
+| `rq`             | 0.8      | RQ = 0.8                                         |
+| `pant`           | 1.0      | pantmax = 1 (no panting)                         |
+| `Δ_breath`       | 0.1 K    | delta_air = 0.1 (°C above Tair)                  |
+| `rh_exit`        | 1.0      | (saturated exhaled air)                          |
+| `mouth_fraction` | 0.05     | pct_mouth/100: added to skin_wetness when panting|
 """
 function example_ectotherm_respiration_pars(;
-    fO2_extract = 0.2,
-    rq          = 0.8,
-    pant        = 1.0,
-    Δ_breath    = 0.1u"K",
-    rh_exit     = 1.0,
+    fO2_extract    = 0.2,
+    rq             = 0.8,
+    pant           = 1.0,
+    Δ_breath       = 0.1u"K",
+    rh_exit        = 1.0,
+    mouth_fraction = 0.05,
 )
-    RespirationParameters(; fO2_extract, rq, pant, Δ_breath, rh_exit)
+    RespirationParameters(; fO2_extract, rq, pant, Δ_breath, rh_exit, mouth_fraction)
 end
 
 """

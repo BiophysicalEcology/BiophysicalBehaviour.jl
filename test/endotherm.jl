@@ -243,7 +243,7 @@ for shape_number in 1:4
         # Combine physiology and behavior into OrganismTraits
         behavioral_traits = BehavioralTraits(;
             thermoregulation=thermoregulation_limits,
-            activity=Diurnal(),
+            activity_period=Diurnal(),
         )
         organism_traits = OrganismTraits(Endotherm(), physiology_traits, behavioral_traits)
 

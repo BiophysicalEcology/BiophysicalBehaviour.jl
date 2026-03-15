@@ -197,28 +197,34 @@ shadhumid <- as.data.frame(microut$shadhumid[1:(doynum * 24), ]) # retrieve soil
 soilpot <- as.data.frame(microut$soilpot[1:(doynum * 24), ]) # retrieve soil water potential, minimum shade
 shadpot <- as.data.frame(microut$shadpot[1:(doynum * 24), ]) # retrieve soil water potential, maximum shade
 
-write.csv(metout, file = '../data/ectotherm/metout.csv')
-write.csv(soil, file = '../data/ectotherm/soil.csv')
-write.csv(shadmet, file = '../data/ectotherm/shadmet.csv')
-write.csv(shadsoil, file = '../data/ectotherm/shadsoil.csv')
+# Shared microclimate CSVs (identical across all ectotherm scenarios)
+dir.create('../data/ectotherm/baseline', showWarnings = FALSE, recursive = TRUE)
+write.csv(metout,   file = '../data/ectotherm/baseline/metout.csv')
+write.csv(soil,     file = '../data/ectotherm/baseline/soil.csv')
+write.csv(shadmet,  file = '../data/ectotherm/baseline/shadmet.csv')
+write.csv(shadsoil, file = '../data/ectotherm/baseline/shadsoil.csv')
 
 
-### Ectotherm simulation – Desert iguana, matching examples/ectotherm.jl
-## Julia parameter mapping:
-#   can_seek_shade      = false → shade_seek = 0
-#   can_retreat_underground = true  → burrow     = 1
-#   can_climb           = false → climb      = 0
-#   can_solar_orient    = false → live = 2 (full behaviour, no sun orientation)
-#   can_press_to_ground = false → pct_cond left at default (10 %)
+### Ectotherm simulation – Desert iguana, 4 behavioural scenarios
+## Common parameters (matching examples/ectotherm.jl and Julia test):
+#   Ww_g=40, shape=3, epsilon=0.95
+#   alpha_max=0.9, alpha_min=0.6  (colour change on)
+#   T_F_min=24, T_F_max=34, CT_min=6, CT_max=40, T_B_min=17.5, T_RB_min=15, T_pref=30
+#   diurn=nocturn=crepus=1, shdburrow=1, climb=0, mindepth=3, pct_cond=0, warmsig=0, pantmax=3
+#
+## Scenario matrix (varies: shade_seek, live, postur):
+#   baseline   – shade_seek=0, live=1, postur=0  (no shade, no sun-orient)
+#   shade      – shade_seek=1, live=1, postur=0  (shade seeking, no sun-orient)
+#   sun_orient – shade_seek=0, live=2, postur=1  (sun orientation, no shade)
+#   full       – shade_seek=1, live=2, postur=1  (shade + sun orientation)
 
-# Behavioural / physiological thresholds (defined here so they can be used in the plot)
-T_F_min <- 24   # min activity temperature (°C); T_active_min in Julia
-T_F_max <- 34   # max activity temperature (°C); T_active_max in Julia
-CT_min  <- 6    # critical thermal minimum (°C)
-CT_max  <- 40   # critical thermal maximum (°C)
+# Behavioural / physiological thresholds (reused in plots)
+T_F_min <- 24
+T_F_max <- 34
+CT_min  <- 6
+CT_max  <- 40
 
-# Build 'micro' list that ectotherm() default arguments reference.
-# The microclimate Fortran output (microut) already has the right matrix format.
+# Build 'micro' list consumed by ectotherm()
 micro <- list(
   metout    = microut$metout[1:(doynum * 24), ],
   shadmet   = microut$shadmet[1:(doynum * 24), ],
@@ -233,137 +239,91 @@ micro <- list(
   tcond     = microut$tcond[1:(doynum * 24), ],
   shadtcond = microut$shadtcond[1:(doynum * 24), ],
   DEP       = DEP,
-  KS        = KS,      # ectotherm() will subset with seq(1,19,2) internally
+  KS        = KS,
   BB        = BB,
   PE        = PE,
   REFL      = REFL,
-  minshade  = rep(minshade, doynum), # monthly vector; ectotherm() does rep(..., each=24)
+  minshade  = rep(minshade, doynum),
   maxshade  = rep(maxshade, doynum),
   elev      = ALTT,
-  longlat   = c(ALONG + ALMINT / 3600, -(ALAT + AMINUT / 3600)), # [lon, lat] decimal deg
+  longlat   = c(ALONG + ALMINT / 3600, -(ALAT + AMINUT / 3600)),
   nyears    = 1,
   RAINFALL  = RAINFALL
 )
 
-ecto <- ectotherm(
-  Ww_g        = 40,    # body mass (g)
-  epsilon     = 0.95,
-  shape       = 3,     # desert iguana allometric shape
-  alpha_max   = 0.9,  # max solar absorptivity (dark); no colour change behaviour
-  alpha_min   = 0.6,  # min solar absorptivity (light); no colour change behaviour
-  T_F_min     = T_F_min,
-  T_F_max     = T_F_max,
-  T_B_min     = 17.5,  # min basking temperature (°C); T_bask in Julia
-  T_RB_min    = 15,  # min temp to move from retreat to bask (°C)
-  T_pref      = 30,    # target body temperature (°C)
-  CT_max      = CT_max,
-  CT_min      = CT_min,
-  diurn       = 1,     # diurnal activity
-  nocturn     = 1,     # no nocturnal activity
-  crepus      = 1,     # no crepuscular activity
-  shade_seek  = 0,     # shade seeking     (can_seek_shade      = false in Julia)
-  burrow      = 1,     # burrowing allowed (can_retreat_underground = true  in Julia)
-  shdburrow   = 1,     # burrow unshaded   (underground_shaded       = false in Julia)
-  climb       = 0,     # no climbing       (can_climb               = false in Julia)
-  live        = 1,     # behave, no sun-orient (can_solar_orient=false in Julia)
-  mindepth    = 3,     # minimum underground node (matches mindepth default)
-  maxdepth    = 10,    # maximum underground node (matches maxdepth default)
-  delta_shade = 3,      # shade step (%)
-  postur      = 0,
-  write_input = 0,
-  pct_cond    = 0,
-  warmsig     = 0,
-  #pct_wet = 0,
-  #M_1 = 0,
-  #pct_eyes = 0,
+# Scenario definitions
+scenarios <- list(
+  baseline   = list(shade_seek = 0, live = 1, postur = 0),
+  shade      = list(shade_seek = 1, live = 1, postur = 0),
+  sun_orient = list(shade_seek = 0, live = 2, postur = 1),
+  full       = list(shade_seek = 1, live = 2, postur = 1)
 )
 
+for (scen_name in names(scenarios)) {
+  s <- scenarios[[scen_name]]
 
-### Retrieve ectotherm outputs
-environ <- as.data.frame(ecto$environ) # hourly behaviour: TC, SHADE, DEP, ACT, TA, ...
-enbal   <- as.data.frame(ecto$enbal)   # hourly energy balance
-masbal  <- as.data.frame(ecto$masbal)  # hourly mass/water balance
+  ecto <- ectotherm(
+    Ww_g        = 40,
+    epsilon     = 0.95,
+    shape       = 3,
+    alpha_max   = 0.9,
+    alpha_min   = 0.6,
+    T_F_min     = T_F_min,
+    T_F_max     = T_F_max,
+    T_B_min     = 17.5,
+    T_RB_min    = 15,
+    T_pref      = 30,
+    CT_max      = CT_max,
+    CT_min      = CT_min,
+    diurn       = 1,
+    nocturn     = 1,
+    crepus      = 1,
+    shade_seek  = s$shade_seek,
+    burrow      = 1,
+    shdburrow   = 1,
+    climb       = 0,
+    live        = s$live,
+    postur      = s$postur,
+    mindepth    = 3,
+    maxdepth    = 10,
+    delta_shade = 3,
+    pct_cond    = 0,
+    warmsig     = 0,
+    pantmax     = 3,
+    write_input = 0
+  )
 
-write.csv(environ, file = '../data/ectotherm/environ.csv', row.names = FALSE)
-write.csv(enbal,   file = '../data/ectotherm/enbal.csv',   row.names = FALSE)
-write.csv(masbal,  file = '../data/ectotherm/masbal.csv',  row.names = FALSE)
+  environ <- as.data.frame(ecto$environ)
+  enbal   <- as.data.frame(ecto$enbal)
+  masbal  <- as.data.frame(ecto$masbal)
 
+  out_dir <- paste0('../data/ectotherm/', scen_name)
+  dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+  write.csv(environ, file = paste0(out_dir, '/environ.csv'), row.names = FALSE)
+  write.csv(enbal,   file = paste0(out_dir, '/enbal.csv'),   row.names = FALSE)
+  write.csv(masbal,  file = paste0(out_dir, '/masbal.csv'),  row.names = FALSE)
 
-### Plot first 48 hours (doy 15 = Jan 15, doy 46 = Feb 15) to match Julia example
-# The 12-month microclimate has doy = c(15, 46, ...), so hours 1:48 are the same
-# two days as in examples/ectotherm.jl.
-steps_jan_feb <- 1:48
+  # Quick diagnostic plot for first 48 hours
+  steps <- 1:48
+  par(mfrow = c(3, 1), mar = c(4, 5, 2, 1))
+  plot(steps, environ$TC[steps],
+    type = 'l', col = 'red', lwd = 2,
+    xlab = '', ylab = 'Temperature (°C)',
+    main = paste0('Desert iguana – scenario: ', scen_name),
+    ylim = c(0, 65))
+  lines(steps, metout$TALOC[steps], col = 'steelblue', lwd = 1, lty = 2)
+  abline(h = c(T_F_min, T_F_max), col = 'orange', lty = 2)
+  abline(h = c(CT_min, CT_max), col = 'grey', lty = 3)
 
-T_body <- environ$TC[steps_jan_feb]          # body temperature (°C)
-shade  <- environ$SHADE[steps_jan_feb]       # shade selected (%)
-dep    <- environ$DEP[steps_jan_feb]         # depth below ground (cm; 0 = surface)
-act    <- environ$ACT[steps_jan_feb]         # 0 = retreat, 1 = basking, 2 = foraging
-T_air  <- metout$TALOC[steps_jan_feb]        # local air temp at organism height (°C)
+  plot(steps, environ$SHADE[steps],
+    type = 'l', col = 'forestgreen', lwd = 2,
+    xlab = '', ylab = 'Shade (%)', ylim = c(0, 100),
+    main = 'Shade selection')
 
-par(mfrow = c(3, 1), mar = c(4, 5, 2, 1))
-
-# Panel 1: body temperature
-plot(steps_jan_feb, T_body,
-  type = 'l', col = 'red', lwd = 2,
-  xlab = '', ylab = 'Temperature (°C)',
-  main = 'Desert iguana – doy 15 (Jan) & doy 46 (Feb) – Alice Springs',
-  ylim = range(c(0, 65)))
-lines(steps_jan_feb, T_air, col = 'steelblue', lwd = 1, lty = 2)
-abline(h = c(T_F_min, T_F_max), col = 'orange', lty = 2)
-abline(h = c(CT_min,  CT_max),  col = 'grey',   lty = 3)
-legend('topright', bty = 'n',
-  legend = c('Tb', 'T_air (1 cm)', 'T_target range', 'CT range'),
-  col    = c('red', 'steelblue', 'orange', 'grey'),
-  lty    = c(1, 2, 2, 3), lwd = c(2, 1, 1, 1))
-
-# Panel 2: shade selection
-plot(steps_jan_feb, shade,
-  type = 'l', col = 'forestgreen', lwd = 2,
-  xlab = '', ylab = 'Shade (%)',
-  ylim = c(0, 100),
-  main = 'Shade selection')
-points(steps_jan_feb[act == 0], rep(50, sum(act == 0)),
-  pch = 16, cex = 0.8, col = 'blue')
-legend('topright', bty = 'n',
-  legend = c('shade', 'in retreat'),
-  col    = c('forestgreen', 'blue'),
-  lty    = c(1, NA), pch = c(NA, 16))
-
-# Panel 3: underground depth
-# NicheMapR environ DEP: positive = cm below ground surface, 0 = at surface
-plot(steps_jan_feb, dep,
-  type = 'l', col = 'saddlebrown', lwd = 2,
-  xlab = 'time step (h)', ylab = 'Depth (cm, + = underground)',
-  main = 'Underground depth')
-abline(h = 0, col = 'black', lwd = 1)
-
-
-# ### Heat flux plot (enbal components, first 48 hours)
-# # NicheMapR sign convention (FUN.f): ENB = (QSOL+QIRIN+QMET) - (QRESP+QEVAP+QIROUT+QCONV+QCOND)
-# # Gains (QSOL, QIRIN, QMET) and losses (QIROUT, QRESP, QEVAP, QCOND) are positive magnitudes.
-# # QCONV can be negative when air is warmer than skin (convective gain to body).
-# enbal_sub <- enbal[steps_jan_feb, ]
-# 
-# flux_cols   <- c("QSOL",    "QIRIN",   "QIROUT",        "QCONV",
-#                  "QCOND",   "QMET",    "QRESP",         "QEVAP",   "ENB")
-# flux_labels <- c("Solar gain (W)",  "IR in (W)",   "IR out (W)",   "Convection (W)",
-#                  "Conduction (W)",  "Metabolic (W)", "Respiratory (W)", "Evap (W)", "Net balance (W)")
-# flux_cols_palette <- c("goldenrod", "tomato", "firebrick", "steelblue",
-#                        "peru",      "forestgreen", "mediumpurple", "orchid", "grey30")
-# 
-# par(mfrow = c(5, 2), mar = c(3, 5, 2, 1))
-# for (i in seq_along(flux_cols)) {
-#   y <- enbal_sub[[flux_cols[i]]]
-#   plot(steps_jan_feb, y,
-#     type = 'l', col = flux_cols_palette[i], lwd = 2,
-#     xlab = 'time step (h)', ylab = 'W',
-#     main = flux_labels[i])
-#   abline(h = 0, col = 'grey', lty = 2)
-# }
-# 
-# ### Summary statistics for heat flux components
-# cat("\n── Heat flux summary (mean W, first 48 h) ──\n")
-# for (col in flux_cols) {
-#   cat(sprintf("  %-10s  mean = %8.4f W\n", col, mean(enbal_sub[[col]])))
-# }
+  plot(steps, environ$DEP[steps],
+    type = 'l', col = 'saddlebrown', lwd = 2,
+    xlab = 'time step (h)', ylab = 'Depth (cm)',
+    main = 'Underground depth')
+  abline(h = 0, col = 'black', lwd = 1)
+}
 
