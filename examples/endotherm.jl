@@ -18,12 +18,12 @@ respiration_pars = example_respiration_pars()
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
 fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
-mean_insulation_depth = insulation_pars.insulation_depth_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.insulation_depth_ventral * radiation_pars.ventral_fraction
-mean_fibre_diameter = insulation_pars.fibre_diameter_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_diameter_ventral * radiation_pars.ventral_fraction
-mean_fibre_density = insulation_pars.fibre_density_dorsal * (1 - radiation_pars.ventral_fraction) +
-    insulation_pars.fibre_density_ventral * radiation_pars.ventral_fraction
+mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
+    insulation_pars.ventral.density * radiation_pars.ventral_fraction
 fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
@@ -53,15 +53,15 @@ thermoregulation_limits = ThermoregulationLimits(;
     Q_minimum_ref=metabolism_pars.Q_metabolism,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
-            current=insulation_pars.insulation_depth_dorsal,
-            reference=insulation_pars.insulation_depth_dorsal,
-            max=insulation_pars.insulation_depth_dorsal,
+            current=insulation_pars.dorsal.depth,
+            reference=insulation_pars.dorsal.depth,
+            max=insulation_pars.dorsal.depth,
             step=0.0,
         ),
         ventral=SteppedParameter(;
-            current=insulation_pars.insulation_depth_ventral,
-            reference=insulation_pars.insulation_depth_ventral,
-            max=insulation_pars.insulation_depth_ventral,
+            current=insulation_pars.ventral.depth,
+            reference=insulation_pars.ventral.depth,
+            max=insulation_pars.ventral.depth,
             step=0.0,
         ),
     ),
@@ -123,7 +123,7 @@ endotherm_out = thermoregulate(
     T_skin,
     T_insulation,
 )
-thermoregulation = endotherm_out.thermoregulation
+thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
 energy_fluxes = endotherm_out.energy_fluxes
 mass_fluxes = endotherm_out.mass_fluxes

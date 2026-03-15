@@ -177,7 +177,7 @@ endotherm_out = thermoregulate(
     T_skin,
     T_insulation,
 )
-thermoregulation = endotherm_out.thermoregulation
+thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
 energy_fluxes = endotherm_out.energy_fluxes
 mass_fluxes = endotherm_out.mass_fluxes
