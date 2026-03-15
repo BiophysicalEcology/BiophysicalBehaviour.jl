@@ -95,7 +95,8 @@ function thermoregulate(
     limits::EctothermBehavioralLimits,
     environmental_params,
     step::Int,
-    prev_step_depth::Int=1,
+    prev_step_depth::Int=1;
+    activity_today::Bool=false,
 )
     thermoregulate(
         thermal_strategy(organism),
@@ -105,7 +106,8 @@ function thermoregulate(
         limits,
         environmental_params,
         step,
-        prev_step_depth,
+        prev_step_depth;
+        activity_today,
     )
 end
 
@@ -152,11 +154,14 @@ function thermoregulate(
     limits::EctothermBehavioralLimits,
     environmental_params,
     step::Int,
-    prev_step_depth::Int,
+    prev_step_depth::Int;
+    activity_today::Bool=false,
 )
     low_shade = available_environments.min_shade_result
     high_shade = available_environments.max_shade_result
     (; max_iterations) = limits.control
+    Tbask            = ustrip(u"K", limits.T_bask)
+    Tcrit_min        = ustrip(u"K", limits.T_critical_min)
 
     # -------------------------------------------------------------------------
     # 1. Reset position / state for this hour; organism starts at reference state
@@ -186,22 +191,42 @@ function thermoregulate(
     solar_rad = low_shade.global_radiation[step]
     active    = is_active(activity_period(organism), zenith, solar_rad)
 
-    # Helper: blend factor ∈ [0,1] from chosen shade
-    shade_range = available_environments.max_shade_fraction - available_environments.min_shade_fraction
-    @inline blend_factor_for(shade_chosen) = shade_range > 0 ?
-        clamp((shade_chosen - available_environments.min_shade_fraction) / shade_range, 0.0, 1.0) :
-        0.0
-
     # -------------------------------------------------------------------------
-    # 3a. Inactive period → retreat to optimal underground depth (or stay above)
+    # 3a. Inactive period → retreat underground if it is warmer below ground
     # -------------------------------------------------------------------------
     if !active
         if limits.can_retreat_underground
-            underground_bf = limits.underground_shaded ? 1.0 : 0.0
-            limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
+            underground_bf = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
+
+            # Only burrow if at least one accessible soil node is warmer than the
+            # above-ground air temperature at the organism's reference height.
+            # Burrowing is a thermal refuge: the animal benefits only when the
+            # soil is warmer (retains daytime heat at night, stays cool midday).
+            aboveground_bf = available_environments.max_shade_fraction > 0 ?
+                clamp(limits.shade.current / available_environments.max_shade_fraction, 0.0, 1.0) : 0.0
+            T_air_ref = _blend(
+                low_shade.profile[step].air_temperature[limits.height.reference],
+                high_shade.profile[step].air_temperature[limits.height.reference],
+                aboveground_bf,
+            )
+            n_nodes   = size(low_shade.soil_temperature, 2)
+            depth_min = clamp(limits.depth_min_underground, 1, n_nodes)
+            depth_max = clamp(limits.depth.max,             1, n_nodes)
+            underground_warmer = any(depth_min:depth_max) do node
+                T_soil = _blend(
+                    low_shade.soil_temperature[step, node],
+                    high_shade.soil_temperature[step, node],
+                    underground_bf,
+                )
+                T_soil > T_air_ref
+            end
+
+            if underground_warmer
+                limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
+            end
         end
         env = interpolate_environment(available_environments, step, limits, environmental_params)
-        return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments)
+        return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments, underground_bf)
     end
 
     # -------------------------------------------------------------------------
@@ -210,16 +235,38 @@ function thermoregulate(
     if prev_step_depth > limits.depth.reference
         # Underground temperature is binary (shaded or unshaded location),
         # not a linear blend — matches interpolate_environment BELOWGROUND.f logic.
-        underground_bf   = limits.underground_shaded ? 1.0 : 0.0
-        T_soil_prev = _blend(
+        underground_bf  = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
+        T_soil_at_depth = _blend(
             low_shade.soil_temperature[step, prev_step_depth],
             high_shade.soil_temperature[step, prev_step_depth],
             underground_bf,
         )
-        if T_soil_prev < limits.T_emerge
-            limits = @set limits.depth.current = prev_step_depth
+
+        # WARMSIG: require a soil temperature change signal before the animal emerges.
+        # Mirrors NicheMapR ectotherm.f lines 2218-2244. Applies only when:
+        #   warm_signal != 0, depth_node > 2, and no activity has occurred today yet.
+        # warm_signal > 0: soil must be warming at >= warm_signal K/hr
+        # warm_signal < 0: soil must be cooling at >= |warm_signal| K/hr
+        stay_for_signal = false
+        if !iszero(limits.warm_signal) && prev_step_depth > 2 && !activity_today && step > 1
+            T_soil_prev_step = _blend(
+                low_shade.soil_temperature[step-1, prev_step_depth],
+                high_shade.soil_temperature[step-1, prev_step_depth],
+                underground_bf,
+            )
+            # Each time step is 1 hour so the K change per step equals the K/hr rate.
+            soil_delta = ustrip(u"K", T_soil_at_depth - T_soil_prev_step) * u"K/hr"
+            stay_for_signal = (limits.warm_signal > zero(limits.warm_signal) && soil_delta < limits.warm_signal) ||
+                              (limits.warm_signal < zero(limits.warm_signal) && soil_delta > limits.warm_signal)
+        end
+
+        if T_soil_at_depth < limits.T_emerge || stay_for_signal
+            # Stay underground — re-run select_depth to find the best available node for
+            # this hour (mirrors NicheMapR calling SELDEP.f each inactive hour). This
+            # allows the animal to move deeper when its current node cools below CT_min.
+            limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
             env    = interpolate_environment(available_environments, step, limits, environmental_params)
-            return _build_ectotherm_output(organism_current, env, environmental_params, limits, false, available_environments)
+            return _build_ectotherm_output(organism_current, env, environmental_params, limits, false, available_environments, underground_bf)
         end
     end
 
@@ -228,6 +275,7 @@ function thermoregulate(
     # -------------------------------------------------------------------------
     env = interpolate_environment(available_environments, step, limits, environmental_params)
     Tb  = solve_body_temperature(organism_current, env, environmental_params)
+    underground_bf = 0.0  # updated if the animal retreats underground during the loop
 
     iteration = 0
     while iteration < max_iterations
@@ -236,8 +284,6 @@ function thermoregulate(
         T_target_cur     = ustrip(u"K", limits.T_target.current)
         T_active_max_cur = ustrip(u"K", limits.T_active_max)
         T_active_min_cur = ustrip(u"K", limits.T_active_min)
-        Tbask            = ustrip(u"K", limits.T_bask)
-        Tcrit_min        = ustrip(u"K", limits.T_critical_min)
 
         # NicheMapR THERMO.f phase 2 (first sub-case): revert perpendicular → intermediate
         # when Tb has risen into the accepted active range [T_active_min, T_target].
@@ -284,7 +330,7 @@ function thermoregulate(
                 limits, organism_current = pant(organism_current, limits)
 
             elseif limits.can_retreat_underground
-                underground_bf = limits.underground_shaded ? 1.0 : 0.0
+                underground_bf = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
                 limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
                 env    = interpolate_environment(available_environments, step, limits, environmental_params)
                 break
@@ -307,14 +353,39 @@ function thermoregulate(
             elseif ustrip(u"°", zenith) < 90 && limits.shade.current > limits.shade.reference
                 limits = avoid_shade(limits)
 
-            elseif ustrip(u"°", zenith) >= 90 && limits.shade.current < limits.shade.max
+            elseif limits.can_seek_shade && ustrip(u"°", zenith) >= 90 && limits.shade.current < limits.shade.max
                 # Night: seek shade to reduce longwave loss to cold sky
                 limits = seek_shade(limits)
 
-            elseif limits.can_retreat_underground && Tb_strip < Tcrit_min
-                underground_bf = limits.underground_shaded ? 1.0 : 0.0
-                limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
-                env    = interpolate_environment(available_environments, step, limits, environmental_params)
+            elseif limits.can_climb && Tb_strip < Tcrit_min && limits.height.current < limits.height.max
+                limits = climb(limits)
+
+            elseif limits.can_retreat_underground
+                # Retreat underground if:
+                #  (a) Tb is critically cold (CT_min emergency), OR
+                #  (b) all warming behaviours are exhausted AND underground is warmer
+                #      than above-ground air (thermal refuge: animal stays warmer
+                #      underground while remaining hidden from predators).
+                underground_bf = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
+                n_nodes   = size(low_shade.soil_temperature, 2)
+                depth_min = clamp(limits.depth_min_underground, 1, n_nodes)
+                depth_max = clamp(limits.depth.max,             1, n_nodes)
+                aboveground_bf = available_environments.max_shade_fraction > 0 ?
+                    clamp(limits.shade.current / available_environments.max_shade_fraction, 0.0, 1.0) : 0.0
+                T_air_ref = _blend(
+                    low_shade.profile[step].air_temperature[limits.height.reference],
+                    high_shade.profile[step].air_temperature[limits.height.reference],
+                    aboveground_bf,
+                )
+                underground_warmer = any(depth_min:depth_max) do node
+                    _blend(low_shade.soil_temperature[step, node],
+                           high_shade.soil_temperature[step, node],
+                           underground_bf) > T_air_ref
+                end
+                if Tb_strip < Tcrit_min || underground_warmer
+                    limits = select_depth(limits, low_shade, high_shade, step, limits.shade.current, underground_bf)
+                    env    = interpolate_environment(available_environments, step, limits, environmental_params)
+                end
                 break
             else
                 break
@@ -333,14 +404,14 @@ function thermoregulate(
         Tb  = solve_body_temperature(organism_current, env, environmental_params)
     end
 
-    return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments)
+    return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments, underground_bf)
 end
 
 # =============================================================================
 # Output builder
 # =============================================================================
 
-function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active_period, available_environments)
+function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active_period, available_environments, underground_bf::Float64=0.0)
     e        = (environment_pars=env_pars, environment_vars=env_vars)
     is_underground = limits.depth.current > limits.depth.reference
     # When underground and underground_tb_equals_soil=true (default, matches NicheMapR BELOWGROUND.f):
@@ -372,7 +443,7 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     end
     return (;
         T_core                = Tb,
-        shade                 = is_underground ? (limits.underground_shaded ? available_environments.max_shade_fraction : available_environments.min_shade_fraction) : limits.shade.current,
+        shade                 = is_underground ? (underground_bf > 0.5 ? available_environments.max_shade_fraction : available_environments.min_shade_fraction) : limits.shade.current,
         depth_node            = limits.depth.current,
         height,
         absorptivity          = limits.absorptivity.current,

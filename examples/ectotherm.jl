@@ -47,7 +47,7 @@ maximum_shade = 0.9
 
 # ── Soil depths and atmospheric heights ───────────────────────────────────
 depths  = [0.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0, 100.0, 200.0]u"cm"
-heights = [1.0, 200.0]u"cm"    # 1 cm node (organism height) + 2 m reference
+heights = [1.0, 150.0]u"cm"    # 1 cm node (organism height) + 2 m reference
 
 # ── Terrain ───────────────────────────────────────────────────────────────
 micro_terrain = MicroTerrain(;
@@ -97,14 +97,14 @@ environment_hourly = HourlyTimeseries(;
 
 # ── Monthly min/max weather (warm, dry summer) ────────────────────────────
 environment_minmax = MonthlyMinMaxEnvironment(;
-    reference_temperature_min = fill(25.0u"°C", length(days)),
-    reference_temperature_max = fill(42.0u"°C", length(days)),
+    reference_temperature_min = [25.0u"°C", 7.0u"°C"],
+    reference_temperature_max = [42.0u"°C", 15.0u"°C"],
     reference_wind_min        = fill(0.5u"m/s", length(days)),
     reference_wind_max        = fill(3.0u"m/s", length(days)),
     reference_humidity_min    = fill(0.10,      length(days)),
     reference_humidity_max    = fill(0.30,      length(days)),
-    cloud_min                 = fill(0.0,       length(days)),
-    cloud_max                 = fill(0.1,       length(days)),
+    cloud_min                 = [0.0, 0.1],
+    cloud_max                 = [0.2, 0.9],
     minima_times              = [0, 0, 1, 1],
     maxima_times              = [1, 1, 0, 0],
 )
@@ -189,18 +189,25 @@ end
 
 # ── Organism ──────────────────────────────────────────────────────────────
 # 40 g desert iguana (DesertIguana shape: allometric surface areas, NicheMapR defaults)
+alpha_min = 0.6
+alpha_max = 0.9
 organism_traits = example_ectotherm_organism_traits(
     activity_period     = CombinedActivity(Diurnal(), Nocturnal(), Crepuscular()),
     can_climb           = false,
     can_retreat_underground = true,
-    can_seek_shade      = true,
-    can_solar_orient    = true,
-    can_press_to_ground = true,
-    underground_shaded  = false,
+    depth_min_underground   = 3,
+    warm_signal             = 0.0u"K/hr",
+    can_seek_shade           = false,
+    can_solar_orient         = true,
+    can_change_absorptivity  = true,
+    can_press_to_ground      = false,
+    burrow_shade_mode   = AdaptiveBurrowShade(),
     shade_min           = minimum_shade_behaviour,  # organism can't be below 20% (NicheMapR minshade=20)
     shade_max           = maximum_shade,
-    alpha_min           = 0.6,
-    alpha_max           = 0.9,
+    alpha_min           = alpha_min,
+    alpha_max           = alpha_max,
+    alpha_step          = 0.003,
+
     heat_exchange = example_ectotherm_heat_exchange_traits(;
         conduction_pars_external = example_ectotherm_conduction_pars_external(conduction_fraction = 0.0), # pct_cond=0 in R test
         evaporation_pars = example_ectotherm_evaporation_pars(eye_fraction = 0.0003, skin_wetness = 0.001), # NicheMapR live=2: WEYES=0 (eyes only open in live=1)
@@ -212,6 +219,7 @@ body     = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism = Organism(body, organism_traits)
 
 limits   = thermoregulation(organism)
+
 env_pars = example_environment_pars(; elevation)
 
 # ── Available environments ─────────────────────────────────────────────────
@@ -244,9 +252,14 @@ end
 # ── Thermoregulation loop (one call per hour) ─────────────────────────────
 results         = NamedTuple[]
 prev_depth_node = limits.depth.reference
+activity_today = false
 for step in 1:nsteps
-    out = thermoregulate(organism, available_environments, limits, env_pars, step, prev_depth_node)
+    if (step - 1) % 24 == 0
+        activity_today = false  # reset at start of each new day
+    end
+    out = thermoregulate(organism, available_environments, limits, env_pars, step, prev_depth_node; activity_today)
     prev_depth_node = out.depth_node
+    activity_today  = activity_today || out.state isa Active || out.state isa Basking
     push!(results, out)
 end
 

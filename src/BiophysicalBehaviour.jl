@@ -72,7 +72,8 @@ export SteppedParameter,
 
 # Ectotherm types
 export EctothermBehavioralLimits,
-    AvailableEnvironments
+    AvailableEnvironments,
+    BurrowShadeMode, MinShadeOnly, AdaptiveBurrowShade, MaxShadeOnly
 
 # Ectotherm behaviour functions
 export is_active,

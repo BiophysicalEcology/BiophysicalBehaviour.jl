@@ -247,9 +247,10 @@ micro <- list(
 
 ecto <- ectotherm(
   Ww_g        = 40,    # body mass (g)
+  epsilon     = 0.95,
   shape       = 3,     # desert iguana allometric shape
   alpha_max   = 0.9,  # max solar absorptivity (dark); no colour change behaviour
-  alpha_min   = 0.9,  # min solar absorptivity (light); no colour change behaviour
+  alpha_min   = 0.6,  # min solar absorptivity (light); no colour change behaviour
   T_F_min     = T_F_min,
   T_F_max     = T_F_max,
   T_B_min     = 17.5,  # min basking temperature (°C); T_bask in Julia
@@ -258,17 +259,23 @@ ecto <- ectotherm(
   CT_max      = CT_max,
   CT_min      = CT_min,
   diurn       = 1,     # diurnal activity
-  nocturn     = 0,     # no nocturnal activity
-  crepus      = 0,     # no crepuscular activity
-  shade_seek  = 1,     # no shade seeking    (can_seek_shade      = false in Julia)
-  burrow      = 1,     # burrowing allowed   (can_retreat_underground = true  in Julia)
-  shdburrow   = 0,     # burrowing unshaded  (underground_shaded       = false in Julia)
-  climb       = 0,     # no climbing         (can_climb               = false in Julia)
-  live        = 2,     # behave, no sun-orient (can_solar_orient=false in Julia)
-  mindepth    = 2,     # minimum underground node (matches mindepth default)
+  nocturn     = 1,     # no nocturnal activity
+  crepus      = 1,     # no crepuscular activity
+  shade_seek  = 0,     # shade seeking     (can_seek_shade      = false in Julia)
+  burrow      = 1,     # burrowing allowed (can_retreat_underground = true  in Julia)
+  shdburrow   = 1,     # burrow unshaded   (underground_shaded       = false in Julia)
+  climb       = 0,     # no climbing       (can_climb               = false in Julia)
+  live        = 1,     # behave, no sun-orient (can_solar_orient=false in Julia)
+  mindepth    = 3,     # minimum underground node (matches mindepth default)
   maxdepth    = 10,    # maximum underground node (matches maxdepth default)
   delta_shade = 3,      # shade step (%)
   postur      = 0,
+  write_input = 0,
+  pct_cond    = 0,
+  warmsig     = 0,
+  #pct_wet = 0,
+  #M_1 = 0,
+  #pct_eyes = 0,
 )
 
 
@@ -300,7 +307,7 @@ plot(steps_jan_feb, T_body,
   type = 'l', col = 'red', lwd = 2,
   xlab = '', ylab = 'Temperature (°C)',
   main = 'Desert iguana – doy 15 (Jan) & doy 46 (Feb) – Alice Springs',
-  ylim = range(c(T_body, T_air, 0, 50)))
+  ylim = range(c(0, 65)))
 lines(steps_jan_feb, T_air, col = 'steelblue', lwd = 1, lty = 2)
 abline(h = c(T_F_min, T_F_max), col = 'orange', lty = 2)
 abline(h = c(CT_min,  CT_max),  col = 'grey',   lty = 3)
@@ -329,4 +336,34 @@ plot(steps_jan_feb, dep,
   xlab = 'time step (h)', ylab = 'Depth (cm, + = underground)',
   main = 'Underground depth')
 abline(h = 0, col = 'black', lwd = 1)
+
+
+# ### Heat flux plot (enbal components, first 48 hours)
+# # NicheMapR sign convention (FUN.f): ENB = (QSOL+QIRIN+QMET) - (QRESP+QEVAP+QIROUT+QCONV+QCOND)
+# # Gains (QSOL, QIRIN, QMET) and losses (QIROUT, QRESP, QEVAP, QCOND) are positive magnitudes.
+# # QCONV can be negative when air is warmer than skin (convective gain to body).
+# enbal_sub <- enbal[steps_jan_feb, ]
+# 
+# flux_cols   <- c("QSOL",    "QIRIN",   "QIROUT",        "QCONV",
+#                  "QCOND",   "QMET",    "QRESP",         "QEVAP",   "ENB")
+# flux_labels <- c("Solar gain (W)",  "IR in (W)",   "IR out (W)",   "Convection (W)",
+#                  "Conduction (W)",  "Metabolic (W)", "Respiratory (W)", "Evap (W)", "Net balance (W)")
+# flux_cols_palette <- c("goldenrod", "tomato", "firebrick", "steelblue",
+#                        "peru",      "forestgreen", "mediumpurple", "orchid", "grey30")
+# 
+# par(mfrow = c(5, 2), mar = c(3, 5, 2, 1))
+# for (i in seq_along(flux_cols)) {
+#   y <- enbal_sub[[flux_cols[i]]]
+#   plot(steps_jan_feb, y,
+#     type = 'l', col = flux_cols_palette[i], lwd = 2,
+#     xlab = 'time step (h)', ylab = 'W',
+#     main = flux_labels[i])
+#   abline(h = 0, col = 'grey', lty = 2)
+# }
+# 
+# ### Summary statistics for heat flux components
+# cat("\n── Heat flux summary (mean W, first 48 h) ──\n")
+# for (col in flux_cols) {
+#   cat(sprintf("  %-10s  mean = %8.4f W\n", col, mean(enbal_sub[[col]])))
+# }
 

@@ -63,7 +63,7 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `can_press_to_ground`        | `true`    | pct_cond > 0                  |
 | `can_pant`                   | `false`   | panting                       |
 | `underground_tb_equals_soil` | `true`    | (NicheMapR BELOWGROUND.f)     |
-| `underground_shaded`         | `true`    | burrow_shaded (NicheMapR)     |
+| `burrow_shade_mode`          | `MaxShadeOnly()` | shdburrow=2 (NicheMapR) |
 """
 function example_ectotherm_behavioral_limits(;
     # Shade
@@ -100,7 +100,8 @@ function example_ectotherm_behavioral_limits(;
     can_press_to_ground     = true,
     can_pant                = false,
     underground_tb_equals_soil = true,
-    underground_shaded         = true,
+    burrow_shade_mode          = MaxShadeOnly(),
+    warm_signal                = 0.0u"K/hr",
     # Control
     thermoregulation_mode = 1,
     tolerance             = 0.005,
@@ -170,7 +171,8 @@ function example_ectotherm_behavioral_limits(;
         can_press_to_ground,
         can_pant,
         underground_tb_equals_soil,
-        underground_shaded,
+        burrow_shade_mode,
+        warm_signal,
     )
 end
 

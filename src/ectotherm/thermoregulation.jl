@@ -57,6 +57,22 @@ is_active(a::ResponsiveActivity, zenith, solar_rad) = a.isactive(zenith, solar_r
 _blend(min_val, max_val, t) = min_val * (1 - t) + max_val * t
 
 # =============================================================================
+# Underground shade blend factor (NicheMapR shdburrow 0/1/2)
+# =============================================================================
+
+_underground_blend_factor(::MinShadeOnly, limits, low_shade, high_shade, step) = 0.0
+_underground_blend_factor(::MaxShadeOnly, limits, low_shade, high_shade, step) = 1.0
+
+function _underground_blend_factor(::AdaptiveBurrowShade, limits, low_shade, high_shade, step)
+    n_nodes  = size(low_shade.soil_temperature, 2)
+    min_node = clamp(limits.depth_min_underground, 1, n_nodes)
+    T_soil   = low_shade.soil_temperature[step, min_node]
+    too_hot  = T_soil > limits.T_active_max
+    too_cold = T_soil < limits.T_critical_min
+    return (too_hot || too_cold) ? 1.0 : 0.0
+end
+
+# =============================================================================
 # Individual behaviour functions (SHADEADJUST.f, ABOVEGROUND.f)
 # =============================================================================
 
@@ -124,7 +140,7 @@ function reset_position(limits::EctothermBehavioralLimits)
     limits = @set limits.shade.current         = limits.shade.reference
     limits = @set limits.depth.current         = limits.depth.reference
     limits = @set limits.height.current        = limits.height.reference
-    limits = @set limits.absorptivity.current  = limits.absorptivity.reference
+    limits = @set limits.absorptivity.current  = limits.absorptivity.max
     limits = @set limits.pant_rate.current     = limits.pant_rate.reference
     limits = @set limits.T_target.current   = limits.T_target.reference
     limits = @set limits.sun_orientation    = 45.0
@@ -183,6 +199,7 @@ function lighten(organism::Organism, limits::EctothermBehavioralLimits)
                    limits.absorptivity.current - limits.absorptivity.step)
     limits   = @set limits.absorptivity.current = new_alpha
     organism = @set organism.traits.heat_exchange.radiation_pars.α_body_dorsal = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_ventral = new_alpha
     return limits, organism
 end
 
@@ -373,13 +390,13 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
     low_shade = available_environments.min_shade_result
     high_shade = available_environments.max_shade_result
 
-    # Blend factor: 0 = fully min-shade environment, 1 = fully max-shade environment
-    shade_range = available_environments.max_shade_fraction - available_environments.min_shade_fraction
-    blend_factor = if shade_range > 0
-        clamp((limits.shade.current - available_environments.min_shade_fraction) / shade_range, 0.0, 1.0)
-    else
+    # Blend factor: 0 = fully min-shade environment, 1 = fully max-shade environment.
+    # Matches NicheMapR ABOVEGROUND.f: blend = SHADE / MAXSHD.
+    # The min-shade run is treated as the zero-shade reference regardless of its
+    # actual shade fraction, so blend(20%) = 20/90 = 0.222 (not 0.0).
+    blend_factor = available_environments.max_shade_fraction > 0 ?
+        clamp(limits.shade.current / available_environments.max_shade_fraction, 0.0, 1.0) :
         0.0
-    end
 
     chosen_shade = limits.shade.current
     is_underground = limits.depth.current > limits.depth.reference
@@ -392,7 +409,7 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
         # ---- BELOWGROUND environment (BELOWGROUND.f) ----
         # Underground shade is binary: shaded retreat uses max-shade soil temps,
         # unshaded retreat uses min-shade soil temps (NicheMapR shade_burrow flag).
-        underground_bf = limits.underground_shaded ? 1.0 : 0.0
+        underground_bf = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
         node = limits.depth.current
         T_soil = _blend(
             low_shade.soil_temperature[step, node],

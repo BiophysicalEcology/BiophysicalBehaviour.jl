@@ -1,5 +1,25 @@
 """
-    EctothermBehavioralLimits{C,Sh,D,H,T,Tp,Ab,Pa} <: AbstractBehaviourParameters
+    BurrowShadeMode
+
+Abstract type for the three NicheMapR `shdburrow` options controlling which soil temperatures
+are used for underground retreats.
+
+- `MinShadeOnly()`: always use minimum-shade soil temperatures (NicheMapR `shdburrow=0`)
+- `AdaptiveBurrowShade()`: use max-shade soil if min-shade soil at the shallowest accessible
+  node is outside `[T_critical_min, T_active_max]`; otherwise use min-shade (NicheMapR `shdburrow=1`)
+- `MaxShadeOnly()`: always use maximum-shade soil temperatures (NicheMapR `shdburrow=2`)
+"""
+abstract type BurrowShadeMode end
+"""Always use minimum-shade soil temperatures for the underground retreat (NicheMapR `shdburrow=0`)."""
+struct MinShadeOnly <: BurrowShadeMode end
+"""Adaptive: use max-shade soil temperatures when min-shade soil at the shallowest accessible
+node is outside `[T_critical_min, T_active_max]` (NicheMapR `shdburrow=1`)."""
+struct AdaptiveBurrowShade <: BurrowShadeMode end
+"""Always use maximum-shade soil temperatures for the underground retreat (NicheMapR `shdburrow=2`)."""
+struct MaxShadeOnly <: BurrowShadeMode end
+
+"""
+    EctothermBehavioralLimits{C,Sh,D,H,T,Tp,Ab,Pa,Ws,Bs} <: AbstractBehaviourParameters
 
 Parameters controlling ectotherm thermoregulation through position and physiological
 state changes.
@@ -86,13 +106,19 @@ Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_active_min` ≤ `
   When `false`, the full heat balance is solved underground, which gives `Tb > T_soil`
   because metabolic heat has no way to dissipate when all surrounding temperatures equal
   `T_soil`.
-- `underground_shaded::Bool`: When `true` (default, matches NicheMapR `shade_burrow=1`), soil
-  temperatures in the underground retreat come from the maximum-shade microclimate run (retreat
-  is in a shaded location, e.g. under vegetation). When `false`, soil temperatures come from the
-  minimum-shade run (exposed, unshaded location). No blending — always one extreme or the other.
+- `burrow_shade_mode`: A `BurrowShadeMode` value controlling which soil temperatures are used
+  for underground retreats. `MinShadeOnly()` = min-shade always; `MaxShadeOnly()` = max-shade
+  always; `AdaptiveBurrowShade()` = max-shade when min-shade soil at the shallowest accessible
+  node is outside `[T_critical_min, T_active_max]` (NicheMapR `shdburrow` 0/1/2).
+- `warm_signal`: Minimum soil-temperature change rate (units `K/hr`) required before the animal
+  emerges from a retreat deeper than node 2, when `T_soil >= T_emerge` and no activity has
+  occurred yet today (NicheMapR `warmsig`, default `0.0u"K/hr"` = disabled).
+  `> 0`: must detect soil warming of at least this rate (diurnal basker waits for morning warm-up).
+  `< 0`: must detect soil cooling of at least this rate (nocturnal animal waits for evening cool-down).
+  `= 0`: emerge whenever `T_soil >= T_emerge` regardless of trend.
 """
 Base.@kwdef struct EctothermBehavioralLimits{
-    C<:AbstractControlStrategy,Sh,D,H,T,Tp,Ab,Pa
+    C<:AbstractControlStrategy,Sh,D,H,T,Tp,Ab,Pa,Ws,Bs<:BurrowShadeMode
 } <: AbstractBehaviourParameters
     control::C          = RuleBasedSequentialControl()
     shade::Sh
@@ -128,5 +154,6 @@ Base.@kwdef struct EctothermBehavioralLimits{
     # true  → soil temperatures in the underground retreat come from the maximum-shade run
     #         (retreat located under vegetation / shade cover; NicheMapR default)
     # false → soil temperatures come from the minimum-shade run (exposed, unshaded location)
-    underground_shaded::Bool             = true
+    burrow_shade_mode::Bs                = MaxShadeOnly()
+    warm_signal::Ws                      = 0.0u"K/hr"
 end
