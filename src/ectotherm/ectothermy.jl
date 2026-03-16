@@ -44,14 +44,26 @@ Find the steady-state body temperature for an ectotherm using Brent's method
 
 Returns the air temperature as a fallback if root-finding fails.
 """
-function solve_body_temperature(organism, env_vars, env_pars)
+function solve_body_temperature(organism, env_vars, env_pars, T_bask=nothing, T_active_max=nothing)
     e = (environment_pars=env_pars, environment_vars=env_vars)
     # Fixed bracket covering physiologically plausible ectotherm body temps (0–70°C).
     lo = 273.15
     hi = 343.15
+    # Eyes open only when basking or active (NicheMapR SEVAP.f line 119:
+    # IF((TC.GE.TBASK).AND.(TC.LE.TMAXPR))). Pre-build closed-eye organism.
+    org_closed = if !isnothing(T_bask)
+        @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0
+    else
+        organism
+    end
     try
         T_sol = zbrent(
-            T -> ustrip(u"W", ectotherm(T * u"K", organism, e).Q_bal),
+            T -> begin
+                T_K = T * u"K"
+                org = (!isnothing(T_bask) && (T_K < T_bask || T_K > T_active_max)) ?
+                    org_closed : organism
+                ustrip(u"W", ectotherm(T_K, org, e).Q_bal)
+            end,
             lo, hi, 1e-3,
         )
         T_sol * u"K"
@@ -250,7 +262,7 @@ function thermoregulate(
     # 4. Active above ground: behavioural thermoregulation loop
     # -------------------------------------------------------------------------
     env = interpolate_environment(available_environments, step, limits, environmental_params)
-    Tb  = solve_body_temperature(organism_current, env, environmental_params)
+    Tb  = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask, limits.T_active_max)
     underground_bf = 0.0  # updated if the animal retreats underground during the loop
 
     iteration = 0
@@ -271,7 +283,7 @@ function thermoregulate(
                Tb_strip >= T_active_min_cur && Tb_strip <= T_target_cur
             limits, organism_current = orient_intermediate(organism_current, limits)
             env = interpolate_environment(available_environments, step, limits, environmental_params)
-            Tb  = solve_body_temperature(organism_current, env, environmental_params)
+            Tb  = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask, limits.T_active_max)
             break
         end
 
@@ -357,7 +369,7 @@ function thermoregulate(
         end
 
         env = interpolate_environment(available_environments, step, limits, environmental_params)
-        Tb  = solve_body_temperature(organism_current, env, environmental_params)
+        Tb  = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask, limits.T_active_max)
     end
 
     return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments, underground_bf)
@@ -376,8 +388,10 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     # equal T_soil and heat loss pathways are near zero.
     Tb       = (is_underground && limits.underground_tb_equals_soil) ?
                env_vars.T_air :
-               solve_body_temperature(organism, env_vars, env_pars)
-    ecto_out = ectotherm(Tb, organism, e)
+               solve_body_temperature(organism, env_vars, env_pars, limits.T_bask, limits.T_active_max)
+    org_out  = (limits.T_bask <= Tb <= limits.T_active_max) ? organism :
+               @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0
+    ecto_out = ectotherm(Tb, org_out, e)
     height = if is_underground
         -uconvert(u"m", available_environments.depths[limits.depth.current])
     else
