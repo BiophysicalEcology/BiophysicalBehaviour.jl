@@ -54,6 +54,13 @@ function thermoregulate(
     )
 end
 
+simultaneous_pant(::AbstractThermoregulationMode) = false
+simultaneous_pant(::CoreAndPantingFirst) = true
+simultaneous_pant(::CorePantingSweatingFirst) = true
+
+simultaneous_sweat(::AbstractThermoregulationMode) = false
+simultaneous_sweat(::CorePantingSweatingFirst) = true
+
 """
     thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, Q_gen, T_skin, T_insulation)
 
@@ -153,11 +160,11 @@ function thermoregulate(
             T_core_limits, Q_minimum, organism = hyperthermia(
                 organism, T_core_limits, panting_limits.cost
             )
-            if mode >= 2 && panting_limits.pant.current < panting_limits.pant.max
+            if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
                 # Pant in parallel to allowing core temperature to rise
                 panting_limits, Q_minimum, organism = pant(organism, panting_limits)
             end
-            if mode == 3
+            if simultaneous_sweat(mode)
                 # Sweat in parallel to allowing core temperature to rise and panting
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
@@ -172,7 +179,7 @@ function thermoregulate(
         # -------------------------------------------------------------------------
         elseif panting_limits.pant.current < panting_limits.pant.max
             panting_limits, Q_minimum, organism = pant(organism, panting_limits)
-            if mode == 3
+            if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)
                     @warn "All thermoregulatory options exhausted"

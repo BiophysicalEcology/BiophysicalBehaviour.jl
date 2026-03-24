@@ -186,9 +186,12 @@ for shape_number in 1:4
         T_core_ref = metabolism_pars.T_core
 
         # Build ThermoregulationLimits
+        treg_mode = endo_input.TREGMODE == 1 ? CoreFirst() :
+                    endo_input.TREGMODE == 2 ? CoreAndPantingFirst() :
+                                               CorePantingSweatingFirst()
         thermoregulation_limits = ThermoregulationLimits(;
             control=RuleBasedSequentialControl(;
-                mode=endo_input.TREGMODE,
+                mode=treg_mode,
                 tolerance=0.005,
                 max_iterations=1000,
             ),

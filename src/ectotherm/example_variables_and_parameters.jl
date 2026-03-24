@@ -103,7 +103,7 @@ function example_ectotherm_behavioral_limits(;
     burrow_shade_mode          = MaxShadeOnly(),
     warm_signal                = 0.0u"K/hr",
     # Control
-    thermoregulation_mode = 1,
+    thermoregulation_mode = CoreFirst(),
     tolerance             = 0.005,
     max_iterations        = 1000,
 )

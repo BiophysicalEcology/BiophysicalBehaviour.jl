@@ -15,6 +15,34 @@ heat balance. Different strategies may use different algorithmic approaches.
 abstract type AbstractControlStrategy end
 
 """
+    AbstractThermoregulationMode
+
+Abstract supertype for thermoregulation modes used by `RuleBasedSequentialControl`.
+"""
+abstract type AbstractThermoregulationMode end
+
+"""
+    CoreFirst <: AbstractThermoregulationMode
+
+Basic thermoregulation: allow core temperature to rise before panting or sweating.
+"""
+struct CoreFirst <: AbstractThermoregulationMode end
+
+"""
+    CoreAndPantingFirst <: AbstractThermoregulationMode
+
+Allows panting in parallel with core temperature rise (hyperthermia).
+"""
+struct CoreAndPantingFirst <: AbstractThermoregulationMode end
+
+"""
+    CorePantingSweatingFirst <: AbstractThermoregulationMode
+
+Allows both panting and sweating in parallel with core temperature rise.
+"""
+struct CorePantingSweatingFirst <: AbstractThermoregulationMode end
+
+"""
     RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
 
 Rule-based sequential controller (priority-based bang-bang control).
@@ -28,12 +56,12 @@ where organisms engage responses in a prioritized sequence based on
 metabolic cost and effectiveness.
 
 # Fields
-- `mode::M`: Thermoregulation mode (1, 2, or 3). 
+- `mode::M`: Thermoregulation mode (`CoreFirst`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`).
 - `tolerance::T`: Fraction below Q_minimum allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
-Base.@kwdef struct RuleBasedSequentialControl{M,T,I} <: AbstractControlStrategy
-    mode::M = 1 # TODO: name these modes rather than numbering
+Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
+    mode::M = CoreFirst()
     tolerance::T = 0.005
     max_iterations::I = 1000
 end
