@@ -173,7 +173,7 @@ end
 """
     darken(organism, limits) → (limits, organism)
 
-Increase dorsal solar absorptivity by one step toward `limits.absorptivity.max`.
+Increase dorsal and ventral solar absorptivity by one step toward `limits.absorptivity.max`.
 
 Called when body temperature is below the target minimum to maximise solar
 heat gain (NicheMapR `alpha_max`). Returns updated limits and organism.
@@ -183,6 +183,7 @@ function darken(organism::Organism, limits::EctothermBehavioralLimits)
                    limits.absorptivity.max)
     limits   = @set limits.absorptivity.current = new_alpha
     organism = @set organism.traits.heat_exchange.radiation_pars.α_body_dorsal = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_ventral = new_alpha
     return limits, organism
 end
 

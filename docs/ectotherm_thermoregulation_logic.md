@@ -235,7 +235,7 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 | fallback | — | **break** | No options left; accept current Tb |
 
 **Notes:**
-- `lighten` decreases both `α_body_dorsal` and `α_body_ventral`; `darken` changes only dorsal.
+- Both `lighten` and `darken` update both `α_body_dorsal` and `α_body_ventral`.
 - `increment_T_target` mirrors NicheMapR's TPREF incrementing: the animal tolerates getting
   hotter before triggering shade-seeking. Once `T_target.current = T_active_max`, shade-seeking
   begins. This means shade-seeking in the model starts only when the animal is above `T_active_max`,
@@ -379,7 +379,7 @@ returns updated `(limits, organism)` or just `limits`. All updates use `@set` (S
 |---|---|
 | `reset_position(limits)` | Resets all stepped parameters to reference; called once per hour |
 | `lighten(organism, limits)` | Decrease `α_dorsal` and `α_ventral` by `absorptivity.step` |
-| `darken(organism, limits)` | Increase `α_dorsal` by `absorptivity.step` |
+| `darken(organism, limits)` | Increase `α_dorsal` and `α_ventral` by `absorptivity.step` |
 | `seek_shade(limits)` | Increase `shade.current` by `shade.step` |
 | `avoid_shade(limits)` | Decrease `shade.current` by `shade.step` |
 | `increment_T_target(limits)` | Increase `T_target.current` by `T_target.step` |
