@@ -10,8 +10,6 @@
 using BiophysicalBehaviour
 using BiophysicalGeometry
 using HeatExchange
-using Microclimate
-using SolarRadiation
 using FluidProperties
 using Unitful
 using Statistics
