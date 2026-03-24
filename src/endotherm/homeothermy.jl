@@ -1,3 +1,29 @@
+# =============================================================================
+# Mode dispatch helpers
+# =============================================================================
+
+"""
+    simultaneous_pant(mode::AbstractThermoregulationMode) -> Bool
+
+Return true if the mode allows panting as an effector.
+"""
+simultaneous_pant(::CoreFirst) = false
+simultaneous_pant(::CoreAndPantingFirst) = true
+simultaneous_pant(::CorePantingSweatingFirst) = true
+
+"""
+    simultaneous_sweat(mode::AbstractThermoregulationMode) -> Bool
+
+Return true if the mode allows sweating as an effector.
+"""
+simultaneous_sweat(::CoreFirst) = false
+simultaneous_sweat(::CoreAndPantingFirst) = false
+simultaneous_sweat(::CorePantingSweatingFirst) = true
+
+# =============================================================================
+# Thermoregulation entry points
+# =============================================================================
+
 """
     thermoregulate(organism, environment, Q_gen, T_skin, T_insulation)
 

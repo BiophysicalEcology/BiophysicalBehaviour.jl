@@ -1,6 +1,43 @@
 abstract type AbstractBehaviourParameters end
 
 # =============================================================================
+# Thermoregulation Mode Types
+# =============================================================================
+
+"""
+    AbstractThermoregulationMode
+
+Abstract supertype for thermoregulation modes.
+
+Modes determine which effectors are available during thermoregulation:
+- `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
+- `CoreAndPantingFirst`: Adds panting during hyperthermia
+- `CorePantingSweatingFirst`: Adds both panting and sweating
+"""
+abstract type AbstractThermoregulationMode end
+
+"""
+    CoreFirst <: AbstractThermoregulationMode
+
+Core thermoregulation comes first in the sequence.
+"""
+struct CoreFirst <: AbstractThermoregulationMode end
+
+"""
+    CoreAndPantingFirst <: AbstractThermoregulationMode
+
+Simultaneous core and panting thermoregulation come first in the sequence.
+"""
+struct CoreAndPantingFirst <: AbstractThermoregulationMode end
+
+"""
+    CorePantingSweatingFirst <: AbstractThermoregulationMode
+
+Simultaneous core, panting and sweating thermoregulation come first in the sequence.
+"""
+struct CorePantingSweatingFirst <: AbstractThermoregulationMode end
+
+# =============================================================================
 # Control Strategy Types
 # =============================================================================
 
