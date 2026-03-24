@@ -12,7 +12,6 @@ using BiophysicalGeometry
 using HeatExchange
 using FluidProperties
 using Unitful
-using Statistics
 using Test
 using CSV, DataFrames
 
@@ -89,7 +88,7 @@ using CSV, DataFrames
 
     env_pars = example_environment_pars(; elevation)
 
-    rmse(a, b) = sqrt(mean((a .- b).^2))
+    rmse(a, b) = sqrt(sum((a .- b).^2) / length(a))
 
     # ── Common organism parameters (matching R script) ────────────────────────
     # R: Ww_g=40, shape=3, epsilon=0.95, alpha_max=0.9, alpha_min=0.6
