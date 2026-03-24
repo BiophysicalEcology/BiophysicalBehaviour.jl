@@ -37,13 +37,13 @@ solar radiation together identify day, night, and twilight.
 - `ResponsiveActivity`: delegates to the user-supplied function
 """
 is_active(::Diurnal, zenith, solar_rad) =
-    ustrip(u"°", zenith) < 90 && solar_rad > zero(solar_rad)
+    zenith < 90u"°" && solar_rad > zero(solar_rad)
 
 is_active(::Nocturnal, zenith, solar_rad) =
-    ustrip(u"°", zenith) >= 90 || solar_rad <= zero(solar_rad)
+    zenith >= 90u"°" || solar_rad <= zero(solar_rad)
 
 is_active(::Crepuscular, zenith, solar_rad) =
-    85 <= ustrip(u"°", zenith) <= 95
+    85u"°" <= zenith <= 95u"°"
 
 is_active(a::CombinedActivity, zenith, solar_rad) =
     any(p -> is_active(p, zenith, solar_rad), a.periods)

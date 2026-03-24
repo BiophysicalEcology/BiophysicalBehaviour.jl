@@ -172,8 +172,6 @@ function thermoregulate(
     low_shade = available_environments.min_shade_result
     high_shade = available_environments.max_shade_result
     (; max_iterations) = limits.control
-    Tbask            = ustrip(u"K", limits.T_bask)
-    Tcrit_min        = ustrip(u"K", limits.T_critical_min)
 
     # -------------------------------------------------------------------------
     # 1. Reset position / state for this hour; organism starts at reference state
@@ -243,7 +241,7 @@ function thermoregulate(
                 underground_bf,
             )
             # Each time step is 1 hour so the K change per step equals the K/hr rate.
-            soil_delta = ustrip(u"K", T_soil_at_depth - T_soil_prev_step) * u"K/hr"
+            soil_delta = (T_soil_at_depth - T_soil_prev_step) / 1u"hr"
             stay_for_signal = (limits.warm_signal > zero(limits.warm_signal) && soil_delta < limits.warm_signal) ||
                               (limits.warm_signal < zero(limits.warm_signal) && soil_delta > limits.warm_signal)
         end
@@ -268,10 +266,6 @@ function thermoregulate(
     iteration = 0
     while iteration < max_iterations
         iteration += 1
-        Tb_strip         = ustrip(u"K", Tb)
-        T_target_cur     = ustrip(u"K", limits.T_target.current)
-        T_active_max_cur = ustrip(u"K", limits.T_active_max)
-        T_active_min_cur = ustrip(u"K", limits.T_active_min)
 
         # NicheMapR THERMO.f phase 2 (first sub-case): revert perpendicular → intermediate
         # when Tb has risen into the accepted active range [T_active_min, T_target].
@@ -280,7 +274,7 @@ function thermoregulate(
         # After reverting, recalculate Tb (now lower with intermediate area) and break;
         # no further actions are attempted (matches THERMO.f phase 4 no-action → return).
         if limits.can_solar_orient && limits.sun_orientation == 90.0 &&
-               Tb_strip >= T_active_min_cur && Tb_strip <= T_target_cur
+               Tb >= limits.T_active_min && Tb <= limits.T_target.current
             limits, organism_current = orient_intermediate(organism_current, limits)
             env = interpolate_environment(available_environments, step, limits, environmental_params)
             Tb  = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask, limits.T_active_max)
@@ -288,11 +282,11 @@ function thermoregulate(
         end
 
         # NicheMapR ECTOTHERM.f line 3333: accept if Tb ∈ [T_active_min, T_target].
-        if Tb_strip >= T_active_min_cur && Tb_strip <= T_target_cur
+        if Tb >= limits.T_active_min && Tb <= limits.T_target.current
             break
         end
 
-        if Tb_strip > T_target_cur
+        if Tb > limits.T_target.current
             # -- Too hot --
             # NicheMapR THERMO.f phase 2 (second sub-case, no RETURN): revert
             # perpendicular → intermediate in the SAME iteration as shade seeking.
@@ -326,7 +320,7 @@ function thermoregulate(
                 break
             end
 
-        elseif Tb_strip < Tbask
+        elseif Tb < limits.T_bask
             # -- Too cold: darken → perpendicular → press to ground → avoid shade → retreat_underground --
             if limits.can_change_absorptivity &&
                limits.absorptivity.current < limits.absorptivity.max
@@ -338,14 +332,14 @@ function thermoregulate(
             elseif limits.can_press_to_ground && !limits.pressed_to_ground
                 limits, organism_current = press_to_ground(organism_current, limits)
 
-            elseif ustrip(u"°", zenith) < 90 && limits.shade.current > limits.shade.reference
+            elseif zenith < 90u"°" && limits.shade.current > limits.shade.reference
                 limits = avoid_shade(limits)
 
-            elseif limits.can_seek_shade && ustrip(u"°", zenith) >= 90 && limits.shade.current < limits.shade.max
+            elseif limits.can_seek_shade && zenith >= 90u"°" && limits.shade.current < limits.shade.max
                 # Night: seek shade to reduce longwave loss to cold sky
                 limits = seek_shade(limits)
 
-            elseif limits.can_climb && Tb_strip < Tcrit_min && limits.height.current < limits.height.max
+            elseif limits.can_climb && Tb < limits.T_critical_min && limits.height.current < limits.height.max
                 limits = climb(limits)
 
             elseif limits.can_retreat_underground
@@ -360,7 +354,7 @@ function thermoregulate(
             end
 
         elseif limits.can_solar_orient && limits.sun_orientation < 90.0 &&
-               Tb_strip < T_active_min_cur
+               Tb < limits.T_active_min
             # -- Basking range [T_bask, T_active_min): orient NormalToSun to maximise solar gain --
             limits, organism_current = orient_perpendicular(organism_current, limits)
 

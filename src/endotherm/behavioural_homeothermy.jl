@@ -138,12 +138,8 @@ function thermoregulate(
     iteration = 0
     while iteration < max_iterations
         iteration += 1
-        Te_strip  = ustrip(u"K", Te)
-        T_active_max_cur = ustrip(u"K", behavioral_limits.T_active_max)
-        T_active_min_cur = ustrip(u"K", behavioral_limits.T_active_min)
-        Tcrit_min        = ustrip(u"K", behavioral_limits.T_critical_min)
 
-        if Te_strip > T_active_max_cur * (1 - tolerance)
+        if Te > behavioral_limits.T_active_max * (1 - tolerance)
             # Too hot: seek cool microhabitat before panting (water-loss avoidance)
             # lighten → parallel → shade → climb → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -171,7 +167,7 @@ function thermoregulate(
                 break
             end
 
-        elseif Te_strip < T_active_min_cur * (1 + tolerance)
+        elseif Te < behavioral_limits.T_active_min * (1 + tolerance)
             # Too cold: seek warm microhabitat
             # darken → perpendicular → press to ground → avoid shade → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -187,7 +183,7 @@ function thermoregulate(
             elseif behavioral_limits.shade.current > behavioral_limits.shade.reference
                 behavioral_limits = avoid_shade(behavioral_limits)
 
-            elseif behavioral_limits.can_retreat_underground && Te_strip < Tcrit_min
+            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.T_critical_min
                 bf                = blend_factor_for(behavioral_limits.shade.current)
                 behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
                                                  behavioral_limits.shade.current, bf)
