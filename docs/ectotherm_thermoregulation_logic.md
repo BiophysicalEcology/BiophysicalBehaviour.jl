@@ -170,8 +170,9 @@ T_soil_at_depth < T_emerge
 ```
 warm_signal != 0  AND  prev_step_depth > 2  AND  !activity_today  AND  step > 1
 ```
-- If `warm_signal > 0`: requires `ΔT_soil/hr ≥ warm_signal` (diurnal basker waits for morning warm-up)
-- If `warm_signal < 0`: requires `ΔT_soil/hr ≤ warm_signal` (nocturnal animal waits for evening cool-down)
+`soil_delta = (T_soil[step] - T_soil[step-1]) / 1hr`  (K/hr; one step = one hour)
+- If `warm_signal > 0`: requires `soil_delta ≥ warm_signal` (diurnal basker waits for morning warm-up)
+- If `warm_signal < 0`: requires `soil_delta ≤ warm_signal` (nocturnal animal waits for evening cool-down)
 
 If either condition holds: `select_depth` is called again (so the animal can move to a better node),
 `interpolate_environment` is called, and `_build_ectotherm_output` is returned with `active = false`.
@@ -191,10 +192,9 @@ Tb  = solve_body_temperature(organism_current, env, environmental_params)
 
 Then the iteration loop runs up to `max_iterations` times. Each iteration:
 
-1. Computes `Tb_strip`, `T_target_cur`, `T_active_min_cur`, `T_active_max_cur`.
-2. Decides which branch to enter.
-3. Applies exactly **one** behaviour per iteration.
-4. Recalculates `env` and `Tb` at the end of the iteration (except when retreating underground).
+1. Evaluates which thermal branch to enter using direct unit-aware comparisons (all temperatures carry `K` units throughout).
+2. Applies exactly **one** behaviour per iteration.
+3. Recalculates `env` and `Tb` at the end of the iteration (except when retreating underground).
 
 ### Body temperature solver
 
