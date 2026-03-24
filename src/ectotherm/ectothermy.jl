@@ -77,7 +77,7 @@ end
 # =============================================================================
 
 """
-    thermoregulate(organism, available_environments, limits, environmental_params, step[, prev_step_depth])
+    thermoregulate(organism, available_environments, limits, environmental_params, step[, previous_depth])
 
 Run the ectotherm behavioural thermoregulation algorithm for one time step.
 
@@ -89,7 +89,7 @@ Dispatches on the organism's `thermal_strategy` and `control_strategy`.
 - `limits::EctothermBehavioralLimits`: Behavioural bounds (shade, depth, height, thresholds)
 - `environmental_params`: `EnvironmentalPars` (substrate absorptivity, emissivity, etc.)
 - `step::Int`: Current simulation time step (1-based)
-- `prev_step_depth::Int`: Soil-node index occupied at the previous time step
+- `previous_depth::Int`: Soil-node index occupied at the previous time step
   (1 = surface; >1 = underground). Controls emergence logic. Default 1.
 
 # Returns
@@ -107,8 +107,8 @@ function thermoregulate(
     limits::EctothermBehavioralLimits,
     environmental_params,
     step::Int,
-    prev_step_depth::Int=1;
-    activity_today::Bool=false,
+    previous_depth::Int=1;
+    activity_commenced::Bool=false,
 )
     thermoregulate(
         thermal_strategy(organism),
@@ -118,8 +118,8 @@ function thermoregulate(
         limits,
         environmental_params,
         step,
-        prev_step_depth;
-        activity_today,
+        previous_depth;
+        activity_commenced,
     )
 end
 
@@ -128,7 +128,7 @@ end
 # =============================================================================
 
 """
-    thermoregulate(::Ectotherm, ::RuleBasedSequentialControl, organism, available_environments, limits, environmental_params, step, prev_step_depth)
+    thermoregulate(::Ectotherm, ::RuleBasedSequentialControl, organism, available_environments, limits, environmental_params, step, previous_depth)
 
 Core ectotherm behavioural thermoregulation loop (ECTOTHERM.f / ectotherm.R logic).
 
@@ -166,8 +166,8 @@ function thermoregulate(
     limits::EctothermBehavioralLimits,
     environmental_params,
     step::Int,
-    prev_step_depth::Int;
-    activity_today::Bool=false,
+    previous_depth::Int;
+    activity_commenced::Bool=false,
 )
     low_shade = available_environments.min_shade_result
     high_shade = available_environments.max_shade_result
@@ -218,32 +218,32 @@ function thermoregulate(
     # -------------------------------------------------------------------------
     # 3b. Active but was underground last step → check T_emerge condition
     # -------------------------------------------------------------------------
-    if prev_step_depth > limits.depth.reference
+    if previous_depth > limits.depth.reference
         # Underground temperature is binary (shaded or unshaded location),
         # not a linear blend — matches interpolate_environment BELOWGROUND.f logic.
         underground_bf  = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
         T_soil_at_depth = _blend(
-            low_shade.soil_temperature[step, prev_step_depth],
-            high_shade.soil_temperature[step, prev_step_depth],
+            low_shade.soil_temperature[step, previous_depth],
+            high_shade.soil_temperature[step, previous_depth],
             underground_bf,
         )
 
         # WARMSIG: require a soil temperature change signal before the animal emerges.
         # Mirrors NicheMapR ectotherm.f lines 2218-2244. Applies only when:
-        #   warm_signal != 0, depth_node > 2, and no activity has occurred today yet.
-        # warm_signal > 0: soil must be warming at >= warm_signal K/hr
-        # warm_signal < 0: soil must be cooling at >= |warm_signal| K/hr
+        #   Δsoil_signal != 0, depth_node > 2, and no activity has occurred today yet.
+        # Δsoil_signal > 0: soil must be warming at >= Δsoil_signal K/hr
+        # Δsoil_signal < 0: soil must be cooling at >= |Δsoil_signal| K/hr
         stay_for_signal = false
-        if !iszero(limits.warm_signal) && prev_step_depth > 2 && !activity_today && step > 1
+        if !iszero(limits.Δsoil_signal) && previous_depth > 2 && !activity_commenced && step > 1
             T_soil_prev_step = _blend(
-                low_shade.soil_temperature[step-1, prev_step_depth],
-                high_shade.soil_temperature[step-1, prev_step_depth],
+                low_shade.soil_temperature[step-1, previous_depth],
+                high_shade.soil_temperature[step-1, previous_depth],
                 underground_bf,
             )
             # Each time step is 1 hour so the K change per step equals the K/hr rate.
             soil_delta = (T_soil_at_depth - T_soil_prev_step) / 1u"hr"
-            stay_for_signal = (limits.warm_signal > zero(limits.warm_signal) && soil_delta < limits.warm_signal) ||
-                              (limits.warm_signal < zero(limits.warm_signal) && soil_delta > limits.warm_signal)
+            stay_for_signal = (limits.Δsoil_signal > zero(limits.Δsoil_signal) && soil_delta < limits.Δsoil_signal) ||
+                              (limits.Δsoil_signal < zero(limits.Δsoil_signal) && soil_delta > limits.Δsoil_signal)
         end
 
         if T_soil_at_depth < limits.T_emerge || stay_for_signal

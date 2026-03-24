@@ -131,7 +131,6 @@ function make_problem(daily_env)
         environment_minmax,
         environment_daily  = daily_env,
         environment_hourly,
-        iterate_day             = 3,
         runmoist                = false,
         initial_soil_temperature = nothing,
         initial_soil_moisture   = fill(0.2, length(depths)),
@@ -171,7 +170,7 @@ organism_traits = example_ectotherm_organism_traits(
     can_retreat_underground = true,
     depth_min_underground   = 3,
     burrow_shade_mode       = MinShadeOnly(),
-    warm_signal             = 0.0u"K/hr", #TODO better name
+    Δsoil_signal            = 0.0u"K/hr",
     can_seek_shade          = false,
     shade_min               = minimum_shade,
     shade_max               = maximum_shade,
@@ -205,18 +204,18 @@ env_pars = example_environment_pars(;
 
 # ── Thermoregulation loop (one call per hour) ─────────────────────────────
 results         = NamedTuple[]
-prev_depth_node = limits.depth.reference # TODO better name, "previous_depth"
-activity_today  = false # TODO better name, "activity_commenced"
+previous_depth      = limits.depth.reference
+activity_commenced  = false
 for step in 1:nsteps
     if (step - 1) % 24 == 0
-        activity_today = false
+        activity_commenced = false
     end
     out = thermoregulate(
-        organism, available_environments, limits, env_pars, step, prev_depth_node;
-        activity_today
+        organism, available_environments, limits, env_pars, step, previous_depth;
+        activity_commenced
     )
-    prev_depth_node = out.depth_node
-    activity_today  = activity_today || out.state isa Active || out.state isa Basking
+    previous_depth     = out.depth_node
+    activity_commenced = activity_commenced || out.state isa Active || out.state isa Basking
     push!(results, out)
 end
 
@@ -245,41 +244,6 @@ act      = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
 println("\n── Annual activity summary ──")
 println("  Resting=$(sum(act.==0)), Basking=$(sum(act.==1)), Active=$(sum(act.==2))")
 
-# ── Heat fluxes ───────────────────────────────────────────────────────────
-jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.enbal.Q_solar)  for r in results]
-jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_in)  for r in results]
-jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_out) for r in results]
-jl_Q_conv   = [ustrip(u"W", r.ectotherm_out.enbal.Q_conv)   for r in results]
-jl_Q_cond   = [ustrip(u"W", r.ectotherm_out.enbal.Q_cond)   for r in results]
-jl_Q_metab  = [ustrip(u"W", r.ectotherm_out.enbal.Q_metab)  for r in results]
-jl_Q_evap   = [ustrip(u"W", r.ectotherm_out.enbal.Q_evap)   for r in results]
-jl_Q_resp   = [ustrip(u"W", r.ectotherm_out.enbal.Q_resp)   for r in results]
-jl_Q_bal    = [ustrip(u"W", r.ectotherm_out.enbal.Q_bal)    for r in results]
-
-# TODO - these data are incorrect
-# ── Reference data from Porter et al. (1973) — March and July only ────────
-# Approximate body temperatures (°C) digitised from Fig. 8 of Porter et al. (1973).
-porter1973_jul_Tb = [   # hours 0–23, July 15
-    32.5, 32.0, 31.5, 31.0, 31.0, 31.5,   # 00–05 underground (soil cooling)
-    33.0, 37.0,                             # 06–07 emerging / basking
-    40.5, 42.0, 42.0,                       # 08–10 active
-    41.0, 40.5, 40.0, 39.5, 39.0, 39.5,   # 11–16 underground (midday retreat)
-    41.0, 41.0,                             # 17–18 late re-emergence
-    38.0, 36.0, 35.0, 34.0, 33.0,         # 19–23 retreat / overnight
-]
-# TODO where are these data from?
-porter1973_mar_Tb = [   # hours 0–23, March 15
-    18.0, 17.5, 17.0, 17.0, 17.0, 17.5,   # 00–05 underground
-    19.0, 21.0, 26.0,                       # 06–08 pre-emergence soil warming
-    34.0, 40.0, 41.5, 42.0, 41.5,          # 09–13 active
-    41.0, 40.0, 37.0,                       # 14–16 late active / retreating
-    28.0, 22.0, 20.0, 19.0, 18.5, 18.0, 18.0,  # 17–23 underground overnight
-]
-# TODO check these
-# Activity states from paper (1 = basking, 2 = active, 0 = resting/underground)
-porter1973_jul_act = [0,0,0,0,0,0, 0,1, 2,2,2, 0,0,0,0,0,0, 2,2, 0,0,0,0,0]
-porter1973_mar_act = [0,0,0,0,0,0, 0,0,0, 2,2,2,2,2, 2,2,0, 0,0,0,0,0,0,0]
-
 # ── Split outputs by month ────────────────────────────────────────────────
 month_ranges = [(m-1)*24+1 : m*24 for m in 1:ndays]
 month_Tb     = [T_body_C[r]              for r in month_ranges]
@@ -303,11 +267,6 @@ panels_Tb = map(1:ndays) do m
         ylabel = "°C", ylim = (0, 55), titlefontsize = 9)
     plot!(p, hours, month_Ta[m]; lw = 1, color = :steelblue, linestyle = :dash, label = "")
     hline!(p, [T_target_min, T_target_max]; color = :orange, linestyle = :dash, lw = 1, label = "")
-    if m == 3   # March — Porter 1973 comparison
-        plot!(p, hours, porter1973_mar_Tb; lw = 2, color = :darkred, linestyle = :dash, label = "")
-    elseif m == 7   # July — Porter 1973 comparison
-        plot!(p, hours, porter1973_jul_Tb; lw = 2, color = :darkred, linestyle = :dash, label = "")
-    end
     p
 end
 

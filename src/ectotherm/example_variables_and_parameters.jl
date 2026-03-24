@@ -101,7 +101,7 @@ function example_ectotherm_behavioral_limits(;
     can_pant                = false,
     underground_tb_equals_soil = true,
     burrow_shade_mode          = MaxShadeOnly(),
-    warm_signal                = 0.0u"K/hr",
+    Δsoil_signal                = 0.0u"K/hr",
     # Control
     thermoregulation_mode = CoreFirst(),
     tolerance             = 0.005,
@@ -172,7 +172,7 @@ function example_ectotherm_behavioral_limits(;
         can_pant,
         underground_tb_equals_soil,
         burrow_shade_mode,
-        warm_signal,
+        Δsoil_signal,
     )
 end
 

@@ -80,13 +80,6 @@ function thermoregulate(
     )
 end
 
-simultaneous_pant(::AbstractThermoregulationMode) = false
-simultaneous_pant(::CoreAndPantingFirst) = true
-simultaneous_pant(::CorePantingSweatingFirst) = true
-
-simultaneous_sweat(::AbstractThermoregulationMode) = false
-simultaneous_sweat(::CorePantingSweatingFirst) = true
-
 """
     thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, Q_gen, T_skin, T_insulation)
 

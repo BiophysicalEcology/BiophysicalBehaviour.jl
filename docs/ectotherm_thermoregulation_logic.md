@@ -11,7 +11,7 @@
 
 ## Overview
 
-`thermoregulate(organism, available_environments, limits, env_pars, step[, prev_step_depth])`
+`thermoregulate(organism, available_environments, limits, env_pars, step[, previous_depth])`
 
 This is the top-level function called once per hourly time step. It:
 
@@ -35,8 +35,8 @@ in place; the caller accumulates outputs into arrays.
 | `limits` | `EctothermBehavioralLimits` | Behavioural bounds and thermal thresholds (see below) |
 | `env_pars` | `EnvironmentalPars` | Substrate optical properties etc. (constant across steps) |
 | `step` | `Int` | 1-based index into the microclimate time series |
-| `prev_step_depth` | `Int` | Soil-node depth index from the previous time step (1 = surface) |
-| `activity_today` | `Bool` | Whether the organism has been active (ACT=2) at any earlier step today (WARMSIG logic) |
+| `previous_depth` | `Int` | Soil-node depth index from the previous time step (1 = surface) |
+| `activity_commenced` | `Bool` | Whether the organism has been active (ACT=2) at any earlier step today (WARMSIG logic) |
 
 ### `AvailableEnvironments`
 
@@ -73,7 +73,7 @@ far this hour). Key fields:
 | `sun_orientation` | Current posture angle (°): 45=Intermediate, 90=NormalToSun, 0=ParallelToSun | postur |
 | `pressed_to_ground` | Current ground-contact state | pct_cond |
 | `burrow_shade_mode` | `MinShadeOnly` / `AdaptiveBurrowShade` / `MaxShadeOnly` | shdburrow 0/1/2 |
-| `warm_signal` | Required soil temp change rate before emergence (K/hr) | warmsig |
+| `Δsoil_signal` | Required soil temp change rate before emergence (K/hr) | warmsig |
 
 ---
 
@@ -157,7 +157,7 @@ After position is determined, `interpolate_environment` builds the `Environmenta
 
 ## Phase 3b — Emergence check
 
-*Runs only when `active = true` and `prev_step_depth > depth.reference` (was underground).*
+*Runs only when `active = true` and `previous_depth > depth.reference` (was underground).*
 
 The soil temperature at the previous-step depth is computed. The animal stays underground if either:
 
@@ -168,11 +168,11 @@ T_soil_at_depth < T_emerge
 
 **Condition B — WARMSIG: soil not yet warming fast enough** (mirrors ECTOTHERM.f lines 2218–2244):
 ```
-warm_signal != 0  AND  prev_step_depth > 2  AND  !activity_today  AND  step > 1
+Δsoil_signal != 0  AND  previous_depth > 2  AND  !activity_commenced  AND  step > 1
 ```
 `soil_delta = (T_soil[step] - T_soil[step-1]) / 1hr`  (K/hr; one step = one hour)
-- If `warm_signal > 0`: requires `soil_delta ≥ warm_signal` (diurnal basker waits for morning warm-up)
-- If `warm_signal < 0`: requires `soil_delta ≤ warm_signal` (nocturnal animal waits for evening cool-down)
+- If `Δsoil_signal > 0`: requires `soil_delta ≥ Δsoil_signal` (diurnal basker waits for morning warm-up)
+- If `Δsoil_signal < 0`: requires `soil_delta ≤ Δsoil_signal` (nocturnal animal waits for evening cool-down)
 
 If either condition holds: `select_depth` is called again (so the animal can move to a better node),
 `interpolate_environment` is called, and `_build_ectotherm_output` is returned with `active = false`.
@@ -409,8 +409,8 @@ Each hour:
   │    │
   │    YES
   │    │
-  │    ├─ prev_step_depth > 1? (was underground)
-  │    │    YES → T_soil < T_emerge OR warm_signal not met?
+  │    ├─ previous_depth > 1? (was underground)
+  │    │    YES → T_soil < T_emerge OR Δsoil_signal not met?
   │    │              YES → select_depth() → interpolate() → _build_output(active=false) → RETURN
   │    │              NO  → continue (emerge)
   │    │

@@ -135,7 +135,7 @@ using CSV, DataFrames
                 can_climb               = false,
                 can_retreat_underground = true,
                 depth_min_underground   = 3,          # R: mindepth=3
-                warm_signal             = 0.0u"K/hr", # R: warmsig=0
+                Δsoil_signal             = 0.0u"K/hr", # R: warmsig=0
                 can_seek_shade          = scen.can_seek_shade,
                 can_solar_orient        = scen.can_solar_orient,
                 can_change_absorptivity = true,
@@ -163,18 +163,18 @@ using CSV, DataFrames
 
             # Thermoregulation loop
             results         = NamedTuple[]
-            prev_depth_node = limits.depth.reference
-            activity_today  = false
+            previous_depth = limits.depth.reference
+            activity_commenced  = false
             for step in 1:nsteps
                 if (step - 1) % 24 == 0
-                    activity_today = false
+                    activity_commenced = false
                 end
                 out = thermoregulate(
                     organism, available_environments, limits, env_pars,
-                    step, prev_depth_node; activity_today
+                    step, previous_depth; activity_commenced
                 )
-                prev_depth_node = out.depth_node
-                activity_today  = activity_today || out.state isa Active || out.state isa Basking
+                previous_depth = out.depth_node
+                activity_commenced  = activity_commenced || out.state isa Active || out.state isa Basking
                 push!(results, out)
             end
 

@@ -110,7 +110,7 @@ Hierarchy: `T_critical_min` ≤ `T_emerge` ≤ `T_bask` ≤ `T_active_min` ≤ `
   for underground retreats. `MinShadeOnly()` = min-shade always; `MaxShadeOnly()` = max-shade
   always; `AdaptiveBurrowShade()` = max-shade when min-shade soil at the shallowest accessible
   node is outside `[T_critical_min, T_active_max]` (NicheMapR `shdburrow` 0/1/2).
-- `warm_signal`: Minimum soil-temperature change rate (units `K/hr`) required before the animal
+- `Δsoil_signal`: Minimum soil-temperature change rate (units `K/hr`) required before the animal
   emerges from a retreat deeper than node 2, when `T_soil >= T_emerge` and no activity has
   occurred yet today (NicheMapR `warmsig`, default `0.0u"K/hr"` = disabled).
   `> 0`: must detect soil warming of at least this rate (diurnal basker waits for morning warm-up).
@@ -155,5 +155,5 @@ Base.@kwdef struct EctothermBehavioralLimits{
     #         (retreat located under vegetation / shade cover; NicheMapR default)
     # false → soil temperatures come from the minimum-shade run (exposed, unshaded location)
     burrow_shade_mode::Bs                = MaxShadeOnly()
-    warm_signal::Ws                      = 0.0u"K/hr"
+    Δsoil_signal::Ws                      = 0.0u"K/hr"
 end
