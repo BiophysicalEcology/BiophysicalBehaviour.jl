@@ -85,9 +85,9 @@ environment_hourly = HourlyTimeseries(;
 )
 
 # ── Monthly climatology — Palm Springs, CA ─────────────────────────────────
-# Temperature and wind from NOAA Climate Normals (approx. Palm Springs AP);
+# Temperature and wind from CRU historical climate averages (approx. Palm Springs AP);
 # humidity and cloud are typical desert values.  All values are for the 15th
-# of each calendar month (Jan–Dec).
+# of each calendar month (Jan–Dec). Assuming clear skies.
 # humidity: relative humidity (%) ÷ 100 to give a fraction as required by Microclimate
 environment_minmax = MonthlyMinMaxEnvironment(;
     reference_temperature_min = [3.7, 6.0, 8.2, 11.2, 15.0, 19.1, 22.6, 22.2, 18.8, 13.5,  7.5,  3.5]u"°C",
@@ -157,31 +157,32 @@ available_environments = AvailableEnvironments(
 #   T_active_max = 43°C (maximum voluntary Tb, p. 20)
 #   T_target     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
 #   can_climb = true (paper explicitly models climbing into creosote bushes to 200 cm)
+body            = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism_traits = example_ectotherm_organism_traits(
     activity_period         = CombinedActivity(Diurnal(), Crepuscular()), #Diurnal(),
-    can_climb               = true,
-    can_retreat_underground = true,
-    depth_min_underground   = 3,
-    warm_signal             = 0.0u"K/hr",
-    can_seek_shade          = false,
-    can_solar_orient        = true,
-    can_change_absorptivity = true,
-    can_press_to_ground     = false,
-    can_pant                = false,
-    pant_max                = 3.0,
-    burrow_shade_mode       = MinShadeOnly(),
-    shade_min               = minimum_shade,
-    shade_max               = maximum_shade,
-    alpha_min               = 0.6,
-    alpha_max               = 0.8,
-    alpha_step              = 0.003,
     T_target                = u"K"(38.5u"°C"),
     T_active_min            = u"K"(38.0u"°C"),
     T_active_max            = u"K"(43.0u"°C"),
     T_bask                  = u"K"(34.0u"°C"),
     T_emerge                = u"K"(15.0u"°C"),
     T_critical_min          = u"K"(3.0u"°C"),
-    T_critical_max          = u"K"(44.0u"°C"),
+    T_critical_max          = u"K"(44.0u"°C"),    
+    can_climb               = true,
+    can_retreat_underground = true,
+    depth_min_underground   = 3,
+    burrow_shade_mode       = MinShadeOnly(),
+    warm_signal             = 0.0u"K/hr", #TODO better name
+    can_seek_shade          = false,
+    shade_min               = minimum_shade,
+    shade_max               = maximum_shade,
+    can_solar_orient        = true,
+    can_press_to_ground     = false,    
+    can_change_absorptivity = true,
+    alpha_min               = 0.6,
+    alpha_max               = 0.8,
+    alpha_step              = 0.003,    
+    can_pant                = false,
+    pant_max                = 3.0,
     heat_exchange = example_ectotherm_heat_exchange_traits(;
         conduction_pars_external = example_ectotherm_conduction_pars_external(
             conduction_fraction = 0.0),
@@ -194,16 +195,18 @@ organism_traits = example_ectotherm_organism_traits(
         respiration_pars = example_ectotherm_respiration_pars(mouth_fraction = 0.0),
     )
 )
-body     = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism = Organism(body, organism_traits)
 
 limits   = thermoregulation(organism)
-env_pars = example_environment_pars(; elevation)
+env_pars = example_environment_pars(; 
+    elevation, 
+    α_ground = solar_terrain.albedo,
+)
 
 # ── Thermoregulation loop (one call per hour) ─────────────────────────────
 results         = NamedTuple[]
-prev_depth_node = limits.depth.reference
-activity_today  = false
+prev_depth_node = limits.depth.reference # TODO better name, "previous_depth"
+activity_today  = false # TODO better name, "activity_commenced"
 for step in 1:nsteps
     if (step - 1) % 24 == 0
         activity_today = false
@@ -222,6 +225,8 @@ T_body     = [r.T_core         for r in results]
 shade      = [r.shade          for r in results]
 height     = [r.height         for r in results]
 depth_node = [r.depth_node     for r in results]
+absorptivity = [r.absorptivity for r in results]
+sun_orientation = [r.sun_orientation for r in results]
 state      = [r.state          for r in results]
 T_air      = [low_shade_result.profile[i].air_temperature[1] for i in 1:nsteps]
 
@@ -251,6 +256,7 @@ jl_Q_evap   = [ustrip(u"W", r.ectotherm_out.enbal.Q_evap)   for r in results]
 jl_Q_resp   = [ustrip(u"W", r.ectotherm_out.enbal.Q_resp)   for r in results]
 jl_Q_bal    = [ustrip(u"W", r.ectotherm_out.enbal.Q_bal)    for r in results]
 
+# TODO - these data are incorrect
 # ── Reference data from Porter et al. (1973) — March and July only ────────
 # Approximate body temperatures (°C) digitised from Fig. 8 of Porter et al. (1973).
 porter1973_jul_Tb = [   # hours 0–23, July 15
@@ -261,7 +267,7 @@ porter1973_jul_Tb = [   # hours 0–23, July 15
     41.0, 41.0,                             # 17–18 late re-emergence
     38.0, 36.0, 35.0, 34.0, 33.0,         # 19–23 retreat / overnight
 ]
-
+# TODO where are these data from?
 porter1973_mar_Tb = [   # hours 0–23, March 15
     18.0, 17.5, 17.0, 17.0, 17.0, 17.5,   # 00–05 underground
     19.0, 21.0, 26.0,                       # 06–08 pre-emergence soil warming
@@ -269,7 +275,7 @@ porter1973_mar_Tb = [   # hours 0–23, March 15
     41.0, 40.0, 37.0,                       # 14–16 late active / retreating
     28.0, 22.0, 20.0, 19.0, 18.5, 18.0, 18.0,  # 17–23 underground overnight
 ]
-
+# TODO check these
 # Activity states from paper (1 = basking, 2 = active, 0 = resting/underground)
 porter1973_jul_act = [0,0,0,0,0,0, 0,1, 2,2,2, 0,0,0,0,0,0, 2,2, 0,0,0,0,0]
 porter1973_mar_act = [0,0,0,0,0,0, 0,0,0, 2,2,2,2,2, 2,2,0, 0,0,0,0,0,0,0]
