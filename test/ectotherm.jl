@@ -57,18 +57,28 @@ using CSV, DataFrames
     function build_nmr_micro(met_df, soil_df)
         n      = nrow(met_df)
         soil_T = hcat([(soil_df[!, col] .+ 273.15) .* u"K" for col in soil_cols]...)
-        profiles = [(
-            air_temperature   = [(met_df.TALOC[i] + 273.15)u"K",
-                                 (met_df.TAREF[i] + 273.15)u"K"],
-            relative_humidity = [met_df.RHLOC[i] / 100.0,
-                                 met_df.RH[i]    / 100.0],
-            wind_speed        = [met_df.VLOC[i]  * u"m/s",
-                                 met_df.VREF[i]  * u"m/s"],
-        ) for i in 1:n]
+        # MicroProfile now uses matrices (nsteps × nheights) rather than a vector of NamedTuples
+        profile_air_temperature   = hcat(
+            (met_df.TALOC .+ 273.15) .* u"K",
+            (met_df.TAREF .+ 273.15) .* u"K",
+        )
+        profile_relative_humidity = hcat(
+            met_df.RHLOC ./ 100.0,
+            met_df.RH    ./ 100.0,
+        )
+        profile_wind_speed = hcat(
+            met_df.VLOC .* u"m/s",
+            met_df.VREF .* u"m/s",
+        )
+        profile = (
+            air_temperature   = profile_air_temperature,
+            relative_humidity = profile_relative_humidity,
+            wind_speed        = profile_wind_speed,
+        )
         (
             solar_radiation           = (zenith_angle = met_df.ZEN .* u"°",),
             pressure                  = fill(atmospheric_pressure(elevation), n),
-            profile                   = profiles,
+            profile                   = profile,
             sky_temperature           = (met_df.TSKYC .+ 273.15) .* u"K",
             soil_temperature          = soil_T,
             soil_thermal_conductivity = k_fallback,
@@ -102,11 +112,11 @@ using CSV, DataFrames
             eye_fraction  = 0.0003,
             skin_wetness  = 0.001),
         radiation_pars = example_ectotherm_radiation_pars(
-            α_body_dorsal  = 0.9,
-            α_body_ventral = 0.9,
+            body_absorptivity_dorsal  = 0.9,
+            body_absorptivity_ventral = 0.9,
             solar_orientation = Intermediate(),
-            ϵ_body_dorsal  = 0.95,
-            ϵ_body_ventral = 0.95),                   # R: epsilon=0.95
+            body_emissivity_dorsal  = 0.95,
+            body_emissivity_ventral = 0.95),                   # R: epsilon=0.95
         respiration_pars = example_ectotherm_respiration_pars(
             mouth_fraction = 0.0),                    # R: pct_mouth default=0
     )
@@ -182,9 +192,9 @@ using CSV, DataFrames
             T_body_C    = [ustrip(u"°C", r.T_core)  for r in results]
             state       = [r.state                  for r in results]
             julia_act   = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
-            jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.enbal.Q_solar)  for r in results]
-            jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_in)  for r in results]
-            jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.enbal.Q_ir_out) for r in results]
+            jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.enbal.solar_flow)        for r in results]
+            jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.enbal.longwave_flow_in)  for r in results]
+            jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.enbal.longwave_flow_out) for r in results]
 
             # NicheMapR reference
             scen_dir = joinpath(@__DIR__, "data", "ectotherm", scen.name)

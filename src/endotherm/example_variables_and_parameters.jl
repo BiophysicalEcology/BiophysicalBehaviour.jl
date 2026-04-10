@@ -10,18 +10,18 @@ function example_environment_vars(;
     shade=0,
 )
     EnvironmentalVars(;
-        T_air,
-        T_air_reference=T_air,
-        T_sky=T_air,
-        T_ground=T_air,
-        T_substrate=T_air,
-        T_bush=T_air,
-        T_vegetation=T_air,
-        rh,
+        air_temperature           = T_air,
+        reference_air_temperature = T_air,
+        sky_temperature           = T_air,
+        ground_temperature        = T_air,
+        substrate_temperature     = T_air,
+        bush_temperature          = T_air,
+        vegetation_temperature    = T_air,
+        relative_humidity         = rh,
         wind_speed,
-        P_atmos,
+        atmospheric_pressure      = P_atmos,
         zenith_angle,
-        k_substrate,
+        substrate_conductivity    = k_substrate,
         global_radiation,
         diffuse_fraction,
         shade,
@@ -29,21 +29,21 @@ function example_environment_vars(;
 end
 
 function example_environment_pars(;
-    α_ground=0.8,
-    ϵ_ground=1.0,
-    ϵ_sky=1.0,
+    ground_albedo=0.8,
+    ground_emissivity=1.0,
+    sky_emissivity=1.0,
     elevation=0.0u"m",
     fluid=0,
-    gasfrac=FluidProperties.GasFractions(),
+    gas_fractions=FluidProperties.GasFractions(),
     convection_enhancement=1.0,
 )
     EnvironmentalPars(;
-        α_ground,
-        ϵ_ground,
-        ϵ_sky,
+        ground_albedo,
+        ground_emissivity,
+        sky_emissivity,
         elevation,
         fluid,
-        gasfrac,
+        gas_fractions,
         convection_enhancement,
     )
 end
@@ -70,37 +70,37 @@ end
 
 function example_conduction_pars_internal(;
     fat_fraction=0.0,
-    k_flesh=0.9u"W/m/K",
-    k_fat=0.23u"W/m/K",
-    ρ_fat=901.0u"kg/m^3",
+    flesh_conductivity=0.9u"W/m/K",
+    fat_conductivity=0.23u"W/m/K",
+    fat_density=901.0u"kg/m^3",
 )
     InternalConductionParameters(;
         fat_fraction,
-        k_flesh,
-        k_fat,
-        ρ_fat,
+        flesh_conductivity,
+        fat_conductivity,
+        fat_density,
     )
 end
 
 function example_radiation_pars(;
-    α_body_dorsal=0.8,
-    α_body_ventral=0.8,
-    ϵ_body_dorsal=0.99,
-    ϵ_body_ventral=0.99,
-    F_sky=0.5,
-    F_ground=0.5,
-    F_bush=0.0,
+    body_absorptivity_dorsal=0.8,
+    body_absorptivity_ventral=0.8,
+    body_emissivity_dorsal=0.99,
+    body_emissivity_ventral=0.99,
+    sky_view_factor=0.5,
+    ground_view_factor=0.5,
+    bush_view_factor=0.0,
     ventral_fraction=0.5,
     solar_orientation=Intermediate(),
 )
     RadiationParameters(;
-        α_body_dorsal,
-        α_body_ventral,
-        ϵ_body_dorsal,
-        ϵ_body_ventral,
-        F_sky,
-        F_ground,
-        F_bush,
+        body_absorptivity_dorsal,
+        body_absorptivity_ventral,
+        body_emissivity_dorsal,
+        body_emissivity_ventral,
+        sky_view_factor,
+        ground_view_factor,
+        bush_view_factor,
         ventral_fraction,
         solar_orientation,
     )
@@ -135,30 +135,30 @@ function example_hydraulic_pars(;
 end
 
 function example_respiration_pars(;
-    fO2_extract=0.2,
+    oxygen_extraction_efficiency=0.2,
     pant=1.0,
-    rq=0.8,
-    Δ_breath=0.0u"K",
-    rh_exit=1.0,
+    respiratory_quotient=0.8,
+    exhaled_temperature_offset=0.0u"K",
+    exhaled_relative_humidity=1.0,
 )
     RespirationParameters(;
-        fO2_extract,
+        oxygen_extraction_efficiency,
         pant,
-        rq,
-        Δ_breath,
-        rh_exit,
+        respiratory_quotient,
+        exhaled_temperature_offset,
+        exhaled_relative_humidity,
     )
 end
 
 function example_metabolism_pars(;
-    T_core=u"K"((37.0)u"°C"),
-    Q_metabolism=77.61842u"W",
+    core_temperature=u"K"((37.0)u"°C"),
+    metabolic_heat_flow=77.61842u"W",
     q10=2.0,
     model=Kleiber(),
 )
     MetabolismParameters(;
-        T_core,
-        Q_metabolism,
+        core_temperature,
+        metabolic_heat_flow,
         q10,
         model,
     )
@@ -203,12 +203,12 @@ end
 
 function example_metabolic_rate_options(;
     respire=true,
-    simulsol_tolerance=1e-3u"K",
+    temperature_error_tolerance=1e-3u"K",
     resp_tolerance=1e-5,
 )
     SolveMetabolicRateOptions(;
         respire,
-        simulsol_tolerance,
+        temperature_error_tolerance,
         resp_tolerance,
     )
 end

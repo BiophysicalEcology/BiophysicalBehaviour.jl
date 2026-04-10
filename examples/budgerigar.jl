@@ -40,13 +40,13 @@ insulation_pars = example_insulation_pars(;
                     )
 radiation_pars = example_radiation_pars()
 Q_metabolism = metabolic_rate(McKechnieWolf(), shape_pars.mass)
-metabolism_pars = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = 2, Q_metabolism)
-respiration_pars = example_respiration_pars(; fO2_extract=0.25, Δ_breath=5.0u"K")
+metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, metabolic_heat_flow = Q_metabolism)
+respiration_pars = example_respiration_pars(; oxygen_extraction_efficiency=0.25, exhaled_temperature_offset=5.0u"K")
 evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
 
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
+fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
 mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.depth * radiation_pars.ventral_fraction
 mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
@@ -67,17 +67,17 @@ experimental_relative_humdities[air_temperatures .< 30.0u"°C"] .= 0.15
 
 environment_vars = example_environment_vars(;
                     T_air = air_temperatures[1],
-                    rh = experimental_relative_humdities[1])
+                    rh = experimental_relative_humdities[1])  # note: example_environment_vars maps T_air→air_temperature, rh→relative_humidity internally
 environment_pars = example_environment_pars()
 
 # initial conditions
-T_skin = metabolism_pars.T_core - 3.0u"K"
-T_insulation = environment_vars.T_air
-Q_minimum = metabolism_pars.Q_metabolism
+T_skin = metabolism_pars.core_temperature - 3.0u"K"
+T_insulation = environment_vars.air_temperature
+Q_minimum = metabolism_pars.metabolic_heat_flow
 Q_gen = 0.0u"W"
 
 # Thermoregulation limits
-T_core_ref = metabolism_pars.T_core
+T_core_ref = metabolism_pars.core_temperature
 T_core_max = (43.0 + 273.15)u"K"
 
 # update q10s
@@ -165,7 +165,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
 end
 
 # Initial run
-metabolism_pars_init = example_metabolism_pars(; T_core = (38.0 + 273.15)u"K", q10 = q10s[1], Q_metabolism)
+metabolism_pars_init = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = q10s[1], metabolic_heat_flow = Q_metabolism)
 organism = create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
                            evaporation_pars, respiration_pars, metabolism_pars_init, geometry)
 environment = (; environment_pars, environment_vars)
@@ -179,8 +179,8 @@ endotherm_out = thermoregulate(
 )
 thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
-energy_fluxes = endotherm_out.energy_fluxes
-mass_fluxes = endotherm_out.mass_fluxes
+energy_fluxes = endotherm_out.energy_flows
+mass_fluxes = endotherm_out.mass_flows
 
 # now run across all temperatures
 
@@ -213,8 +213,8 @@ for (T_air, rh, q10) in zip(
 
     # --- Metabolism (Q10 changes here) ---
     metabolism_pars = example_metabolism_pars(
-        T_core = (38.0 + 273.15)u"K",
-        Q_metabolism = Q_minimum,
+        core_temperature = (38.0 + 273.15)u"K",
+        metabolic_heat_flow = Q_minimum,
         q10 = q10,
     )
 
@@ -222,8 +222,8 @@ for (T_air, rh, q10) in zip(
                                evaporation_pars, respiration_pars, metabolism_pars, geometry)
 
     #--- Initial conditions (reset every run!) ---
-    T_skin = metabolism_pars.T_core - 3.0u"K"
-    T_insulation = environment_vars.T_air
+    T_skin = metabolism_pars.core_temperature - 3.0u"K"
+    T_insulation = environment_vars.air_temperature
     Q_gen = 0.0u"W"
 
     # --- Thermoregulation ---
@@ -236,36 +236,36 @@ for (T_air, rh, q10) in zip(
     )
 
     tr = endotherm_out.thermoregulation
-    ef = endotherm_out.energy_fluxes
-    mf = endotherm_out.mass_fluxes
+    ef = endotherm_out.energy_flows
+    mf = endotherm_out.mass_flows
 
     push!(results, (
         T_air = T_air,
         rh = rh,
         q10 = q10,
 
-        Q_gen = ef.Q_gen,
-        T_core = tr.T_core,
-        T_skin_dorsal = tr.T_skin_dorsal,
-        T_skin_ventral = tr.T_skin_ventral,
-        T_insulation_dorsal = tr.T_insulation_dorsal,
-        T_insulation_ventral = tr.T_insulation_ventral,
+        Q_gen = ef.generated_heat_flow,
+        T_core = tr.core_temperature,
+        T_skin_dorsal = tr.skin_temperature_dorsal,
+        T_skin_ventral = tr.skin_temperature_ventral,
+        T_insulation_dorsal = tr.insulation_temperature_dorsal,
+        T_insulation_ventral = tr.insulation_temperature_ventral,
 
         insulation_depth_dorsal = tr.insulation_depth_dorsal,
         insulation_depth_ventral = tr.insulation_depth_ventral,
-        k_insulation_dorsal = tr.k_insulation_dorsal,
-        k_insulation_ventral = tr.k_insulation_ventral,
-        k_insulation_effective = tr.k_insulation_effective,
+        k_insulation_dorsal = tr.insulation_conductivity_dorsal,
+        k_insulation_ventral = tr.insulation_conductivity_ventral,
+        k_insulation_effective = tr.insulation_conductivity_effective,
 
         shape = tr.shape_b,
-        k_flesh = tr.k_flesh,
+        k_flesh = tr.flesh_conductivity,
 
         pant = tr.pant,
         skin_wetness = tr.skin_wetness,
 
-        V_air = mf.V_air,
+        V_air = mf.air_flow,
         H2O_total = mf.m_evap,
-        H2O_resp = mf.m_resp,
+        H2O_resp = mf.respiration_mass,
         H2O_cut = mf.m_sweat,
     ))
 end
@@ -301,7 +301,7 @@ scatter!(
     p1,
     (Weathers1976Fig1.Tair.+273.15)u"K",
     u"W".(HeatExchange.O2_to_Joules(Typical(),
-        (Weathers1976Fig1.mlO2gh * ustrip(u"g", shape_pars.mass))u"ml/hr", respiration_pars.rq)),
+        (Weathers1976Fig1.mlO2gh * ustrip(u"g", shape_pars.mass))u"ml/hr", respiration_pars.respiratory_quotient)),
     color = :red,
     ms = 4,
     label = "observed",

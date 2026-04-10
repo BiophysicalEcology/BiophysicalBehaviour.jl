@@ -80,7 +80,7 @@ function thermoregulate(
     # When sun orientation is disabled, fix silhouette at Intermediate().
     if !behavioral_limits.can_solar_orient
         organism_current = @set organism_current.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
-        organism_current = @set organism_current.traits.heat_exchange.radiation_pars.A_silhouette =
+        organism_current = @set organism_current.traits.heat_exchange.radiation_pars.silhouette_area =
             _silhouette_area(organism_current.body, Intermediate())
     end
 
@@ -217,8 +217,8 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
     # skin-core gradient), T_insulation ≈ T_air.
     physio_limits = thermoregulation(organism)
     Q_gen_init    = zero(physio_limits.Q_minimum_ref)
-    T_skin_init   = HeatExchange.metabolismpars(organism).T_core - 3u"K"
-    T_insul_init  = env_vars.T_air
+    T_skin_init   = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K"
+    T_insul_init  = env_vars.air_temperature
 
     endotherm_out = thermoregulate(organism, e, Q_gen_init, T_skin_init, T_insul_init)
 

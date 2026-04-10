@@ -17,7 +17,7 @@ respiration_pars = example_respiration_pars()
 
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.ρ_fat)
+fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
 mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.depth * radiation_pars.ventral_fraction
 mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
@@ -43,14 +43,14 @@ physiology_traits = HeatExchangeTraits(
 )
 
 # Create thermoregulation limits
-T_core_ref = metabolism_pars.T_core
+T_core_ref = metabolism_pars.core_temperature
 thermoregulation_limits = ThermoregulationLimits(;
     control=RuleBasedSequentialControl(;
         mode=CoreFirst(),
         tolerance=0.005,
         max_iterations=200,
     ),
-    Q_minimum_ref=metabolism_pars.Q_metabolism,
+    Q_minimum_ref=metabolism_pars.metabolic_heat_flow,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
             current=insulation_pars.dorsal.depth,
@@ -71,7 +71,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         step=0.1,
     ),
     k_flesh=SteppedParameter(;
-        current=conduction_pars_internal.k_flesh,
+        current=conduction_pars_internal.flesh_conductivity,
         max=2.8u"W/m/K",
         step=0.1u"W/m/K",
     ),
@@ -112,8 +112,8 @@ environment_pars = example_environment_pars()
 environment = (; environment_pars, environment_vars)
 
 # initial conditions
-T_skin = metabolism_pars.T_core - 3.0u"K"
-T_insulation = environment_vars.T_air
+T_skin = metabolism_pars.core_temperature - 3.0u"K"
+T_insulation = environment_vars.air_temperature
 Q_gen = 0.0u"W"
 
 endotherm_out = thermoregulate(
@@ -125,5 +125,5 @@ endotherm_out = thermoregulate(
 )
 thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
-energy_fluxes = endotherm_out.energy_fluxes
-mass_fluxes = endotherm_out.mass_fluxes
+energy_fluxes = endotherm_out.energy_flows
+mass_fluxes = endotherm_out.mass_flows

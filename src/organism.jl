@@ -284,20 +284,20 @@ end
 # =============================================================================
 
 # Forward all HeatExchange accessor methods to the heat_exchange field
-HeatExchange.shapepars(t::OrganismTraits) = HeatExchange.shapepars(t.heat_exchange)
-HeatExchange.insulationpars(t::OrganismTraits) = HeatExchange.insulationpars(t.heat_exchange)
-function HeatExchange.conductionpars_external(t::OrganismTraits)
-    HeatExchange.conductionpars_external(t.heat_exchange)
+HeatExchange.shape_pars(t::OrganismTraits) = HeatExchange.shape_pars(t.heat_exchange)
+HeatExchange.insulation_pars(t::OrganismTraits) = HeatExchange.insulation_pars(t.heat_exchange)
+function HeatExchange.conduction_pars_external(t::OrganismTraits)
+    HeatExchange.conduction_pars_external(t.heat_exchange)
 end
-function HeatExchange.conductionpars_internal(t::OrganismTraits)
-    HeatExchange.conductionpars_internal(t.heat_exchange)
+function HeatExchange.conduction_pars_internal(t::OrganismTraits)
+    HeatExchange.conduction_pars_internal(t.heat_exchange)
 end
-HeatExchange.convectionpars(t::OrganismTraits) = HeatExchange.convectionpars(t.heat_exchange)
-HeatExchange.radiationpars(t::OrganismTraits) = HeatExchange.radiationpars(t.heat_exchange)
-HeatExchange.evaporationpars(t::OrganismTraits) = HeatExchange.evaporationpars(t.heat_exchange)
-HeatExchange.hydraulicpars(t::OrganismTraits) = HeatExchange.hydraulicpars(t.heat_exchange)
-HeatExchange.respirationpars(t::OrganismTraits) = HeatExchange.respirationpars(t.heat_exchange)
-HeatExchange.metabolismpars(t::OrganismTraits) = HeatExchange.metabolismpars(t.heat_exchange)
+HeatExchange.convection_pars(t::OrganismTraits) = HeatExchange.convection_pars(t.heat_exchange)
+HeatExchange.radiation_pars(t::OrganismTraits) = HeatExchange.radiation_pars(t.heat_exchange)
+HeatExchange.evaporation_pars(t::OrganismTraits) = HeatExchange.evaporation_pars(t.heat_exchange)
+HeatExchange.hydraulic_pars(t::OrganismTraits) = HeatExchange.hydraulic_pars(t.heat_exchange)
+HeatExchange.respiration_pars(t::OrganismTraits) = HeatExchange.respiration_pars(t.heat_exchange)
+HeatExchange.metabolism_pars(t::OrganismTraits) = HeatExchange.metabolism_pars(t.heat_exchange)
 HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.heat_exchange)
 
 # =============================================================================

@@ -182,8 +182,8 @@ function darken(organism::Organism, limits::EctothermBehavioralLimits)
     new_alpha = min(limits.absorptivity.current + limits.absorptivity.step,
                    limits.absorptivity.max)
     limits   = @set limits.absorptivity.current = new_alpha
-    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_dorsal = new_alpha
-    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_ventral = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.body_absorptivity_dorsal = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.body_absorptivity_ventral = new_alpha
     return limits, organism
 end
 
@@ -199,8 +199,8 @@ function lighten(organism::Organism, limits::EctothermBehavioralLimits)
     new_alpha = max(limits.absorptivity.reference,
                    limits.absorptivity.current - limits.absorptivity.step)
     limits   = @set limits.absorptivity.current = new_alpha
-    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_dorsal = new_alpha
-    organism = @set organism.traits.heat_exchange.radiation_pars.α_body_ventral = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.body_absorptivity_dorsal = new_alpha
+    organism = @set organism.traits.heat_exchange.radiation_pars.body_absorptivity_ventral = new_alpha
     return limits, organism
 end
 
@@ -222,7 +222,7 @@ Returns updated limits and organism.
 function orient_parallel(organism::Organism, limits::EctothermBehavioralLimits)
     limits   = @set limits.sun_orientation = 0.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = ParallelToSun()
-    organism = @set organism.traits.heat_exchange.radiation_pars.A_silhouette =
+    organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area =
                _silhouette_area(organism.body, ParallelToSun())
     return limits, organism
 end
@@ -241,7 +241,7 @@ Returns updated limits and organism.
 function orient_perpendicular(organism::Organism, limits::EctothermBehavioralLimits)
     limits   = @set limits.sun_orientation = 90.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = NormalToSun()
-    organism = @set organism.traits.heat_exchange.radiation_pars.A_silhouette =
+    organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area =
                _silhouette_area(organism.body, NormalToSun())
     return limits, organism
 end
@@ -265,7 +265,7 @@ function orient_intermediate(organism::Organism, limits::EctothermBehavioralLimi
                       _silhouette_area(organism.body, ParallelToSun())) * 0.5
     limits   = @set limits.sun_orientation = 45.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
-    organism = @set organism.traits.heat_exchange.radiation_pars.A_silhouette = A_intermediate
+    organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area = A_intermediate
     return limits, organism
 end
 
@@ -429,40 +429,38 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
         rh = clamp(ustrip(u"Pa", P_v_ref) /
                    ustrip(u"Pa", FluidProperties.vapour_pressure(T_soil)), 0.0, 1.0)
         return EnvironmentalVars(;
-            T_air            = T_soil,
-            T_air_reference  = T_soil,
-            T_sky            = T_soil,
-            T_ground         = T_soil,
-            T_substrate      = T_soil,
-            rh               = clamp(rh, 0.0, 1.0),
-            wind_speed       = 0.01u"m/s",
-            P_atmos,
+            air_temperature           = T_soil,
+            reference_air_temperature = T_soil,
+            sky_temperature           = T_soil,
+            ground_temperature        = T_soil,
+            substrate_temperature     = T_soil,
+            relative_humidity         = clamp(rh, 0.0, 1.0),
+            wind_speed                = 0.01u"m/s",
+            atmospheric_pressure      = P_atmos,
             zenith_angle,
-            k_substrate      = k_sub,
-            global_radiation = zero(low_shade.global_radiation[step]),
-            diffuse_fraction = 0.0,
-            shade            = chosen_shade,
+            substrate_conductivity    = k_sub,
+            global_radiation          = zero(low_shade.global_radiation[step]),
+            diffuse_fraction          = 0.0,
+            shade                     = chosen_shade,
         )
     else
         # ---- ABOVEGROUND environment (ABOVEGROUND.f) ----
         height_node = limits.height.current
-        min_profile = low_shade.profile[step]
-        max_profile = high_shade.profile[step]
 
         T_air = _blend(
-            min_profile.air_temperature[height_node],
-            max_profile.air_temperature[height_node],
+            low_shade.profile.air_temperature[step, height_node],
+            high_shade.profile.air_temperature[step, height_node],
             blend_factor,
         )
         # Conserve actual vapour pressure at min-shade reference conditions,
         # then compute RH at the blended temperature (ABOVEGROUND.f WETAIR logic).
-        rh_ref  = min_profile.relative_humidity[height_node]
-        P_v_ref = FluidProperties.vapour_pressure(min_profile.air_temperature[height_node]) * rh_ref
+        rh_ref  = low_shade.profile.relative_humidity[step, height_node]
+        P_v_ref = FluidProperties.vapour_pressure(low_shade.profile.air_temperature[step, height_node]) * rh_ref
         rh      = clamp(ustrip(u"Pa", P_v_ref) /
                         ustrip(u"Pa", FluidProperties.vapour_pressure(T_air)), 0.0, 1.0)
         wind_speed = _blend(
-            min_profile.wind_speed[height_node],
-            max_profile.wind_speed[height_node],
+            low_shade.profile.wind_speed[step, height_node],
+            high_shade.profile.wind_speed[step, height_node],
             blend_factor,
         )
         T_sky = _blend(
@@ -491,23 +489,23 @@ function interpolate_environment(available_environments, step, limits::Ectotherm
         )
 
         return EnvironmentalVars(;
-            T_air,
-            T_air_reference  = _blend(
+            air_temperature = T_air,
+            reference_air_temperature = _blend(
                 low_shade.reference_temperature[step],
                 high_shade.reference_temperature[step],
                 blend_factor,
             ),
-            T_sky,
-            T_ground,
-            T_substrate,
-            rh               = clamp(rh, 0.0, 1.0),
+            sky_temperature       = T_sky,
+            ground_temperature    = T_ground,
+            substrate_temperature = T_substrate,
+            relative_humidity     = clamp(rh, 0.0, 1.0),
             wind_speed,
-            P_atmos,
+            atmospheric_pressure  = P_atmos,
             zenith_angle,
-            k_substrate      = k_sub,
+            substrate_conductivity = k_sub,
             global_radiation,
             diffuse_fraction,
-            shade            = chosen_shade,
+            shade                  = chosen_shade,
         )
     end
 end

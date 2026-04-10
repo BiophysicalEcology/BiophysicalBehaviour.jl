@@ -62,13 +62,13 @@ function solve_body_temperature(organism, env_vars, env_pars, T_bask=nothing, T_
                 T_K = T * u"K"
                 org = (!isnothing(T_bask) && (T_K < T_bask || T_K > T_active_max)) ?
                     org_closed : organism
-                ustrip(u"W", ectotherm(T_K, org, e).Q_bal)
+                ustrip(u"W", ectotherm(T_K, org, e).heat_balance)
             end,
             lo, hi, 1e-3,
         )
         T_sol * u"K"
     catch
-        env_vars.T_air
+        env_vars.air_temperature
     end
 end
 
@@ -381,7 +381,7 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     # forces equilibrium above the uniform soil temperature when all surrounding temperatures
     # equal T_soil and heat loss pathways are near zero.
     Tb       = (is_underground && limits.underground_tb_equals_soil) ?
-               env_vars.T_air :
+               env_vars.air_temperature :
                solve_body_temperature(organism, env_vars, env_pars, limits.T_bask, limits.T_active_max)
     org_out  = (limits.T_bask <= Tb <= limits.T_active_max) ? organism :
                @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0

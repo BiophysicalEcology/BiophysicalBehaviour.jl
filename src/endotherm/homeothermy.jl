@@ -135,9 +135,9 @@ function thermoregulate(
     end
 
     endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
-    T_skin = endotherm_out.thermoregulation.T_skin
-    T_insulation = endotherm_out.thermoregulation.T_insulation
-    Q_gen = endotherm_out.energy_fluxes.Q_gen
+    T_skin = endotherm_out.thermoregulation.skin_temperature
+    T_insulation = endotherm_out.thermoregulation.insulation_temperature
+    Q_gen = endotherm_out.energy_flows.generated_heat_flow
 
     # Current Q_minimum (may be modified by panting/hyperthermia)
     Q_minimum = limits.Q_minimum_ref
@@ -220,9 +220,9 @@ function thermoregulate(
         end
 
         endotherm_out = solve_metabolic_rate(organism, environment, T_skin, T_insulation)
-        T_skin = endotherm_out.thermoregulation.T_skin
-        T_insulation = endotherm_out.thermoregulation.T_insulation
-        Q_gen = endotherm_out.energy_fluxes.Q_gen
+        T_skin = endotherm_out.thermoregulation.skin_temperature
+        T_insulation = endotherm_out.thermoregulation.insulation_temperature
+        Q_gen = endotherm_out.energy_flows.generated_heat_flow
     end
 
     return endotherm_out

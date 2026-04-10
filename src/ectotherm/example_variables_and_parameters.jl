@@ -16,14 +16,14 @@ end
 Create example `MetabolismParameters` for an ectotherm.
 
 Defaults to `AndrewsPough2()` (Andrews & Pough 1985 squamate metabolic rate equation).
-`Q_metabolism` is not used directly — metabolic heat is computed from the model
+`metabolic_heat_flow` is not used directly — metabolic heat is computed from the model
 given body mass and temperature.
 """
 function example_ectotherm_metabolism_pars(;
-    Q_metabolism=0.0u"W",
+    metabolic_heat_flow=0.0u"W",
     model=AndrewsPough2(),
 )
-    MetabolismParameters(; Q_metabolism, model)
+    MetabolismParameters(; metabolic_heat_flow, model)
 end
 
 """
@@ -200,37 +200,37 @@ end
 
 Create example `RadiationParameters` for an ectotherm with NicheMapR defaults.
 
-| Parameter         | Default        | NicheMapR equivalent |
-|-------------------|----------------|----------------------|
-| `α_body_dorsal`   | 0.85           | alpha_max = 0.85     |
-| `α_body_ventral`  | 0.85           | alpha_min = 0.85     |
-| `ϵ_body_dorsal`   | 0.95           | epsilon = 0.95       |
-| `ϵ_body_ventral`  | 0.95           | epsilon = 0.95       |
-| `F_sky`           | 0.4            | fatosk = 0.4         |
-| `F_ground`        | 0.4            | fatosb = 0.4         |
-| `F_bush`          | 0.0            | (none)               |
-| `ventral_fraction`| 0.5            | (none)               |
-| `solar_orientation`| `Intermediate()` | postur = 0         |
+| Parameter                    | Default        | NicheMapR equivalent |
+|------------------------------|----------------|----------------------|
+| `body_absorptivity_dorsal`   | 0.85           | alpha_max = 0.85     |
+| `body_absorptivity_ventral`  | 0.85           | alpha_min = 0.85     |
+| `body_emissivity_dorsal`     | 0.95           | epsilon = 0.95       |
+| `body_emissivity_ventral`    | 0.95           | epsilon = 0.95       |
+| `sky_view_factor`            | 0.4            | fatosk = 0.4         |
+| `ground_view_factor`         | 0.4            | fatosb = 0.4         |
+| `bush_view_factor`           | 0.0            | (none)               |
+| `ventral_fraction`           | 0.5            | (none)               |
+| `solar_orientation`          | `Intermediate()` | postur = 0         |
 """
 function example_ectotherm_radiation_pars(;
-    α_body_dorsal    = 0.85,
-    α_body_ventral   = 0.85,
-    ϵ_body_dorsal    = 0.95,
-    ϵ_body_ventral   = 0.95,
-    F_sky            = 0.4,
-    F_ground         = 0.4,
-    F_bush           = 0.0,
-    ventral_fraction = 0.5,
-    solar_orientation = Intermediate(),
+    body_absorptivity_dorsal  = 0.85,
+    body_absorptivity_ventral = 0.85,
+    body_emissivity_dorsal    = 0.95,
+    body_emissivity_ventral   = 0.95,
+    sky_view_factor           = 0.4,
+    ground_view_factor        = 0.4,
+    bush_view_factor          = 0.0,
+    ventral_fraction          = 0.5,
+    solar_orientation         = Intermediate(),
 )
     RadiationParameters(;
-        α_body_dorsal,
-        α_body_ventral,
-        ϵ_body_dorsal,
-        ϵ_body_ventral,
-        F_sky,
-        F_ground,
-        F_bush,
+        body_absorptivity_dorsal,
+        body_absorptivity_ventral,
+        body_emissivity_dorsal,
+        body_emissivity_ventral,
+        sky_view_factor,
+        ground_view_factor,
+        bush_view_factor,
         ventral_fraction,
         solar_orientation,
     )
@@ -270,24 +270,25 @@ end
 
 Create example `RespirationParameters` for an ectotherm with NicheMapR defaults.
 
-| Parameter        | Default  | NicheMapR equivalent                             |
-|------------------|----------|--------------------------------------------------|
-| `fO2_extract`    | 0.2      | F_O2 = 20 (%)                                    |
-| `rq`             | 0.8      | RQ = 0.8                                         |
-| `pant`           | 1.0      | pantmax = 1 (no panting)                         |
-| `Δ_breath`       | 0.1 K    | delta_air = 0.1 (°C above Tair)                  |
-| `rh_exit`        | 1.0      | (saturated exhaled air)                          |
-| `mouth_fraction` | 0.05     | pct_mouth/100: added to skin_wetness when panting|
+| Parameter                       | Default  | NicheMapR equivalent                             |
+|---------------------------------|----------|--------------------------------------------------|
+| `oxygen_extraction_efficiency`  | 0.2      | F_O2 = 20 (%)                                    |
+| `respiratory_quotient`          | 0.8      | RQ = 0.8                                         |
+| `pant`                          | 1.0      | pantmax = 1 (no panting)                         |
+| `exhaled_temperature_offset`    | 0.1 K    | delta_air = 0.1 (°C above Tair)                  |
+| `exhaled_relative_humidity`     | 1.0      | (saturated exhaled air)                          |
+| `mouth_fraction`                | 0.05     | pct_mouth/100: added to skin_wetness when panting|
 """
 function example_ectotherm_respiration_pars(;
-    fO2_extract    = 0.2,
-    rq             = 0.8,
-    pant           = 1.0,
-    Δ_breath       = 0.1u"K",
-    rh_exit        = 1.0,
-    mouth_fraction = 0.05,
+    oxygen_extraction_efficiency = 0.2,
+    respiratory_quotient         = 0.8,
+    pant                         = 1.0,
+    exhaled_temperature_offset   = 0.1u"K",
+    exhaled_relative_humidity    = 1.0,
+    mouth_fraction               = 0.05,
 )
-    RespirationParameters(; fO2_extract, rq, pant, Δ_breath, rh_exit, mouth_fraction)
+    RespirationParameters(; oxygen_extraction_efficiency, respiratory_quotient, pant,
+                            exhaled_temperature_offset, exhaled_relative_humidity, mouth_fraction)
 end
 
 """
@@ -314,18 +315,18 @@ end
 
 Create example `InternalConductionParameters` for an ectotherm with NicheMapR defaults.
 
-| Parameter      | Default       | NicheMapR equivalent |
-|----------------|---------------|----------------------|
-| `k_flesh`      | 0.5 W/m/K     | k_flesh = 0.5        |
-| `fat_fraction` | 0.0           | rinsul = 0           |
+| Parameter             | Default       | NicheMapR equivalent |
+|-----------------------|---------------|----------------------|
+| `flesh_conductivity`  | 0.5 W/m/K     | k_flesh = 0.5        |
+| `fat_fraction`        | 0.0           | rinsul = 0           |
 """
 function example_ectotherm_conduction_pars_internal(;
-    k_flesh      = 0.5u"W/m/K",
-    fat_fraction = 0.0,
-    k_fat        = 0.23u"W/m/K",
-    ρ_fat        = 901.0u"kg/m^3",
+    flesh_conductivity = 0.5u"W/m/K",
+    fat_fraction       = 0.0,
+    fat_conductivity   = 0.23u"W/m/K",
+    fat_density        = 901.0u"kg/m^3",
 )
-    InternalConductionParameters(; fat_fraction, k_flesh, k_fat, ρ_fat)
+    InternalConductionParameters(; fat_fraction, flesh_conductivity, fat_conductivity, fat_density)
 end
 
 """

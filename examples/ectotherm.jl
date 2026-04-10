@@ -66,7 +66,7 @@ soil_thermal_model = example_soil_thermal_parameters(;
     soil_mineral_density = 2.56u"Mg/m^3",
 )
 
-soil_moisture_model = example_soil_moisture_model(depths;
+soil_moisture_model = example_soil_hydraulics(depths;
     bulk_density    = 1.5,
     mineral_density = 2.56,
 )
@@ -131,7 +131,6 @@ function make_problem(daily_env)
         environment_minmax,
         environment_daily  = daily_env,
         environment_hourly,
-        runmoist                = false,
         initial_soil_temperature = nothing,
         initial_soil_moisture   = fill(0.2, length(depths)),
     )
@@ -188,9 +187,9 @@ organism_traits = example_ectotherm_organism_traits(
         evaporation_pars = example_ectotherm_evaporation_pars(
             eye_fraction = 0.0003, skin_wetness = 0.001),
         radiation_pars = example_ectotherm_radiation_pars(
-            α_body_dorsal = 0.8, α_body_ventral = 0.8,
+            body_absorptivity_dorsal = 0.8, body_absorptivity_ventral = 0.8,
             solar_orientation = Intermediate(),
-            ϵ_body_dorsal = 0.95, ϵ_body_ventral = 0.95),
+            body_emissivity_dorsal = 0.95, body_emissivity_ventral = 0.95),
         respiration_pars = example_ectotherm_respiration_pars(mouth_fraction = 0.0),
     )
 )
@@ -199,7 +198,7 @@ organism = Organism(body, organism_traits)
 limits   = thermoregulation(organism)
 env_pars = example_environment_pars(; 
     elevation, 
-    α_ground = solar_terrain.albedo,
+    ground_albedo = solar_terrain.albedo,
 )
 
 # ── Thermoregulation loop (one call per hour) ─────────────────────────────
@@ -227,7 +226,7 @@ depth_node = [r.depth_node     for r in results]
 absorptivity = [r.absorptivity for r in results]
 sun_orientation = [r.sun_orientation for r in results]
 state      = [r.state          for r in results]
-T_air      = [low_shade_result.profile[i].air_temperature[1] for i in 1:nsteps]
+T_air      = low_shade_result.profile.air_temperature[:, 1]
 
 # Combined position: climbing = +cm, active at surface = 0, underground = −cm.
 # heights[1] is the ground node (1 cm); treat it as 0 so only genuine climbing

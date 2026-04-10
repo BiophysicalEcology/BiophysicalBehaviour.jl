@@ -1,7 +1,7 @@
 name = "BiophysicalBehaviour"
 uuid = "17159459-d6a3-4a3d-a4c5-9872d9e70704"
-authors = ["Michael Kearney and Rafael Schouten"]
 version = "0.1.0"
+authors = ["Michael Kearney and Rafael Schouten"]
 
 [deps]
 BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
@@ -29,10 +29,12 @@ DataFrames = "1"
 Flatten = "0.4.3"
 FluidProperties = "0.1"
 HeatExchange = "0.1"
+Microclimate = "0.1.0"
 ModelParameters = "0.4"
 Roots = "2.2.13"
 SafeTestsets = "0.1"
 Setfield = "1"
+SolarRadiation = "0.1.0"
 Tables = "1"
 Test = "1"
 Unitful = "1"
