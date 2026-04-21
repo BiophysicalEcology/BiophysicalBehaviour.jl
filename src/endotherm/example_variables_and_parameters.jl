@@ -113,7 +113,7 @@ function example_evaporation_pars(;
     bare_skin_fraction=0.0,
     insulation_fraction=1.0,
 )
-    EvaporationParameters(;
+    AnimalEvaporationParameters(;
         skin_wetness,
         insulation_wetness,
         eye_fraction,

@@ -256,7 +256,7 @@ function example_ectotherm_evaporation_pars(;
     insulation_wetness  = 0.0,
     insulation_fraction = 0.0,
 )
-    EvaporationParameters(;
+    AnimalEvaporationParameters(;
         skin_wetness,
         insulation_wetness,
         eye_fraction,
