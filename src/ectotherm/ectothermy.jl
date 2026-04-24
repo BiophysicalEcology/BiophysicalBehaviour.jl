@@ -62,7 +62,7 @@ function solve_body_temperature(organism, env_vars, env_pars, T_bask=nothing, T_
                 T_K = T * u"K"
                 org = (!isnothing(T_bask) && (T_K < T_bask || T_K > T_active_max)) ?
                     org_closed : organism
-                ustrip(u"W", ectotherm(T_K, org, e).heat_balance)
+                ustrip(u"W", heat_balance(T_K, org, e).heat_balance)
             end,
             lo, hi, 1e-3,
         )
