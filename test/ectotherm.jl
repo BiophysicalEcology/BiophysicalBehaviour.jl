@@ -192,9 +192,9 @@ using CSV, DataFrames
             T_body_C    = [ustrip(u"°C", r.T_core)  for r in results]
             state       = [r.state                  for r in results]
             julia_act   = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
-            jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.enbal.solar_flow)        for r in results]
-            jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.enbal.longwave_flow_in)  for r in results]
-            jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.enbal.longwave_flow_out) for r in results]
+            jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.energy_balance.solar_flow)        for r in results]
+            jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_in)  for r in results]
+            jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_out) for r in results]
 
             # NicheMapR reference
             scen_dir = joinpath(@__DIR__, "data", "ectotherm", scen.name)

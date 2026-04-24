@@ -385,7 +385,7 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
                solve_body_temperature(organism, env_vars, env_pars, limits.T_bask, limits.T_active_max)
     org_out  = (limits.T_bask <= Tb <= limits.T_active_max) ? organism :
                @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0
-    ecto_out = ectotherm(Tb, org_out, e)
+    ecto_out = heat_balance(Tb, org_out, e)
     height = if is_underground
         -uconvert(u"m", available_environments.depths[limits.depth.current])
     else

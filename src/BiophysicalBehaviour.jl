@@ -12,7 +12,7 @@ using UnitfulMoles
 using BiophysicalGeometry: AbstractBody, shape
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: ectotherm, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
 using Setfield: @set
 
 # Organism and traits
