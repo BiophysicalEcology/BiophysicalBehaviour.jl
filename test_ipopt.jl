@@ -28,14 +28,8 @@ println("  T_skin  = ", ref.thermoregulation.skin_temperature)
 println("  T_ins   = ", ref.thermoregulation.insulation_temperature)
 println("  Q_gen   = ", ref.energy_flows.generated_heat_flow)
 
-Q_init    = ref.energy_flows.generated_heat_flow
-T_sk_init = ref.thermoregulation.skin_temperature
-T_in_init = ref.thermoregulation.insulation_temperature
-
 println("\nRunning IPOPTControl...")
-# IPOPTControl dispatch reads bounds from organism's thermoregulation limits;
-# the control field itself doesn't matter for this dispatch path.
-sol = thermoregulate(Endotherm(), IPOPTControl(), organism, environment, Q_init, T_sk_init, T_in_init)
+sol = thermoregulate(Endotherm(), IPOPTControl(), organism, environment, 0.0u"W", 293.15u"K", 293.15u"K")
 println("IPOPTControl:")
 println("  T_core  = ", sol.thermoregulation.core_temperature)
 println("  T_skin  = ", sol.thermoregulation.skin_temperature)

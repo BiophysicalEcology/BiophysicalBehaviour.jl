@@ -503,16 +503,19 @@ plot(p1, p2, p3, p4, layout = (2, 2), size = (900, 700))
 
 # ============================================================
 # IPOPT comparison
-# Warm-starts each solve from the rule-based result above.
-# Uses finite-difference Hessians so is slower than rule-based;
-# expect ~10-30 s for 51 temperature points.
+# Each solve is initialised from the previous step's solution
+# (carry-forward initialisation across the temperature sequence).
 # ============================================================
 
 println("\nRunning IPOPT across temperatures...")
 
 ipopt_results = NamedTuple[]
 
-@time for (T_air, rh, q10, rb) in zip(air_temperatures, experimental_relative_humdities, q10s, results)
+Q_gen_ipopt  = Q_minimum
+T_skin_ipopt = metabolism_pars_init.core_temperature - 3.0u"K"
+T_ins_ipopt  = air_temperatures[1]
+
+@time for (T_air, rh, q10) in zip(air_temperatures, experimental_relative_humdities, q10s)
 
     environment_vars_loop = example_environment_vars(;
         T_air,
@@ -540,8 +543,12 @@ ipopt_results = NamedTuple[]
 
     out = thermoregulate(
         Endotherm(), IPOPTControl(), organism_loop, environment_loop,
-        rb.Q_gen, rb.T_skin_dorsal, rb.T_insulation_dorsal,
+        Q_gen_ipopt, T_skin_ipopt, T_ins_ipopt,
     )
+
+    Q_gen_ipopt  = out.energy_flows.generated_heat_flow
+    T_skin_ipopt = out.thermoregulation.skin_temperature
+    T_ins_ipopt  = out.thermoregulation.insulation_temperature
 
     tr = out.thermoregulation
     ef = out.energy_flows
