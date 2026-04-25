@@ -11,6 +11,11 @@ using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
+using FiniteDiff
+using Optimization
+using OptimizationIpopt
+import SciMLBase
+
 using ConstructionBase: getproperties, setproperties
 using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
 using Setfield: @set
@@ -45,7 +50,8 @@ export AbstractThermalStrategy,
 # Control strategies
 export AbstractControlStrategy,
     RuleBasedSequentialControl,
-    PDEControl
+    PDEControl,
+    IPOPTControl
 
 # Thermoregulation modes
 export AbstractThermoregulationMode,
@@ -140,5 +146,6 @@ include("ectotherm/thermoregulation.jl")
 include("ectotherm/ectothermy.jl")
 include("ectotherm/example_variables_and_parameters.jl")
 include("endotherm/behavioural_homeothermy.jl")
+include("endotherm/ipopt_thermoregulation.jl")
 
 end # module BiophysicalBehaviour

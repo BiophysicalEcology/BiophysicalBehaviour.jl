@@ -491,8 +491,155 @@ plot!(
     legendfontsize=6,
 )
 
-plot(p1, p2, p3, p4, layout = (2, 2))
+plot(p1, p2, p3, p4, layout = (2, 2), size = (900, 700))
 # plot(p1, legendfontsize=6)
 # plot(p2)
 # plot(p3)
 # plot(p4)
+
+# ============================================================
+# IPOPT comparison
+# Warm-starts each solve from the rule-based result above.
+# Uses finite-difference Hessians so is slower than rule-based;
+# expect ~10-30 s for 51 temperature points.
+# ============================================================
+
+println("\nRunning IPOPT across temperatures...")
+
+ipopt_results = NamedTuple[]
+
+for (T_air, rh, q10, rb) in zip(air_temperatures, experimental_relative_humdities, q10s, results)
+
+    environment_vars_loop = example_environment_vars(;
+        T_air,
+        rh,
+        wind_speed        = 0.1u"m/s",
+        P_atmos           = 101325.0u"Pa",
+        zenith_angle      = 20.0u"°",
+        k_substrate       = 2.79u"W/m/K",
+        global_radiation  = 0.0u"W/m^2",
+        diffuse_fraction  = 0,
+        shade             = 0,
+    )
+    environment_loop = (; environment_pars, environment_vars = environment_vars_loop)
+
+    metabolism_pars_loop = example_metabolism_pars(;
+        core_temperature    = (38.0 + 273.15)u"K",
+        metabolic_heat_flow = Q_minimum,
+        q10,
+    )
+    organism_loop = create_organism(
+        shape_pars, insulation_pars, conduction_pars_internal,
+        radiation_pars, evaporation_pars, respiration_pars,
+        metabolism_pars_loop, geometry,
+    )
+
+    out = thermoregulate(
+        Endotherm(), IPOPTControl(), organism_loop, environment_loop,
+        rb.Q_gen, rb.T_skin_dorsal, rb.T_insulation_dorsal,
+    )
+
+    tr = out.thermoregulation
+    ef = out.energy_flows
+    mf = out.mass_flows
+
+    push!(ipopt_results, (
+        T_air                  = T_air,
+        Q_gen                  = ef.generated_heat_flow,
+        T_core                 = tr.core_temperature,
+        T_skin_dorsal          = tr.skin_temperature_dorsal,
+        T_skin_ventral         = tr.skin_temperature_ventral,
+        T_insulation_dorsal    = tr.insulation_temperature_dorsal,
+        T_insulation_ventral   = tr.insulation_temperature_ventral,
+        k_flesh                = tr.flesh_conductivity,
+        pant                   = tr.pant,
+        skin_wetness           = tr.skin_wetness,
+        balance                = ef.balance,
+        V_air                  = mf.air_flow,
+        H2O_total              = mf.m_evap,
+        H2O_resp               = mf.respiration_mass,
+        H2O_cut                = mf.m_sweat,
+    ))
+end
+
+ipopt_predicted = DataFrame(ipopt_results)
+
+# --- comparison plots (2×2, mirrors original budgerigar layout) ---
+
+pc1 = plot(
+    u"°C".(air_temperatures), predicted.Q_gen,
+    lw = 2, label = "predicted",
+    xlabel = "air temperature", title = "metabolic rate",
+    ylim = (0.2, 1.2),
+)
+plot!(pc1, u"°C".(air_temperatures), ipopt_predicted.Q_gen,
+    lw = 2, linestyle = :dash, label = "IPOPT")
+scatter!(pc1,
+    (Weathers1976Fig1.Tair .+ 273.15)u"K",
+    u"W".(HeatExchange.O2_to_Joules(Typical(),
+        (Weathers1976Fig1.mlO2gh .* ustrip(u"g", shape_pars.mass))u"ml/hr",
+        respiration_pars.respiratory_quotient)),
+    color = :red, ms = 4, label = "observed")
+plot!(pc1, legend = :topright, legendfontsize = 6)
+
+pc2 = plot(
+    u"°C".(air_temperatures), predicted.H2O_total,
+    lw = 2, label = "total (pred)",
+    xlabel = "air temperature", title = "water loss",
+    ylim = (0, 1.5),
+)
+plot!(pc2, u"°C".(air_temperatures), u"g/hr".(predicted.H2O_resp),
+    linestyle = :dash, label = "respiratory")
+plot!(pc2, u"°C".(air_temperatures), predicted.H2O_cut,
+    linestyle = :dash, color = :blue, label = "cutaneous")
+plot!(pc2, u"°C".(air_temperatures), ipopt_predicted.H2O_total,
+    lw = 2, linestyle = :dot, label = "total (IPOPT)")
+scatter!(pc2,
+    (Weathers1976Fig3.Tair .+ 273.15)u"K",
+    (Weathers1976Fig3.mgH2Ogh)u"mg/g/hr" .* shape_pars.mass,
+    color = :red, ms = 4, label = "total (obs)")
+plot!(pc2, legend = :topleft, legendfontsize = 6)
+
+pc3 = plot(
+    u"°C".(air_temperatures), u"°C".(predicted.T_insulation_dorsal),
+    color = :grey, lw = 2,
+    xlabel = "air temperature", title = "feather, skin and core temperature",
+    ylim = (10, 50), label = "feathers dorsal",
+)
+plot!(pc3, u"°C".(air_temperatures), u"°C".(predicted.T_insulation_ventral),
+    color = :grey, linestyle = :dash, label = "feathers ventral")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_dorsal),
+    color = :orange, label = "skin dorsal")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(predicted.T_skin_ventral),
+    color = :orange, linestyle = :dash, label = "skin ventral")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(predicted.T_core),
+    color = :red, lw = 2, label = "core (pred)")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(ipopt_predicted.T_insulation_dorsal),
+    color = :grey, linestyle = :dot, lw = 2, label = "feathers (IPOPT)")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(ipopt_predicted.T_skin_dorsal),
+    color = :orange, linestyle = :dot, lw = 2, label = "skin (IPOPT)")
+plot!(pc3, u"°C".(air_temperatures), u"°C".(ipopt_predicted.T_core),
+    color = :red, linestyle = :dot, lw = 2, label = "core (IPOPT)")
+scatter!(pc3,
+    (Weathers1976Fig3.Tair .+ 273.15)u"K",
+    (Weathers1976Fig2.Tb .+ 273.15)u"K",
+    color = :red, ms = 4, label = "core (obs)")
+plot!(pc3, legend = :bottomright, legendfontsize = 6)
+
+pc4 = plot(
+    u"°C".(air_temperatures), u"ml/minute".(predicted.V_air),
+    lw = 2,
+    xlim = (-5, 50), ylim = (0, 250),
+    xlabel = "air temperature", title = "ventilation rate",
+    label = "predicted",
+)
+plot!(pc4, u"°C".(air_temperatures), u"ml/minute".(ipopt_predicted.V_air),
+    lw = 2, linestyle = :dash, label = "IPOPT")
+scatter!(pc4,
+    (Weathers1976Fig5.Tair)u"°C",
+    (Weathers1976Fig5.breaths_min .* (13.2 .* ustrip(u"kg", shape_pars.mass) .^ 1.08) .*
+        ((Weathers1976Fig5.Tair .+ 273.15) ./ 273.15))u"ml/minute",
+    color = :red, ms = 4, label = "observed")
+plot!(pc4, legend = :topleft, legendfontsize = 6)
+
+plot(pc1, pc2, pc3, pc4, layout = (2, 2), size = (900, 700))
