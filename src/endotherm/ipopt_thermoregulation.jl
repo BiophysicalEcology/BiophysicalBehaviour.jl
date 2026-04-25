@@ -1,25 +1,33 @@
 """
-    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, Q_gen, T_skin, T_insulation)
+    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, Q_gen_init, T_skin_init, T_ins_init)
 
 Solve endotherm heat balance as a nonlinear program via IPOPT.
 
-Treats T_core, T_skin, T_ins, Q_gen, k_flesh, pant, skin_wetness, ins_depth,
-and shape_b as decision variables, covering all physiological effectors in the
-rule-based solver. Three heat-balance equality constraints (from
-`HeatExchange.heat_balance`) are imposed; the objective minimises deviation
-from the setpoint core temperature, metabolic heat above the minimum, and
-evaporative effector use.
+Uses nine NLP decision variables: six physiological effectors (metabolic heat
+generation, flesh conductivity, panting rate, skin wetness, insulation depth,
+body shape) plus three temperature state variables (core, skin, insulation surface).
+Three heat-balance equality constraints from `HeatExchange.heat_balance` enforce
+physical consistency so that the temperatures are outcomes of the effectors, not
+independent choices.
 
-Uses a single mean-weighted body (dorsal×dmult + ventral×vmult) where
-dmult = sky_view_factor + vegetation_view_factor. This matches the weighting
-used by `solve_metabolic_rate`.
+The objective penalises deviation from the setpoint core temperature, metabolic heat
+above the minimum, panting above resting rate, and skin wetness above the reference.
+All penalty terms are normalised to [0,1] over each effector's physiological range so
+the four penalty weights in `ThermoregulationLimits` are directly comparable:
+  - `core_temperature_penalty` — lower → T_core rises sooner before effectors are exhausted
+  - `metabolic_heat_penalty`   — higher → metabolism stays near minimum
+  - `panting_penalty`          — lower → panting activates sooner
+  - `skin_wetness_penalty`     — higher than `panting_penalty` → panting activates before sweating
+
+Uses a dorsal/ventral mean-weighted body where dorsal_weight = sky_view_factor +
+vegetation_view_factor. This matches the weighting used by `solve_metabolic_rate`.
 
 # Arguments
-- `organism`: must have `OrganismTraits` with `BehavioralTraits{ThermoregulationLimits{IPOPTControl}}`
+- `organism`: must have `OrganismTraits` with `ThermoregulationLimits`
 - `environment`: NamedTuple with `environment_pars` and `environment_vars`
-- `Q_gen`: initial guess for metabolic heat generation (W)
-- `T_skin`: initial guess for skin temperature (K)
-- `T_insulation`: initial guess for insulation surface temperature (K)
+- `Q_gen_init`: initial guess for metabolic heat generation (W)
+- `T_skin_init`: initial guess for skin temperature (K)
+- `T_ins_init`: initial guess for insulation surface temperature (K)
 """
 function thermoregulate(
     ::Endotherm,
@@ -31,122 +39,122 @@ function thermoregulate(
     T_ins_init;
     verbose = false,
 )
-    environment_pars = stripparams(environment.environment_pars)
-    environment_vars = environment.environment_vars
+    env_pars  = stripparams(environment.environment_pars)
+    env_vars  = environment.environment_vars
 
-    ins_pars  = insulation_pars(organism)
-    ext_cond  = conduction_pars_external(organism)
-    int_cond  = conduction_pars_internal(organism)
-    rad_pars  = radiation_pars(organism)
-    evap_pars = evaporation_pars(organism)
-    resp_pars = respiration_pars(organism)
+    ins_pars   = insulation_pars(organism)
+    ext_cond   = conduction_pars_external(organism)
+    int_cond   = conduction_pars_internal(organism)
+    rad_pars   = radiation_pars(organism)
+    evap_pars  = evaporation_pars(organism)
+    resp_pars  = respiration_pars(organism)
     metab_pars = metabolism_pars(organism)
-    limits    = thermoregulation(organism)
+    limits     = thermoregulation(organism)
 
-    T_air = environment_vars.air_temperature
-    T_setpoint = metab_pars.core_temperature
-    vegetation_temperature = environment_vars.reference_air_temperature
+    T_air       = env_vars.air_temperature
+    T_setpoint  = metab_pars.core_temperature
+    T_vegetation = env_vars.reference_air_temperature
 
-    # View factor geometry — mirrors solve_metabolic_rate
-    vegetation_factor = rad_pars.sky_view_factor * environment_vars.shade
-    sky_factor_ref    = rad_pars.sky_view_factor - vegetation_factor
-    ground_factor_ref = 1 - sky_factor_ref - vegetation_factor
-    bush_factor_ref   = rad_pars.bush_view_factor
-    dmult = sky_factor_ref + vegetation_factor
-    vmult = 1 - dmult
+    # ---- View factor geometry (mirrors solve_metabolic_rate) -----------------
+    vegetation_view_factor = rad_pars.sky_view_factor * env_vars.shade
+    sky_view_factor        = rad_pars.sky_view_factor - vegetation_view_factor
+    ground_view_factor     = 1 - sky_view_factor - vegetation_view_factor
+    bush_view_factor       = rad_pars.bush_view_factor
+    dorsal_weight          = sky_view_factor + vegetation_view_factor
+    ventral_weight         = 1 - dorsal_weight
+    ventral_fraction       = rad_pars.ventral_fraction
 
-    # Mean-weighted insulation geometry
-    fat  = Fat(int_cond.fat_fraction, int_cond.fat_density)
-    pven = rad_pars.ventral_fraction
+    # ---- Mean-weighted insulation geometry -----------------------------------
+    fat = Fat(int_cond.fat_fraction, int_cond.fat_density)
 
-    mean_depth       = ins_pars.dorsal.depth       * dmult + ins_pars.ventral.depth       * vmult
-    mean_diam        = ins_pars.dorsal.diameter    * dmult + ins_pars.ventral.diameter    * vmult
-    mean_density     = ins_pars.dorsal.density     * dmult + ins_pars.ventral.density     * vmult
-    mean_length      = ins_pars.dorsal.length      * dmult + ins_pars.ventral.length      * vmult
-    mean_reflectance = ins_pars.dorsal.reflectance * dmult + ins_pars.ventral.reflectance * vmult
-    mean_k_fibre     = ins_pars.dorsal.conductivity * dmult + ins_pars.ventral.conductivity * vmult
+    mean_insulation_depth       = ins_pars.dorsal.depth       * dorsal_weight + ins_pars.ventral.depth       * ventral_weight
+    mean_fibre_diameter         = ins_pars.dorsal.diameter    * dorsal_weight + ins_pars.ventral.diameter    * ventral_weight
+    mean_fibre_density          = ins_pars.dorsal.density     * dorsal_weight + ins_pars.ventral.density     * ventral_weight
+    mean_fibre_length           = ins_pars.dorsal.length      * dorsal_weight + ins_pars.ventral.length      * ventral_weight
+    mean_fibre_reflectance      = ins_pars.dorsal.reflectance * dorsal_weight + ins_pars.ventral.reflectance * ventral_weight
+    mean_fibre_conductivity     = ins_pars.dorsal.conductivity * dorsal_weight + ins_pars.ventral.conductivity * ventral_weight
 
-    mean_fibres = FibreProperties(;
-        diameter     = mean_diam,
-        length       = mean_length,
-        density      = mean_density,
-        depth        = mean_depth,
-        reflectance  = mean_reflectance,
-        conductivity = mean_k_fibre,
+    mean_fibre_props = FibreProperties(;
+        diameter     = mean_fibre_diameter,
+        length       = mean_fibre_length,
+        density      = mean_fibre_density,
+        depth        = mean_insulation_depth,
+        reflectance  = mean_fibre_reflectance,
+        conductivity = mean_fibre_conductivity,
     )
     mean_ins_pars = InsulationParameters(;
-        dorsal                  = mean_fibres,
-        ventral                 = mean_fibres,
+        dorsal                  = mean_fibre_props,
+        ventral                 = mean_fibre_props,
         depth_compressed        = ins_pars.depth_compressed,
         longwave_depth_fraction = ins_pars.longwave_depth_fraction,
     )
-    mean_fur = Fur(mean_depth, mean_diam, mean_density)
-    body = Body(organism.body.shape, CompositeInsulation(mean_fur, fat))
+    mean_fur  = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
+    mean_body = Body(organism.body.shape, CompositeInsulation(mean_fur, fat))
 
-    # Solar flows
-    total_area_orig = BiophysicalGeometry.total_area(organism.body)
-    area_cond_orig  = total_area_orig * ext_cond.conduction_fraction
-    absorptivities  = Absorptivities(rad_pars, environment_pars)
-    vf_solar        = ViewFactors(sky_factor_ref, ground_factor_ref, 0.0, 0.0)
-    solar_conds     = SolarConditions(environment_vars)
-    area_sil_orig   = silhouette_area(organism.body, rad_pars.solar_orientation)
-    solar_out       = solar(organism.body, absorptivities, vf_solar, solar_conds,
-                            area_sil_orig, area_cond_orig)
+    # ---- Solar heat flows ----------------------------------------------------
+    reference_total_area      = BiophysicalGeometry.total_area(organism.body)
+    reference_conduction_area = reference_total_area * ext_cond.conduction_fraction
+    absorptivities            = Absorptivities(rad_pars, env_pars)
+    solar_view_factors        = ViewFactors(sky_view_factor, ground_view_factor, 0.0, 0.0)
+    solar_conds               = SolarConditions(env_vars)
+    reference_silhouette_area = silhouette_area(organism.body, rad_pars.solar_orientation)
+    solar_result              = solar(organism.body, absorptivities, solar_view_factors,
+                                      solar_conds, reference_silhouette_area, reference_conduction_area)
 
-    if solar_out.solar_flow > 0.0u"W"
-        dorsal_solar  = 2.0 * solar_out.direct_flow + solar_out.solar_sky_flow * 2.0
-        ventral_solar = (solar_out.solar_substrate_flow /
-                         (1.0 - sky_factor_ref - vegetation_factor)) *
-                        (1.0 - 2.0 * ext_cond.conduction_fraction)
+    if solar_result.solar_flow > 0.0u"W"
+        dorsal_solar_flow  = 2.0 * solar_result.direct_flow + solar_result.solar_sky_flow * 2.0
+        ventral_solar_flow = (solar_result.solar_substrate_flow /
+                              (1.0 - sky_view_factor - vegetation_view_factor)) *
+                             (1.0 - 2.0 * ext_cond.conduction_fraction)
     else
-        dorsal_solar  = 0.0u"W"
-        ventral_solar = 0.0u"W"
+        dorsal_solar_flow  = 0.0u"W"
+        ventral_solar_flow = 0.0u"W"
     end
-    solar_mean = dorsal_solar * dmult + ventral_solar * vmult
+    mean_solar_flow = dorsal_solar_flow * dorsal_weight + ventral_solar_flow * ventral_weight
 
-    # Mean view factors: dorsal sees sky+veg, ventral sees ground+bush
-    vf_mean = ViewFactors(
-        sky_factor_ref    * 2.0 * dmult,
-        ground_factor_ref * 2.0 * vmult,
-        bush_factor_ref   * 2.0 * vmult,
-        vegetation_factor * 2.0,
+    # ---- Mean view factors: dorsal sees sky+veg, ventral sees ground+bush ----
+    mean_view_factors = ViewFactors(
+        sky_view_factor        * 2.0 * dorsal_weight,
+        ground_view_factor     * 2.0 * ventral_weight,
+        bush_view_factor       * 2.0 * ventral_weight,
+        vegetation_view_factor * 2.0,
     )
 
-    # Mean conductance: only ventral side conducts to substrate
-    body_total_area   = BiophysicalGeometry.total_area(body)
-    area_cond_ventral = body_total_area * ext_cond.conduction_fraction * 2
-    ventral_conductance = (area_cond_ventral * environment_vars.substrate_conductivity) /
-                          environment_pars.conduction_depth
-    mean_conductance = ventral_conductance * vmult
+    # ---- Mean substrate conductance (ventral side only) ----------------------
+    mean_body_total_area      = BiophysicalGeometry.total_area(mean_body)
+    ventral_conduction_area   = mean_body_total_area * ext_cond.conduction_fraction * 2
+    ventral_conduction_coeff  = (ventral_conduction_area * env_vars.substrate_conductivity) /
+                                env_pars.conduction_depth
+    mean_conduction_coeff     = ventral_conduction_coeff * ventral_weight
 
-    # Insulation properties at initial temperature guess
-    T_ins_avg  = T_ins_init * 0.7 + T_skin_init * 0.3
-    insulation = insulation_properties(mean_ins_pars, T_ins_avg, pven)
+    # ---- Pack environment and traits for heat_balance ------------------------
+    mean_insulation_temperature_init = T_ins_init * 0.7 + T_skin_init * 0.3
+    insulation_props_init = insulation_properties(mean_ins_pars, mean_insulation_temperature_init, ventral_fraction)
 
-    # Pack environment and traits for heat_balance
-    temperature = EnvironmentTemperatures(
+    env_temperatures = EnvironmentTemperatures(
         T_air,
-        environment_vars.sky_temperature,
-        environment_vars.ground_temperature,
-        vegetation_temperature,
-        environment_vars.bush_temperature,
-        environment_vars.substrate_temperature,
+        env_vars.sky_temperature,
+        env_vars.ground_temperature,
+        T_vegetation,
+        env_vars.bush_temperature,
+        env_vars.substrate_temperature,
     )
-    atmos = AtmosphericConditions(environment_vars)
-    env_packed = (;
-        temperature,
-        view_factors           = vf_mean,
+    atmos = AtmosphericConditions(env_vars)
+    heat_balance_env = (;
+        temperature            = env_temperatures,
+        view_factors           = mean_view_factors,
         atmos,
-        fluid                  = environment_pars.fluid,
-        solar_flow             = solar_mean,
-        gas_fractions          = environment_pars.gas_fractions,
-        convection_enhancement = environment_pars.convection_enhancement,
+        fluid                  = env_pars.fluid,
+        solar_flow             = mean_solar_flow,
+        gas_fractions          = env_pars.gas_fractions,
+        convection_enhancement = env_pars.convection_enhancement,
     )
-    ϵ_body = rad_pars.body_emissivity_dorsal * dmult + rad_pars.body_emissivity_ventral * vmult
-    traits_packed = (;
+    mean_body_emissivity = rad_pars.body_emissivity_dorsal * dorsal_weight +
+                           rad_pars.body_emissivity_ventral * ventral_weight
+    heat_balance_traits = (;
         fat_conductivity   = int_cond.fat_conductivity,
         flesh_conductivity = int_cond.flesh_conductivity,
-        ϵ_body,
+        ϵ_body             = mean_body_emissivity,
         skin_wetness       = evap_pars.skin_wetness,
         insulation_wetness = evap_pars.insulation_wetness,
         bare_skin_fraction = evap_pars.bare_skin_fraction,
@@ -154,181 +162,199 @@ function thermoregulate(
     )
     geometry_vars = GeometryVariables(;
         side                    = :dorsal,
-        conductance_coefficient = mean_conductance,
-        ventral_fraction        = pven,
+        conductance_coefficient = mean_conduction_coeff,
+        ventral_fraction,
         conduction_fraction     = ext_cond.conduction_fraction,
         longwave_depth_fraction = ins_pars.longwave_depth_fraction,
     )
 
-    # ---- Decision variable bounds (all SI, unitless Float64) ---------------
-    # x = [T_core, T_skin, T_ins, log(Q_gen), k_flesh, pant, skin_wetness, ins_depth, shape_b]
-    T_air_K   = ustrip(u"K", T_air)
-    T_set_K   = ustrip(u"K", T_setpoint)
-    T_core_lo = ustrip(u"K", limits.T_core.reference)
-    T_core_hi = ustrip(u"K", limits.T_core.max)
-    T_skin_lo = T_air_K - 5.0
-    T_skin_hi = T_core_hi + 5.0
-    Q_lo  = ustrip(u"W", limits.Q_minimum_ref)
-    Q_hi  = ustrip(u"W", limits.Q_minimum_ref) * 20.0
-    lQ_lo = log(Q_lo)
-    lQ_hi = log(Q_hi)
-    k_lo  = ustrip(u"W/m/K", limits.k_flesh.reference)
-    k_hi  = ustrip(u"W/m/K", limits.k_flesh.max)
-    p_lo  = 1.0
-    p_hi  = Float64(limits.panting.pant.max)
-    sw_lo = Float64(limits.skin_wetness.reference)
-    sw_hi = Float64(limits.skin_wetness.max)
-    ins_lo = ustrip(u"m", limits.insulation.dorsal.reference)
-    ins_hi = ustrip(u"m", limits.insulation.dorsal.max)
-    sh_lo  = Float64(limits.shape_b.reference)
-    sh_hi  = organism.body.shape isa Sphere ? sh_lo : Float64(limits.shape_b.max)
+    # ---- Decision variable bounds (SI, unitless Float64) --------------------
+    # x = [core_temperature, skin_temperature, insulation_temperature,    ← temperature states
+    #       log(generated_heat_flow), flesh_conductivity, panting_rate,   ← effectors
+    #       skin_wetness, insulation_depth, shape_b]                      ← effectors
+    # The three equality constraints make temperatures outcomes of the six effectors.
+    air_temperature_K    = ustrip(u"K", T_air)
+    setpoint_temperature_K = ustrip(u"K", T_setpoint)
+    T_core_min = ustrip(u"K", limits.T_core.reference)
+    T_core_max = ustrip(u"K", limits.T_core.max)
+    T_skin_min = air_temperature_K - 5.0
+    T_skin_max = T_core_max + 5.0
+    Q_gen_min  = ustrip(u"W", limits.Q_minimum_ref)
+    Q_gen_max  = ustrip(u"W", limits.Q_minimum_ref) * 20.0
+    log_Q_gen_min = log(Q_gen_min)
+    log_Q_gen_max = log(Q_gen_max)
+    k_flesh_min = ustrip(u"W/m/K", limits.k_flesh.reference)
+    k_flesh_max = ustrip(u"W/m/K", limits.k_flesh.max)
+    panting_rate_min = 1.0
+    panting_rate_max = Float64(limits.panting.pant.max)
+    skin_wetness_min  = Float64(limits.skin_wetness.reference)
+    skin_wetness_max  = Float64(limits.skin_wetness.max)
+    insulation_depth_min = ustrip(u"m", limits.insulation.dorsal.reference)
+    insulation_depth_max = ustrip(u"m", limits.insulation.dorsal.max)
+    shape_b_min = Float64(limits.shape_b.reference)
+    shape_b_max = organism.body.shape isa Sphere ? shape_b_min : Float64(limits.shape_b.max)
 
-    lb = [T_core_lo, T_skin_lo, T_skin_lo, lQ_lo, k_lo, p_lo, sw_lo, ins_lo, sh_lo]
-    ub = [T_core_hi, T_skin_hi, T_skin_hi, lQ_hi, k_hi, p_hi, sw_hi, ins_hi, sh_hi]
+    lower_bounds = [T_core_min, T_skin_min, T_skin_min, log_Q_gen_min,
+                    k_flesh_min, panting_rate_min, skin_wetness_min,
+                    insulation_depth_min, shape_b_min]
+    upper_bounds = [T_core_max, T_skin_max, T_skin_max, log_Q_gen_max,
+                    k_flesh_max, panting_rate_max, skin_wetness_max,
+                    insulation_depth_max, shape_b_max]
 
-    Q_gen_init_val = max(ustrip(u"W", Q_gen_init), Q_lo)
-    x0 = clamp.(
-        [T_set_K,
+    Q_gen_init_val = max(ustrip(u"W", Q_gen_init), Q_gen_min)
+    initial_effectors = clamp.(
+        [setpoint_temperature_K,
          ustrip(u"K", T_skin_init),
          ustrip(u"K", T_ins_init),
          log(Q_gen_init_val),
          ustrip(u"W/m/K", int_cond.flesh_conductivity),
          1.0,
          Float64(evap_pars.skin_wetness),
-         ustrip(u"m", limits.insulation.dorsal.max),  # start with erected insulation
-         sh_lo],                                        # start curled
-        lb, ub,
+         insulation_depth_max,   # start with erected insulation
+         shape_b_min],           # start curled
+        lower_bounds, upper_bounds,
     )
 
-    Q_range    = max(Q_hi - Q_lo, 1.0)
-    pant_range = max(p_hi - 1.0, 1e-6)      # normalise pant cost to [0,1]
-    sw_range   = max(sw_hi - sw_lo, 1e-6)   # normalise sweat cost to [0,1]
-    params = (;
-        T_setpoint = T_set_K,
-        w_pant     = limits.w_pant,
-        w_sweat    = limits.w_sweat,
-        w_qgen     = 0.01,
-        Q_lo,
-        Q_range,
-        pant_range,
-        sw_lo,
-        sw_range,
-        body,
-        ins_pars   = mean_ins_pars,
-        mean_fibres,
+    # ---- Normalisation ranges for objective penalties -----------------------
+    Q_gen_range          = max(Q_gen_max - Q_gen_min, 1.0)
+    T_core_range         = max(T_core_max - setpoint_temperature_K, 1e-6)
+    panting_rate_range   = max(panting_rate_max - 1.0, 1e-6)
+    skin_wetness_range   = max(skin_wetness_max - skin_wetness_min, 1e-6)
+
+    nlp_pars = (;
+        setpoint_temperature     = setpoint_temperature_K,
+        core_temperature_penalty = limits.core_temperature_penalty,
+        metabolic_heat_penalty   = limits.metabolic_heat_penalty,
+        panting_penalty          = limits.panting_penalty,
+        skin_wetness_penalty     = limits.skin_wetness_penalty,
+        Q_gen_min,
+        Q_gen_range,
+        T_core_range,
+        panting_rate_range,
+        skin_wetness_min,
+        skin_wetness_range,
+        mean_body,
+        mean_ins_pars,
+        mean_fibre_props,
         fat,
-        shape_pars = organism.body.shape,
-        is_sphere  = organism.body.shape isa Sphere,
-        insulation,
+        body_shape  = organism.body.shape,
+        body_is_sphere = organism.body.shape isa Sphere,
+        insulation_props_init,
         geometry_vars,
-        env        = env_packed,
-        traits     = traits_packed,
+        heat_balance_env,
+        heat_balance_traits,
         resp_pars,
-        pven,
-        substrate_conductivity = environment_vars.substrate_conductivity,
-        conduction_depth       = environment_pars.conduction_depth,
-        vmult,
+        ventral_fraction,
+        substrate_conductivity = env_vars.substrate_conductivity,
+        conduction_depth       = env_pars.conduction_depth,
+        ventral_weight,
         ext_cond,
     )
 
-    # ---- Objective: stay at setpoint, minimise Q_gen above minimum, minimise evaporative cost
-    # All penalty terms are normalised to [0,1] so weights directly express priority.
-    # w_sweat > w_pant ensures panting activates before sweating/fur-licking.
-    # x[4] is log(Q_gen); exp(x[4]) recovers the actual heat flow in W.
-    function f(x, p)
-        (x[1] - p.T_setpoint)^2 +
-        p.w_qgen  * ((exp(x[4]) - p.Q_lo) / p.Q_range)^2 +
-        p.w_pant  * ((x[6] - 1.0)        / p.pant_range)^2 +
-        p.w_sweat * ((x[7] - p.sw_lo)    / p.sw_range)^2
+    # ---- Objective -----------------------------------------------------------
+    # All terms normalised to [0,1]; weights set relative priority directly.
+    # Lower core_temperature_penalty → T_core rises sooner before effectors exhaust.
+    # skin_wetness_penalty > panting_penalty → panting activates before sweating.
+    # effectors[4] = log(generated_heat_flow); exp recovers the W value.
+    function objective(effectors, p)
+        p.core_temperature_penalty * ((effectors[1] - p.setpoint_temperature) / p.T_core_range)^2    +
+        p.metabolic_heat_penalty   * ((exp(effectors[4]) - p.Q_gen_min) / p.Q_gen_range)^2          +
+        p.panting_penalty          * ((effectors[6] - 1.0) / p.panting_rate_range)^2                +
+        p.skin_wetness_penalty     * ((effectors[7] - p.skin_wetness_min) / p.skin_wetness_range)^2
     end
 
-    # ---- Constraints: three heat-balance residuals = 0 --------------------
-    function cons!(res, x, p)
-        T_core    = x[1] * u"K"
-        T_skin    = x[2] * u"K"
-        T_ins     = x[3] * u"K"
-        Q_gen     = exp(x[4]) * u"W"   # x[4] = log(Q_gen)
-        k_flesh   = x[5] * u"W/m/K"
-        pant_v    = x[6]
-        skin_w    = x[7]
-        ins_d     = x[8] * u"m"
-        shape_b_v = x[9]
+    # ---- Constraints: three heat-balance residuals = 0 ----------------------
+    function heat_balance_residuals!(residuals, effectors, p)
+        core_temperature    = effectors[1] * u"K"
+        skin_temperature    = effectors[2] * u"K"
+        insulation_temperature = effectors[3] * u"K"
+        generated_heat_flow = exp(effectors[4]) * u"W"   # effectors[4] = log(Q_gen)
+        flesh_conductivity  = effectors[5] * u"W/m/K"
+        panting_rate        = effectors[6]
+        skin_wetness        = effectors[7]
+        insulation_depth    = effectors[8] * u"m"
+        shape_b             = effectors[9]
 
-        # Rebuild insulation and body from piloerection and shape_b decision variables
-        new_fibres   = setproperties(p.mean_fibres; depth = ins_d)
-        new_ins_pars = setproperties(p.ins_pars; dorsal = new_fibres, ventral = new_fibres)
-        new_fur      = Fur(ins_d, p.mean_fibres.diameter, p.mean_fibres.density)
-        new_shape    = p.is_sphere ? p.shape_pars : setproperties(p.shape_pars; b = shape_b_v)
-        new_body     = Body(new_shape, CompositeInsulation(new_fur, p.fat))
+        # Rebuild insulation and body from piloerection and shape_b effectors
+        trial_fibre_props  = setproperties(p.mean_fibre_props; depth = insulation_depth)
+        trial_ins_pars     = setproperties(p.mean_ins_pars; dorsal = trial_fibre_props, ventral = trial_fibre_props)
+        trial_fur          = Fur(insulation_depth, p.mean_fibre_props.diameter, p.mean_fibre_props.density)
+        trial_shape        = p.body_is_sphere ? p.body_shape : setproperties(p.body_shape; b = shape_b)
+        trial_body         = Body(trial_shape, CompositeInsulation(trial_fur, p.fat))
 
         # Recompute temperature-dependent insulation properties
-        T_ins_avg      = T_ins * 0.7 + T_skin * 0.3
-        new_insulation = insulation_properties(new_ins_pars, T_ins_avg, p.pven)
+        mean_insulation_temperature = insulation_temperature * 0.7 + skin_temperature * 0.3
+        trial_insulation_props      = insulation_properties(trial_ins_pars, mean_insulation_temperature, p.ventral_fraction)
 
-        # Update conductance coefficient for new body size (substrate conduction area changes with shape)
-        new_area_cond   = BiophysicalGeometry.total_area(new_body) * p.ext_cond.conduction_fraction * 2
-        new_conductance = (new_area_cond * p.substrate_conductivity) / p.conduction_depth * p.vmult
-        new_geometry_vars = setproperties(p.geometry_vars; conductance_coefficient = new_conductance)
+        # Update conductance for new body size (conduction area changes with shape)
+        trial_conduction_area  = BiophysicalGeometry.total_area(trial_body) * p.ext_cond.conduction_fraction * 2
+        trial_conduction_coeff = (trial_conduction_area * p.substrate_conductivity) / p.conduction_depth * p.ventral_weight
+        trial_geometry_vars    = setproperties(p.geometry_vars; conductance_coefficient = trial_conduction_coeff)
 
-        out = HeatExchange.heat_balance(
-            T_core, T_skin, T_ins, Q_gen;
-            body             = new_body,
-            insulation_pars  = new_ins_pars,
-            insulation       = new_insulation,
-            geometry_vars    = new_geometry_vars,
-            environment_vars = p.env,
-            traits           = p.traits,
+        balance = HeatExchange.heat_balance(
+            core_temperature, skin_temperature, insulation_temperature, generated_heat_flow;
+            body             = trial_body,
+            insulation_pars  = trial_ins_pars,
+            insulation       = trial_insulation_props,
+            geometry_vars    = trial_geometry_vars,
+            environment_vars = p.heat_balance_env,
+            traits           = p.heat_balance_traits,
             resp_pars        = p.resp_pars,
-            k_flesh          = k_flesh,
-            pant             = pant_v,
-            skin_wetness     = skin_w,
+            k_flesh          = flesh_conductivity,
+            pant             = panting_rate,
+            skin_wetness,
         )
-        res[1] = ustrip(u"W", out.residual_energy_balance)
-        res[2] = ustrip(u"W", out.residual_internal_conduction)
-        res[3] = ustrip(u"K", out.residual_skin_temperature)
+        residuals[1] = ustrip(u"W", balance.residual_energy_balance)
+        residuals[2] = ustrip(u"W", balance.residual_internal_conduction)
+        residuals[3] = ustrip(u"K", balance.residual_skin_temperature)
         return nothing
     end
 
     # Bypass DifferentiationInterface (incompatible with Unitful params NamedTuple).
-    # Use out-of-place FiniteDiff forms to avoid JacobianCache argument requirement.
-    # hess! and cons_h! are registered (required by IpoptOptimizer) but not called at runtime
-    # when hessian_approximation="limited-memory" is active — L-BFGS builds the approximation
-    # from gradient differences, eliminating the expensive O(n²) finite-difference Hessian.
-    function grad!(g, x, p)
-        FiniteDiff.finite_difference_gradient!(g, x_ -> f(x_, p), x)
+    # hess! and cons_h! are registered (required by IpoptOptimizer) but not called
+    # at runtime when hessian_approximation="limited-memory" is set — L-BFGS builds
+    # the Hessian approximation from gradient differences, eliminating O(n²) evaluations.
+    function objective_gradient!(grad, effectors, p)
+        FiniteDiff.finite_difference_gradient!(grad, e -> objective(e, p), effectors)
     end
-    function hess!(H, x, p)
-        H .= FiniteDiff.finite_difference_hessian(x_ -> f(x_, p), x)
+    function objective_hessian!(H, effectors, p)
+        H .= FiniteDiff.finite_difference_hessian(e -> objective(e, p), effectors)
     end
-    function cons_j!(J, x, p)
+    function constraint_jacobian!(J, effectors, p)
         J .= FiniteDiff.finite_difference_jacobian(
-            x_ -> (res = zeros(eltype(x_), 3); cons!(res, x_, p); res),
-            x,
+            e -> (res = zeros(eltype(e), 3); heat_balance_residuals!(res, e, p); res),
+            effectors,
         )
     end
-    function cons_h!(res, x, p)
+    function constraint_hessians!(res, effectors, p)
         for i in eachindex(res)
             res[i] .= FiniteDiff.finite_difference_hessian(
-                x_ -> begin
+                e -> begin
                     r = zeros(3)
-                    cons!(r, x_, p)
+                    heat_balance_residuals!(r, e, p)
                     r[i]
                 end,
-                x,
+                effectors,
             )
         end
     end
 
-    optf = OptimizationFunction(f, SciMLBase.NoAD();
-        cons = cons!, grad = grad!, hess = hess!, cons_j = cons_j!, cons_h = cons_h!,
+    optimization_func = OptimizationFunction(objective, SciMLBase.NoAD();
+        cons     = heat_balance_residuals!,
+        grad     = objective_gradient!,
+        hess     = objective_hessian!,
+        cons_j   = constraint_jacobian!,
+        cons_h   = constraint_hessians!,
     )
-    prob = OptimizationProblem(optf, x0, params;
-        lb = lb, ub = ub,
-        lcons = zeros(3), ucons = zeros(3),
+    optimization_prob = OptimizationProblem(optimization_func, initial_effectors, nlp_pars;
+        lb     = lower_bounds,
+        ub     = upper_bounds,
+        lcons  = zeros(3),
+        ucons  = zeros(3),
     )
     # hessian_approximation and tolerance options go to the IpoptOptimizer struct (not solve kwargs).
     # reltol and maxiters are common interface args forwarded via solve.
-    sol = solve(prob,
+    ipopt_sol = solve(optimization_prob,
         IpoptOptimizer(;
             hessian_approximation = "limited-memory",
             acceptable_tol        = 1e-3,
@@ -339,144 +365,143 @@ function thermoregulate(
         maxiters = 300,
     )
 
-    # ---- Evaluate heat_balance at solution for full output -----------------
-    xsol = sol.u
-    T_core_sol    = xsol[1] * u"K"
-    T_skin_sol    = xsol[2] * u"K"
-    T_ins_sol     = xsol[3] * u"K"
-    Q_gen_sol     = exp(xsol[4]) * u"W"   # xsol[4] = log(Q_gen)
-    k_flesh_sol   = xsol[5] * u"W/m/K"
-    pant_sol      = xsol[6]
-    skin_w_sol    = xsol[7]
-    ins_depth_sol = xsol[8] * u"m"
-    shape_b_sol   = xsol[9]
+    # ---- Reconstruct full solution from solved effector values ---------------
+    x_sol = ipopt_sol.u
+    core_temperature       = x_sol[1] * u"K"
+    skin_temperature       = x_sol[2] * u"K"
+    insulation_temperature = x_sol[3] * u"K"
+    generated_heat_flow    = exp(x_sol[4]) * u"W"   # x_sol[4] = log(Q_gen)
+    flesh_conductivity     = x_sol[5] * u"W/m/K"
+    panting_rate           = x_sol[6]
+    skin_wetness           = x_sol[7]
+    insulation_depth       = x_sol[8] * u"m"
+    shape_b                = x_sol[9]
 
-    # Rebuild body and insulation at solution values
-    sol_fibres    = setproperties(mean_fibres; depth = ins_depth_sol)
-    sol_ins_pars  = setproperties(mean_ins_pars; dorsal = sol_fibres, ventral = sol_fibres)
-    sol_fur       = Fur(ins_depth_sol, mean_fibres.diameter, mean_fibres.density)
-    sol_shape     = organism.body.shape isa Sphere ?
-                    organism.body.shape :
-                    setproperties(organism.body.shape; b = shape_b_sol)
-    body_sol      = Body(sol_shape, CompositeInsulation(sol_fur, fat))
-    T_ins_avg_sol = T_ins_sol * 0.7 + T_skin_sol * 0.3
-    insulation_sol = insulation_properties(sol_ins_pars, T_ins_avg_sol, pven)
-    area_cond_sol  = BiophysicalGeometry.total_area(body_sol) * ext_cond.conduction_fraction * 2
-    conductance_sol = (area_cond_sol * environment_vars.substrate_conductivity) /
-                      environment_pars.conduction_depth * vmult
-    geometry_vars_sol = setproperties(geometry_vars; conductance_coefficient = conductance_sol)
+    sol_fibre_props    = setproperties(mean_fibre_props; depth = insulation_depth)
+    sol_ins_pars       = setproperties(mean_ins_pars; dorsal = sol_fibre_props, ventral = sol_fibre_props)
+    sol_fur            = Fur(insulation_depth, mean_fibre_props.diameter, mean_fibre_props.density)
+    sol_shape          = organism.body.shape isa Sphere ?
+                         organism.body.shape :
+                         setproperties(organism.body.shape; b = shape_b)
+    sol_body           = Body(sol_shape, CompositeInsulation(sol_fur, fat))
+    sol_mean_insulation_temperature = insulation_temperature * 0.7 + skin_temperature * 0.3
+    sol_insulation_props = insulation_properties(sol_ins_pars, sol_mean_insulation_temperature, ventral_fraction)
+    sol_conduction_area  = BiophysicalGeometry.total_area(sol_body) * ext_cond.conduction_fraction * 2
+    sol_conduction_coeff = (sol_conduction_area * env_vars.substrate_conductivity) /
+                           env_pars.conduction_depth * ventral_weight
+    sol_geometry_vars    = setproperties(geometry_vars; conductance_coefficient = sol_conduction_coeff)
 
-    hb = HeatExchange.heat_balance(
-        T_core_sol, T_skin_sol, T_ins_sol, Q_gen_sol;
-        body             = body_sol,
+    heat_balance_result = HeatExchange.heat_balance(
+        core_temperature, skin_temperature, insulation_temperature, generated_heat_flow;
+        body             = sol_body,
         insulation_pars  = sol_ins_pars,
-        insulation       = insulation_sol,
-        geometry_vars    = geometry_vars_sol,
-        environment_vars = env_packed,
-        traits           = traits_packed,
-        resp_pars        = resp_pars,
-        k_flesh          = k_flesh_sol,
-        pant             = pant_sol,
-        skin_wetness     = skin_w_sol,
+        insulation       = sol_insulation_props,
+        geometry_vars    = sol_geometry_vars,
+        environment_vars = heat_balance_env,
+        traits           = heat_balance_traits,
+        resp_pars,
+        k_flesh          = flesh_conductivity,
+        pant             = panting_rate,
+        skin_wetness,
     )
 
-    lung_temperature = (T_core_sol + T_skin_sol) / 2
+    lung_temperature = (core_temperature + skin_temperature) / 2
 
-    # Longwave flows (mirrors solve_metabolic_rate simplified approach)
-    σ_const        = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ)
-    area_total_lw  = BiophysicalGeometry.total_area(body_sol)
-    area_radiant_v = area_total_lw * (1 - ext_cond.conduction_fraction)
-    dorsal_lw_out  = 2 * sky_factor_ref * σ_const * rad_pars.body_emissivity_dorsal *
-                     area_total_lw * T_ins_sol^4
-    ventral_lw_out = 2 * ground_factor_ref * σ_const * rad_pars.body_emissivity_ventral *
-                     area_radiant_v * T_ins_sol^4
-    longwave_flow_out = dorsal_lw_out * dmult + ventral_lw_out * vmult
-    longwave_flow_in  = longwave_flow_out - hb.radiation_heat_flow
+    # ---- Longwave flows (mirrors solve_metabolic_rate simplified approach) ---
+    σ                        = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ)
+    sol_total_area           = BiophysicalGeometry.total_area(sol_body)
+    sol_ventral_radiant_area = sol_total_area * (1 - ext_cond.conduction_fraction)
+    dorsal_longwave_emission  = 2 * sky_view_factor * σ * rad_pars.body_emissivity_dorsal *
+                                sol_total_area * insulation_temperature^4
+    ventral_longwave_emission = 2 * ground_view_factor * σ * rad_pars.body_emissivity_ventral *
+                                sol_ventral_radiant_area * insulation_temperature^4
+    longwave_flow_out = dorsal_longwave_emission * dorsal_weight + ventral_longwave_emission * ventral_weight
+    longwave_flow_in  = longwave_flow_out - heat_balance_result.radiation_heat_flow
 
-    # Respiration mass flows at solution point
-    resp_pars_eff = setproperties(resp_pars; pant = pant_sol)
-    resp_out = HeatExchange.respiration(
-        MetabolicRates(; metabolic = Q_gen_sol, sum = Q_gen_sol, minimum = 0.0u"W"),
-        resp_pars_eff,
-        env_packed.atmos,
+    # ---- Respiration mass flows at solution ----------------------------------
+    panting_resp_pars    = setproperties(resp_pars; pant = panting_rate)
+    respiration_result   = HeatExchange.respiration(
+        MetabolicRates(; metabolic = generated_heat_flow, sum = generated_heat_flow, minimum = 0.0u"W"),
+        panting_resp_pars,
+        heat_balance_env.atmos,
         organism.body.shape.mass,
         lung_temperature,
         T_air;
-        gas_fractions = environment_pars.gas_fractions,
+        gas_fractions = env_pars.gas_fractions,
         O2conversion  = Kleiber1961(),
     )
-    latent_heat_vap = FluidProperties.enthalpy_of_vaporisation(T_air)
-    m_sweat = u"g/hr"(hb.skin_evaporation_heat_flow / latent_heat_vap)
-    m_evap  = u"g/hr"(resp_out.respiration_mass + m_sweat)
+    latent_heat_vaporisation = FluidProperties.enthalpy_of_vaporisation(T_air)
+    m_sweat = u"g/hr"(heat_balance_result.skin_evaporation_heat_flow / latent_heat_vaporisation)
+    m_evap  = u"g/hr"(respiration_result.respiration_mass + m_sweat)
 
+    # ---- Assemble outputs matching solve_metabolic_rate structure ------------
     thermoregulation_out = (;
-        core_temperature               = T_core_sol,
-        skin_temperature               = T_skin_sol,
-        insulation_temperature         = T_ins_sol,
+        core_temperature,
+        skin_temperature,
+        insulation_temperature,
         lung_temperature,
-        skin_temperature_dorsal        = T_skin_sol,
-        skin_temperature_ventral       = T_skin_sol,
-        insulation_temperature_dorsal  = T_ins_sol,
-        insulation_temperature_ventral = T_ins_sol,
-        shape_b                        = shape_b_sol,
-        pant                           = pant_sol,
-        skin_wetness                   = skin_w_sol,
-        flesh_conductivity             = k_flesh_sol,
-        insulation_conductivity_effective  = insulation_sol.conductivities.average,
-        insulation_conductivity_dorsal     = insulation_sol.conductivities.dorsal,
-        insulation_conductivity_ventral    = insulation_sol.conductivities.ventral,
-        insulation_conductivity_compressed = insulation_sol.conductivity_compressed,
+        skin_temperature_dorsal        = skin_temperature,
+        skin_temperature_ventral       = skin_temperature,
+        insulation_temperature_dorsal  = insulation_temperature,
+        insulation_temperature_ventral = insulation_temperature,
+        shape_b,
+        pant                           = panting_rate,
+        skin_wetness,
+        flesh_conductivity,
+        insulation_conductivity_effective  = sol_insulation_props.conductivities.average,
+        insulation_conductivity_dorsal     = sol_insulation_props.conductivities.dorsal,
+        insulation_conductivity_ventral    = sol_insulation_props.conductivities.ventral,
+        insulation_conductivity_compressed = sol_insulation_props.conductivity_compressed,
         insulation_depth_dorsal  = sol_ins_pars.dorsal.depth,
         insulation_depth_ventral = sol_ins_pars.ventral.depth,
         metab_pars.q10,
     )
 
-    total_area_out = BiophysicalGeometry.total_area(body_sol)
-    area_skin_out  = skin_area(body_sol)
-    area_evap_out  = evaporation_area(body_sol)
-    area_conv_out  = total_area_out * (1 - ext_cond.conduction_fraction)
-    area_sil_out   = silhouette_area(body_sol, rad_pars.solar_orientation)
-    volume_out     = body_sol.geometry.volume
+    sol_total_area_out   = BiophysicalGeometry.total_area(sol_body)
+    area_skin_out        = skin_area(sol_body)
+    area_evaporation_out = evaporation_area(sol_body)
+    area_convection_out  = sol_total_area_out * (1 - ext_cond.conduction_fraction)
+    area_silhouette_out  = silhouette_area(sol_body, rad_pars.solar_orientation)
 
     morphology = (;
-        total_area         = total_area_out,
-        area_skin          = area_skin_out,
-        area_evaporation   = area_evap_out,
-        area_convection    = area_conv_out,
-        area_conduction    = area_cond_orig / 2,
-        area_silhouette    = area_sil_out,
-        sky_view_factor    = sky_factor_ref,
-        ground_view_factor = ground_factor_ref,
-        volume             = volume_out,
-        volume_flesh       = flesh_volume(body_sol),
-        characteristic_dimension = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), body_sol),
-        fat_mass           = body_sol.shape.mass * fat.fraction,
-        body_sol.geometry.length...,
+        total_area               = sol_total_area_out,
+        area_skin                = area_skin_out,
+        area_evaporation         = area_evaporation_out,
+        area_convection          = area_convection_out,
+        area_conduction          = reference_conduction_area / 2,
+        area_silhouette          = area_silhouette_out,
+        sky_view_factor,
+        ground_view_factor,
+        volume                   = sol_body.geometry.volume,
+        volume_flesh             = flesh_volume(sol_body),
+        characteristic_dimension = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), sol_body),
+        fat_mass                 = sol_body.shape.mass * fat.fraction,
+        sol_body.geometry.length...,
     )
 
     energy_flows = (;
-        solar_flow            = hb.solar_heat_flow,
+        solar_flow            = heat_balance_result.solar_heat_flow,
         longwave_flow_in,
-        generated_heat_flow   = Q_gen_sol,
-        evaporation_heat_flow = hb.skin_evaporation_heat_flow +
-                                hb.insulation_evaporation_heat_flow +
-                                hb.respiration_heat_flow,
+        generated_heat_flow,
+        evaporation_heat_flow = heat_balance_result.skin_evaporation_heat_flow +
+                                heat_balance_result.insulation_evaporation_heat_flow +
+                                heat_balance_result.respiration_heat_flow,
         longwave_flow_out,
-        convection_heat_flow  = hb.convection_heat_flow,
-        conduction_flow       = hb.conduction_heat_flow,
-        balance               = hb.residual_energy_balance,
+        convection_heat_flow  = heat_balance_result.convection_heat_flow,
+        conduction_flow       = heat_balance_result.conduction_heat_flow,
+        balance               = heat_balance_result.residual_energy_balance,
         ntry                  = 1,
         success               = true,
     )
 
     mass_flows = (;
-        air_flow             = resp_out.air_flow,
-        oxygen_flow_standard = resp_out.oxygen_flow_standard,
+        air_flow             = respiration_result.air_flow,
+        oxygen_flow_standard = respiration_result.oxygen_flow_standard,
         m_evap,
-        respiration_mass     = resp_out.respiration_mass,
+        respiration_mass     = respiration_result.respiration_mass,
         m_sweat,
-        molar_fluxes_in      = resp_out.molar_fluxes_in,
-        molar_fluxes_out     = resp_out.molar_fluxes_out,
+        molar_fluxes_in      = respiration_result.molar_fluxes_in,
+        molar_fluxes_out     = respiration_result.molar_fluxes_out,
     )
 
     return (; thermoregulation = thermoregulation_out, morphology, energy_flows, mass_flows)

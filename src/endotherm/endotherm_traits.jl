@@ -65,11 +65,14 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
-- `w_pant::Float64`: IPOPT objective weight for panting (normalised to [0,1] range).
-  Relative to `w_sweat` this controls which activates first. Default 1.0.
-- `w_sweat::Float64`: IPOPT objective weight for skin wetness (normalised to [0,1] range).
-  Set `w_sweat > w_pant` for panting-first (rabbits, birds); `w_sweat < w_pant` for
-  sweating-first (humans); equal for parallel activation. Default 1.0.
+- `core_temperature_penalty::Float64`: IPOPT objective penalty for core temperature deviation from setpoint. Default 1.0.
+- `metabolic_heat_penalty::Float64`: IPOPT objective penalty for metabolic heat generation above minimum. Default 10.0.
+- `panting_penalty::Float64`: IPOPT objective penalty for panting (normalised to [0,1] range).
+  Relative to `skin_wetness_penalty` this controls which activates first. Default 1.0.
+- `skin_wetness_penalty::Float64`: IPOPT objective penalty for skin wetness (normalised to [0,1] range).
+  Set `skin_wetness_penalty > panting_penalty` for panting-first (rabbits, birds);
+  `skin_wetness_penalty < panting_penalty` for sweating-first (humans);
+  equal for parallel activation. Default 1.0.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
@@ -80,6 +83,8 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     T_core::Tc
     panting::P
     skin_wetness::Sw
-    w_pant::Float64  = 1.0
-    w_sweat::Float64 = 1.0
+    core_temperature_penalty::Float64 = 1.0
+    metabolic_heat_penalty::Float64   = 10.0
+    panting_penalty::Float64          = 1.0
+    skin_wetness_penalty::Float64     = 1.0
 end

@@ -153,7 +153,10 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             max=0.05,
             step=0.0025,
         ),
-        w_sweat = 0.03,  # birds "sweat" first (cutaneous evaporation), panting is secondary
+        core_temperature_penalty = 0.1,   # allow T_core to rise before exhausting effectors
+        metabolic_heat_penalty   = 10.0,  # strongly penalise metabolic heat above minimum
+        panting_penalty          = 0.1,
+        skin_wetness_penalty     = 0.1,
     )
 
     behavioral_traits = BehavioralTraits(;
