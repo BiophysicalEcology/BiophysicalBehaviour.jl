@@ -66,13 +66,22 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
 - `core_temperature_penalty::Float64`: IPOPT objective penalty for core temperature deviation from setpoint. Default 1.0.
-- `metabolic_heat_penalty::Float64`: IPOPT objective penalty for metabolic heat generation above minimum. Default 10.0.
+- `metabolic_heat_penalty::Float64`: Regularisation weight on metabolic heat generation. A small value
+  (default 0.1) prevents high-panting/high-Q_gen degeneracy in cold conditions. In hot conditions the
+  Q10 inequality constraint overrides this and forces Q_gen up with T_core, so this value does not
+  impede thermogenesis.
 - `panting_penalty::Float64`: IPOPT objective penalty for panting (normalised to [0,1] range).
   Relative to `skin_wetness_penalty` this controls which activates first. Default 1.0.
 - `skin_wetness_penalty::Float64`: IPOPT objective penalty for skin wetness (normalised to [0,1] range).
   Set `skin_wetness_penalty > panting_penalty` for panting-first (rabbits, birds);
   `skin_wetness_penalty < panting_penalty` for sweating-first (humans);
   equal for parallel activation. Default 1.0.
+- `gradient_penalty::Float64`: IPOPT objective penalty for deviation from `target_core_skin_gradient`.
+  Zero (default) disables the term. Non-zero values bias the solution toward maintaining the
+  specified core–skin temperature difference, which can activate vasodilation and evaporation
+  before absolute T_core deviation becomes the primary signal.
+- `target_core_skin_gradient::Float64`: Target T_core − T_skin difference (K). Only used when
+  `gradient_penalty > 0`. Typical resting value is ~3 K. Default 3.0.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
@@ -83,8 +92,10 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     T_core::Tc
     panting::P
     skin_wetness::Sw
-    core_temperature_penalty::Float64 = 1.0
-    metabolic_heat_penalty::Float64   = 10.0
-    panting_penalty::Float64          = 1.0
-    skin_wetness_penalty::Float64     = 1.0
+    core_temperature_penalty::Float64  = 1.0
+    metabolic_heat_penalty::Float64    = 0.1
+    panting_penalty::Float64           = 1.0
+    skin_wetness_penalty::Float64      = 1.0
+    gradient_penalty::Float64          = 0.0
+    target_core_skin_gradient::Float64 = 2.0
 end

@@ -8,14 +8,20 @@ generation, flesh conductivity, panting rate, skin wetness, insulation depth,
 body shape) plus three temperature state variables (core, skin, insulation surface).
 Three heat-balance equality constraints from `HeatExchange.heat_balance` enforce
 physical consistency so that the temperatures are outcomes of the effectors, not
-independent choices.
+independent choices. A fourth inequality constraint enforces Q10 metabolic scaling:
+`Q_gen >= Q_min_ref * Q10^((T_core − T_setpoint)/10)`.
 
-The objective penalises deviation from the setpoint core temperature, metabolic heat
-above the minimum, panting above resting rate, and skin wetness above the reference.
-All penalty terms are normalised to [0,1] over each effector's physiological range so
-the four penalty weights in `ThermoregulationLimits` are directly comparable:
-  - `core_temperature_penalty` — lower → T_core rises sooner before effectors are exhausted
-  - `metabolic_heat_penalty`   — higher → metabolism stays near minimum
+Q_gen is not penalised in the objective — it is a state variable driven by the
+energy balance. The T_core term implicitly sets Q_gen: in the cold it rises freely
+to close the deficit; in the heat it stays near Q_gen_min because extra heat would
+push T_core above setpoint. All penalty terms are normalised to [0,1].
+Penalty weights in `ThermoregulationLimits`:
+  - `core_temperature_penalty`  — lower → T_core rises sooner before effectors are exhausted
+  - `metabolic_heat_penalty`   — small regularisation (default 0.1) preventing high-panting/high-Q_gen
+                                  degeneracy at cold temperatures; overridden at hot temperatures by
+                                  the Q10 inequality constraint which forces Q_gen to rise with T_core
+  - `gradient_penalty`         — non-zero → penalise deviation from `target_core_skin_gradient`;
+                                  activates vasodilation/evaporation before T_core moves (default 0)
   - `panting_penalty`          — lower → panting activates sooner
   - `skin_wetness_penalty`     — higher than `panting_penalty` → panting activates before sweating
 
@@ -216,10 +222,12 @@ function thermoregulate(
     )
 
     # ---- Normalisation ranges for objective penalties -----------------------
-    Q_gen_range          = max(Q_gen_max - Q_gen_min, 1.0)
-    T_core_range         = max(T_core_max - setpoint_temperature_K, 1e-6)
-    panting_rate_range   = max(panting_rate_max - 1.0, 1e-6)
-    skin_wetness_range   = max(skin_wetness_max - skin_wetness_min, 1e-6)
+    Q_gen_range        = max(Q_gen_max - Q_gen_min, 1.0)
+    T_core_range       = max(T_core_max - setpoint_temperature_K, 1e-6)
+    panting_rate_range = max(panting_rate_max - 1.0, 1e-6)
+    skin_wetness_range = max(skin_wetness_max - skin_wetness_min, 1e-6)
+    # gradient_range reuses T_core_range: max plausible deviation of (T_core − T_skin)
+    # from target equals the maximum T_core excursion above setpoint.
 
     nlp_pars = (;
         setpoint_temperature     = setpoint_temperature_K,
@@ -227,17 +235,21 @@ function thermoregulate(
         metabolic_heat_penalty   = limits.metabolic_heat_penalty,
         panting_penalty          = limits.panting_penalty,
         skin_wetness_penalty     = limits.skin_wetness_penalty,
-        Q_gen_min,
-        Q_gen_range,
+        gradient_penalty         = limits.gradient_penalty,
+        target_gradient          = limits.target_core_skin_gradient,
         T_core_range,
+        gradient_range           = T_core_range,
         panting_rate_range,
         skin_wetness_min,
         skin_wetness_range,
+        Q_gen_min,                # used by Q10 constraint and metabolic regularisation
+        Q_gen_range,
+        q10                      = metab_pars.q10,
         mean_body,
         mean_ins_pars,
         mean_fibre_props,
         fat,
-        body_shape  = organism.body.shape,
+        body_shape     = organism.body.shape,
         body_is_sphere = organism.body.shape isa Sphere,
         insulation_props_init,
         geometry_vars,
@@ -252,18 +264,26 @@ function thermoregulate(
     )
 
     # ---- Objective -----------------------------------------------------------
-    # All terms normalised to [0,1]; weights set relative priority directly.
-    # Lower core_temperature_penalty → T_core rises sooner before effectors exhaust.
+    # metabolic_heat_penalty is a regularisation term (default 0.1) that breaks
+    # degeneracy in cold conditions: without it, the optimizer can freely combine high
+    # Q_gen + high panting and satisfy the energy balance equally well. A small weight
+    # is enough — the Q10 inequality constraint (4th residual) overrides it in hot
+    # conditions and forces Q_gen up to the Q10-scaled minimum.
+    # gradient_penalty (default 0) adds an optional term penalising deviation from the
+    # target core–skin temperature difference, activating vasodilation/evaporation
+    # before absolute T_core deviation becomes the primary signal.
     # skin_wetness_penalty > panting_penalty → panting activates before sweating.
-    # effectors[4] = log(generated_heat_flow); exp recovers the W value.
     function objective(effectors, p)
         p.core_temperature_penalty * ((effectors[1] - p.setpoint_temperature) / p.T_core_range)^2    +
         p.metabolic_heat_penalty   * ((exp(effectors[4]) - p.Q_gen_min) / p.Q_gen_range)^2          +
+        p.gradient_penalty         * ((effectors[1] - effectors[2] - p.target_gradient) / p.gradient_range)^2 +
         p.panting_penalty          * ((effectors[6] - 1.0) / p.panting_rate_range)^2                +
         p.skin_wetness_penalty     * ((effectors[7] - p.skin_wetness_min) / p.skin_wetness_range)^2
     end
 
-    # ---- Constraints: three heat-balance residuals = 0 ----------------------
+    # ---- Constraints: three equality + one Q10 inequality residual ----------
+    # residuals[1:3] = 0  (equality: energy balance, internal conduction, skin temp)
+    # residuals[4]  >= 0  (inequality: Q_gen >= Q_min_ref * Q10^((T_core − T_setpoint)/10))
     function heat_balance_residuals!(residuals, effectors, p)
         core_temperature    = effectors[1] * u"K"
         skin_temperature    = effectors[2] * u"K"
@@ -307,6 +327,8 @@ function thermoregulate(
         residuals[1] = ustrip(u"W", balance.residual_energy_balance)
         residuals[2] = ustrip(u"W", balance.residual_internal_conduction)
         residuals[3] = ustrip(u"K", balance.residual_skin_temperature)
+        q10_minimum  = p.Q_gen_min * p.q10 ^ ((effectors[1] - p.setpoint_temperature) / 10.0)
+        residuals[4] = exp(effectors[4]) - q10_minimum   # >= 0 enforced via ucons[4] = Inf
         return nothing
     end
 
@@ -322,7 +344,7 @@ function thermoregulate(
     end
     function constraint_jacobian!(J, effectors, p)
         J .= FiniteDiff.finite_difference_jacobian(
-            e -> (res = zeros(eltype(e), 3); heat_balance_residuals!(res, e, p); res),
+            e -> (res = zeros(eltype(e), 4); heat_balance_residuals!(res, e, p); res),
             effectors,
         )
     end
@@ -330,7 +352,7 @@ function thermoregulate(
         for i in eachindex(res)
             res[i] .= FiniteDiff.finite_difference_hessian(
                 e -> begin
-                    r = zeros(3)
+                    r = zeros(4)
                     heat_balance_residuals!(r, e, p)
                     r[i]
                 end,
@@ -349,8 +371,8 @@ function thermoregulate(
     optimization_prob = OptimizationProblem(optimization_func, initial_effectors, nlp_pars;
         lb     = lower_bounds,
         ub     = upper_bounds,
-        lcons  = zeros(3),
-        ucons  = zeros(3),
+        lcons  = [0.0, 0.0, 0.0, 0.0],
+        ucons  = [0.0, 0.0, 0.0, Inf],  # residuals[4] >= 0: Q_gen >= Q10-scaled minimum
     )
     # hessian_approximation and tolerance options go to the IpoptOptimizer struct (not solve kwargs).
     # reltol and maxiters are common interface args forwarded via solve.

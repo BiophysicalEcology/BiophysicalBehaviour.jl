@@ -110,16 +110,16 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
         Q_minimum_ref=Q_minimum,
         insulation=InsulationLimits(;
             dorsal=SteppedParameter(;
-                current=insulation_pars.dorsal.depth,
+                current=insulation_pars.dorsal.length * 0.7,
                 reference=insulation_pars.dorsal.depth,
-                max=insulation_pars.dorsal.depth,
-                step=0.0,
+                max=insulation_pars.dorsal.length * 0.7,
+                step=0.1,
             ),
             ventral=SteppedParameter(;
-                current=insulation_pars.ventral.depth,
+                current=insulation_pars.ventral.length * 0.7,
                 reference=insulation_pars.ventral.depth,
-                max=insulation_pars.ventral.depth,
-                step=0.0,
+                max=insulation_pars.ventral.length * 0.7,
+                step=0.1,
             ),
         ),
         shape_b=SteppedParameter(;
@@ -154,9 +154,9 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             step=0.0025,
         ),
         core_temperature_penalty = 0.1,   # allow T_core to rise before exhausting effectors
-        metabolic_heat_penalty   = 10.0,  # strongly penalise metabolic heat above minimum
-        panting_penalty          = 0.1,
+        panting_penalty          = 5.0,
         skin_wetness_penalty     = 0.1,
+        metabolic_heat_penalty = 10.0,
     )
 
     behavioral_traits = BehavioralTraits(;
@@ -555,6 +555,8 @@ ipopt_results = NamedTuple[]
         T_skin_ventral         = tr.skin_temperature_ventral,
         T_insulation_dorsal    = tr.insulation_temperature_dorsal,
         T_insulation_ventral   = tr.insulation_temperature_ventral,
+        insulation_depth_dorsal = tr.insulation_depth_dorsal,
+        shape_b                = tr.shape_b,
         k_flesh                = tr.flesh_conductivity,
         pant                   = tr.pant,
         skin_wetness           = tr.skin_wetness,
@@ -651,3 +653,47 @@ scatter!(pc4,
 plot!(pc4, legend = :topleft, legendfontsize = 6)
 
 plot(pc1, pc2, pc3, pc4, layout = (2, 2), size = (900, 700))
+
+# --- piloerection and flesh conductivity comparison ---
+pc5 = plot(
+    u"°C".(air_temperatures), u"mm".(predicted.insulation_depth_dorsal),
+    lw = 2, label = "predicted",
+    xlabel = "air temperature (°C)", ylabel = "mm",
+    title = "insulation depth (piloerection)",
+    xlim = (-5, 50),
+)
+plot!(pc5, u"°C".(air_temperatures), u"mm".(ipopt_predicted.insulation_depth_dorsal),
+    lw = 2, linestyle = :dash, label = "IPOPT")
+plot!(pc5, legend = :topright, legendfontsize = 6)
+
+pc6 = plot(
+    u"°C".(air_temperatures), u"W/m/K".(predicted.k_flesh),
+    lw = 2, label = "predicted",
+    xlabel = "air temperature (°C)", ylabel = "W m⁻¹ K⁻¹",
+    title = "flesh conductivity (vasodilation)",
+    xlim = (-5, 50),
+)
+plot!(pc6, u"°C".(air_temperatures), u"W/m/K".(ipopt_predicted.k_flesh),
+    lw = 2, linestyle = :dash, label = "IPOPT")
+plot!(pc6, legend = :topleft, legendfontsize = 6)
+
+pc7 = plot(
+    u"°C".(air_temperatures), predicted.shape,
+    lw = 2, label = "predicted",
+    xlabel = "air temperature (°C)", ylabel = "aspect ratio (b)",
+    title = "body shape",
+    xlim = (-5, 50),
+)
+plot!(pc7, u"°C".(air_temperatures), ipopt_predicted.shape_b,
+    lw = 2, linestyle = :dash, label = "IPOPT")
+plot!(pc7, legend = :bottomright, legendfontsize = 6)
+
+plot(pc5, pc6, pc7, layout = (1, 3), size = (1200, 350))
+
+# plot(pc1, pc2, pc3, pc4, pc5, pc6, pc7,
+#      layout = (7, 1),
+#      size = (700, 1600))
+
+plot(pc1, pc2, pc3, pc4, pc5, pc6, pc7,
+    layout = (4, 2),
+    size = (700, 1000))
