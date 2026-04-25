@@ -161,7 +161,7 @@ function thermoregulate(
     )
 
     # ---- Decision variable bounds (all SI, unitless Float64) ---------------
-    # x = [T_core, T_skin, T_ins, Q_gen, k_flesh, pant, skin_wetness, ins_depth, shape_b]
+    # x = [T_core, T_skin, T_ins, log(Q_gen), k_flesh, pant, skin_wetness, ins_depth, shape_b]
     T_air_K   = ustrip(u"K", T_air)
     T_set_K   = ustrip(u"K", T_setpoint)
     T_core_lo = ustrip(u"K", limits.T_core.reference)
@@ -170,6 +170,8 @@ function thermoregulate(
     T_skin_hi = T_core_hi + 5.0
     Q_lo  = ustrip(u"W", limits.Q_minimum_ref)
     Q_hi  = ustrip(u"W", limits.Q_minimum_ref) * 20.0
+    lQ_lo = log(Q_lo)
+    lQ_hi = log(Q_hi)
     k_lo  = ustrip(u"W/m/K", limits.k_flesh.reference)
     k_hi  = ustrip(u"W/m/K", limits.k_flesh.max)
     p_lo  = 1.0
@@ -181,14 +183,15 @@ function thermoregulate(
     sh_lo  = Float64(limits.shape_b.reference)
     sh_hi  = organism.body.shape isa Sphere ? sh_lo : Float64(limits.shape_b.max)
 
-    lb = [T_core_lo, T_skin_lo, T_skin_lo, Q_lo, k_lo, p_lo, sw_lo, ins_lo, sh_lo]
-    ub = [T_core_hi, T_skin_hi, T_skin_hi, Q_hi, k_hi, p_hi, sw_hi, ins_hi, sh_hi]
+    lb = [T_core_lo, T_skin_lo, T_skin_lo, lQ_lo, k_lo, p_lo, sw_lo, ins_lo, sh_lo]
+    ub = [T_core_hi, T_skin_hi, T_skin_hi, lQ_hi, k_hi, p_hi, sw_hi, ins_hi, sh_hi]
 
+    Q_gen_init_val = max(ustrip(u"W", Q_gen_init), Q_lo)
     x0 = clamp.(
         [T_set_K,
          ustrip(u"K", T_skin_init),
          ustrip(u"K", T_ins_init),
-         ustrip(u"W", Q_gen_init),
+         log(Q_gen_init_val),
          ustrip(u"W/m/K", int_cond.flesh_conductivity),
          1.0,
          Float64(evap_pars.skin_wetness),
@@ -197,14 +200,19 @@ function thermoregulate(
         lb, ub,
     )
 
-    Q_range = max(Q_hi - Q_lo, 1.0)
+    Q_range    = max(Q_hi - Q_lo, 1.0)
+    pant_range = max(p_hi - 1.0, 1e-6)      # normalise pant cost to [0,1]
+    sw_range   = max(sw_hi - sw_lo, 1e-6)   # normalise sweat cost to [0,1]
     params = (;
         T_setpoint = T_set_K,
-        w_pant     = 1.0,
-        w_sweat    = 1.0,
+        w_pant     = limits.w_pant,
+        w_sweat    = limits.w_sweat,
         w_qgen     = 0.01,
         Q_lo,
         Q_range,
+        pant_range,
+        sw_lo,
+        sw_range,
         body,
         ins_pars   = mean_ins_pars,
         mean_fibres,
@@ -224,11 +232,14 @@ function thermoregulate(
     )
 
     # ---- Objective: stay at setpoint, minimise Q_gen above minimum, minimise evaporative cost
+    # All penalty terms are normalised to [0,1] so weights directly express priority.
+    # w_sweat > w_pant ensures panting activates before sweating/fur-licking.
+    # x[4] is log(Q_gen); exp(x[4]) recovers the actual heat flow in W.
     function f(x, p)
         (x[1] - p.T_setpoint)^2 +
-        p.w_qgen  * ((x[4] - p.Q_lo) / p.Q_range)^2 +
-        p.w_pant  * (x[6] - 1.0)^2 +
-        p.w_sweat * x[7]^2
+        p.w_qgen  * ((exp(x[4]) - p.Q_lo) / p.Q_range)^2 +
+        p.w_pant  * ((x[6] - 1.0)        / p.pant_range)^2 +
+        p.w_sweat * ((x[7] - p.sw_lo)    / p.sw_range)^2
     end
 
     # ---- Constraints: three heat-balance residuals = 0 --------------------
@@ -236,7 +247,7 @@ function thermoregulate(
         T_core    = x[1] * u"K"
         T_skin    = x[2] * u"K"
         T_ins     = x[3] * u"K"
-        Q_gen     = x[4] * u"W"
+        Q_gen     = exp(x[4]) * u"W"   # x[4] = log(Q_gen)
         k_flesh   = x[5] * u"W/m/K"
         pant_v    = x[6]
         skin_w    = x[7]
@@ -280,6 +291,9 @@ function thermoregulate(
 
     # Bypass DifferentiationInterface (incompatible with Unitful params NamedTuple).
     # Use out-of-place FiniteDiff forms to avoid JacobianCache argument requirement.
+    # hess! and cons_h! are registered (required by IpoptOptimizer) but not called at runtime
+    # when hessian_approximation="limited-memory" is active — L-BFGS builds the approximation
+    # from gradient differences, eliminating the expensive O(n²) finite-difference Hessian.
     function grad!(g, x, p)
         FiniteDiff.finite_difference_gradient!(g, x_ -> f(x_, p), x)
     end
@@ -312,14 +326,25 @@ function thermoregulate(
         lb = lb, ub = ub,
         lcons = zeros(3), ucons = zeros(3),
     )
-    sol = solve(prob, IpoptOptimizer(); verbose)
+    # hessian_approximation and tolerance options go to the IpoptOptimizer struct (not solve kwargs).
+    # reltol and maxiters are common interface args forwarded via solve.
+    sol = solve(prob,
+        IpoptOptimizer(;
+            hessian_approximation = "limited-memory",
+            acceptable_tol        = 1e-3,
+            acceptable_iter       = 5,
+        );
+        verbose,
+        reltol   = 1e-4,
+        maxiters = 300,
+    )
 
     # ---- Evaluate heat_balance at solution for full output -----------------
     xsol = sol.u
     T_core_sol    = xsol[1] * u"K"
     T_skin_sol    = xsol[2] * u"K"
     T_ins_sol     = xsol[3] * u"K"
-    Q_gen_sol     = xsol[4] * u"W"
+    Q_gen_sol     = exp(xsol[4]) * u"W"   # xsol[4] = log(Q_gen)
     k_flesh_sol   = xsol[5] * u"W/m/K"
     pant_sol      = xsol[6]
     skin_w_sol    = xsol[7]

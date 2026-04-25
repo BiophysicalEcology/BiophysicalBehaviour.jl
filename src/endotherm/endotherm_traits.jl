@@ -64,7 +64,12 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `k_flesh::SteppedParameter`: Tissue conductivity limits (vasodilation)
 - `T_core::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
-- `skin_wetness::SteppedParameter`: Sweating limits
+- `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
+- `w_pant::Float64`: IPOPT objective weight for panting (normalised to [0,1] range).
+  Relative to `w_sweat` this controls which activates first. Default 1.0.
+- `w_sweat::Float64`: IPOPT objective weight for skin wetness (normalised to [0,1] range).
+  Set `w_sweat > w_pant` for panting-first (rabbits, birds); `w_sweat < w_pant` for
+  sweating-first (humans); equal for parallel activation. Default 1.0.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
@@ -75,4 +80,6 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     T_core::Tc
     panting::P
     skin_wetness::Sw
+    w_pant::Float64  = 1.0
+    w_sweat::Float64 = 1.0
 end

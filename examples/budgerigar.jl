@@ -153,6 +153,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             max=0.05,
             step=0.0025,
         ),
+        w_sweat = 0.03,  # birds "sweat" first (cutaneous evaporation), panting is secondary
     )
 
     behavioral_traits = BehavioralTraits(;
@@ -190,7 +191,7 @@ results = NamedTuple[]
         length(experimental_relative_humdities) ==
         length(q10s)
 
-for (T_air, rh, q10) in zip(
+@time for (T_air, rh, q10) in zip(
         air_temperatures,
         experimental_relative_humdities,
         q10s,
@@ -508,7 +509,7 @@ println("\nRunning IPOPT across temperatures...")
 
 ipopt_results = NamedTuple[]
 
-for (T_air, rh, q10, rb) in zip(air_temperatures, experimental_relative_humdities, q10s, results)
+@time for (T_air, rh, q10, rb) in zip(air_temperatures, experimental_relative_humdities, q10s, results)
 
     environment_vars_loop = example_environment_vars(;
         T_air,
@@ -594,6 +595,10 @@ plot!(pc2, u"°C".(air_temperatures), predicted.H2O_cut,
     linestyle = :dash, color = :blue, label = "cutaneous")
 plot!(pc2, u"°C".(air_temperatures), ipopt_predicted.H2O_total,
     lw = 2, linestyle = :dot, label = "total (IPOPT)")
+plot!(pc2, u"°C".(air_temperatures), u"g/hr".(ipopt_predicted.H2O_resp),
+    linestyle = :dot, label = "respiratory (IPOPT)")
+plot!(pc2, u"°C".(air_temperatures), ipopt_predicted.H2O_cut,
+    linestyle = :dot, color = :blue, label = "cutaneous (IPOPT)")
 scatter!(pc2,
     (Weathers1976Fig3.Tair .+ 273.15)u"K",
     (Weathers1976Fig3.mgH2Ogh)u"mg/g/hr" .* shape_pars.mass,
