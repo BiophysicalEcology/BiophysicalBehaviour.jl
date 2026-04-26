@@ -213,14 +213,14 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
     e   = (environment_pars=env_pars, environment_vars=env_vars)
 
     # Initial conditions for physiological thermoregulate:
-    # Q_gen = 0 (no metabolic heat pre-assumed), T_skin ≈ T_core − 3 K (typical
-    # skin-core gradient), T_insulation ≈ T_air.
-    physio_limits = thermoregulation(organism)
-    Q_gen_init    = zero(physio_limits.Q_minimum_ref)
-    T_skin_init   = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K"
-    T_insul_init  = env_vars.air_temperature
+    # generated_heat_flow = 0 (no metabolic heat pre-assumed), skin_temperature ≈ core_temperature − 3 K (typical
+    # skin-core gradient), insulation_temperature ≈ T_air.
+    physio_limits             = thermoregulation(organism)
+    generated_heat_flow_init  = zero(physio_limits.Q_minimum_ref)
+    skin_temperature_init     = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K"
+    insulation_temperature_init = env_vars.air_temperature
 
-    endotherm_out = thermoregulate(organism, e, Q_gen_init, T_skin_init, T_insul_init)
+    endotherm_out = thermoregulate(organism, e, generated_heat_flow_init, skin_temperature_init, insulation_temperature_init)
 
     return (;
         Te,

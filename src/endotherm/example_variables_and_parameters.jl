@@ -1,27 +1,27 @@
 function example_environment_vars(;
-    T_air=u"K"((20.0)u"°C"),
-    rh=0.05,
+    air_temperature=u"K"((20.0)u"°C"),
+    relative_humidity=0.05,
     wind_speed=0.1u"m/s",
-    P_atmos=101325.0u"Pa",
+    atmospheric_pressure=101325.0u"Pa",
     zenith_angle=20.0u"°",
-    k_substrate=2.79u"W/m/K",
+    substrate_conductivity=2.79u"W/m/K",
     global_radiation=0.0u"W/m^2",
     diffuse_fraction=0.1,
     shade=0,
 )
     EnvironmentalVars(;
-        air_temperature           = T_air,
-        reference_air_temperature = T_air,
-        sky_temperature           = T_air,
-        ground_temperature        = T_air,
-        substrate_temperature     = T_air,
-        bush_temperature          = T_air,
-        vegetation_temperature    = T_air,
-        relative_humidity         = rh,
+        air_temperature,
+        reference_air_temperature = air_temperature,
+        sky_temperature           = air_temperature,
+        ground_temperature        = air_temperature,
+        substrate_temperature     = air_temperature,
+        bush_temperature          = air_temperature,
+        vegetation_temperature    = air_temperature,
+        relative_humidity,
         wind_speed,
-        atmospheric_pressure      = P_atmos,
+        atmospheric_pressure,
         zenith_angle,
-        substrate_conductivity    = k_substrate,
+        substrate_conductivity,
         global_radiation,
         diffuse_fraction,
         shade,
@@ -51,10 +51,10 @@ end
 function example_ellipsoid_shape_pars(;
     mass=65.0u"kg",
     ρ_flesh=1000.0u"kg/m^3",
-    shape_b=1.1,
-    shape_c=1.1,
+    aspect_ratio_b=1.1,
+    aspect_ratio_c=1.1,
 )
-    Ellipsoid(mass, ρ_flesh, shape_b, shape_c)
+    Ellipsoid(mass, ρ_flesh, aspect_ratio_b, aspect_ratio_c)
 end
 
 # Alias for convenience
@@ -234,18 +234,18 @@ function example_thermoregulation_limits(;
     insulation_depth_ventral_ref=2e-03u"m",
     insulation_step=0.0,
     # Shape (uncurl)
-    shape_b=1.1,
-    shape_b_step=0.1,
-    shape_b_max=5.0,
+    aspect_ratio_factor=1.1,
+    aspect_ratio_step=0.1,
+    aspect_ratio_max=5.0,
     # Tissue conductivity (vasodilation)
-    k_flesh=0.9u"W/m/K",
-    k_flesh_step=0.1u"W/m/K",
-    k_flesh_max=2.8u"W/m/K",
+    flesh_conductivity=0.9u"W/m/K",
+    flesh_conductivity_step=0.1u"W/m/K",
+    flesh_conductivity_max=2.8u"W/m/K",
     # Core temperature (hyperthermia)
-    T_core=(37.0 + 273.15)u"K",
-    T_core_step=0.1u"K",
-    T_core_max=(39.0 + 273.15)u"K",
-    T_core_ref=(37.0 + 273.15)u"K",
+    core_temperature=(37.0 + 273.15)u"K",
+    core_temperature_step=0.1u"K",
+    core_temperature_max=(39.0 + 273.15)u"K",
+    core_temperature_ref=(37.0 + 273.15)u"K",
     # Panting
     pant_current=1.0,
     pant_step=0.1,
@@ -277,23 +277,23 @@ function example_thermoregulation_limits(;
         ),
     )
 
-    shape_b_param = SteppedParameter(;
-        current=shape_b,
-        max=shape_b_max,
-        step=shape_b_step,
+    aspect_ratio_param = SteppedParameter(;
+        current=aspect_ratio_factor,
+        max=aspect_ratio_max,
+        step=aspect_ratio_step,
     )
 
-    k_flesh_param = SteppedParameter(;
-        current=k_flesh,
-        max=k_flesh_max,
-        step=k_flesh_step,
+    flesh_conductivity_param = SteppedParameter(;
+        current=flesh_conductivity,
+        max=flesh_conductivity_max,
+        step=flesh_conductivity_step,
     )
 
-    T_core_param = SteppedParameter(;
-        current=T_core,
-        reference=T_core_ref,
-        max=T_core_max,
-        step=T_core_step,
+    core_temperature_param = SteppedParameter(;
+        current=core_temperature,
+        reference=core_temperature_ref,
+        max=core_temperature_max,
+        step=core_temperature_step,
     )
 
     panting = PantingLimits(;
@@ -304,7 +304,7 @@ function example_thermoregulation_limits(;
         ),
         cost=pant_cost,
         multiplier=pant_multiplier,
-        T_core_ref=T_core_ref,
+        core_temperature_ref=core_temperature_ref,
     )
 
     skin_wetness_param = SteppedParameter(;
@@ -317,9 +317,9 @@ function example_thermoregulation_limits(;
         control,
         Q_minimum_ref,
         insulation,
-        shape_b=shape_b_param,
-        k_flesh=k_flesh_param,
-        T_core=T_core_param,
+        aspect_ratio_factor=aspect_ratio_param,
+        flesh_conductivity=flesh_conductivity_param,
+        core_temperature=core_temperature_param,
         panting,
         skin_wetness=skin_wetness_param,
     )

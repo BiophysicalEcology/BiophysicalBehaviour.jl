@@ -179,11 +179,11 @@ for shape_number in 1:4
         )
 
         # initial conditions
-        T_skin = u"K"((endo_input.TS)u"°C")
-        T_insulation = u"K"((endo_input.TFA)u"°C")
+        skin_temperature = u"K"((endo_input.TS)u"°C")
+        insulation_temperature = u"K"((endo_input.TFA)u"°C")
         Q_minimum_ref = (endo_input.QBASAL)u"W"
-        Q_gen = 0.0u"W"
-        T_core_ref = metabolism_pars.core_temperature
+        generated_heat_flow = 0.0u"W"
+        core_temperature_ref = metabolism_pars.core_temperature
 
         treg_mode = endo_input.TREGMODE == 1 ? CoreFirst() :
                     endo_input.TREGMODE == 2 ? CoreAndPantingFirst() :
@@ -209,19 +209,19 @@ for shape_number in 1:4
                     step=endo_input.PZFUR,
                 ),
             ),
-            shape_b=SteppedParameter(;
+            aspect_ratio_factor=SteppedParameter(;
                 current=endo_input.SHAPE_B,
                 max=endo_input.SHAPE_B_MAX,
                 step=endo_input.UNCURL,
             ),
-            k_flesh=SteppedParameter(;
+            flesh_conductivity=SteppedParameter(;
                 current=(endo_input.AK1)u"W/m/K",
                 max=(endo_input.AK1_MAX)u"W/m/K",
                 step=(endo_input.AK1_INC)u"W/m/K",
             ),
-            T_core=SteppedParameter(;
-                current=T_core_ref,
-                reference=T_core_ref,
+            core_temperature=SteppedParameter(;
+                current=core_temperature_ref,
+                reference=core_temperature_ref,
                 max=u"K"((endo_input.TC_MAX)u"°C"),
                 step=(endo_input.TC_INC)u"K",
             ),
@@ -233,7 +233,7 @@ for shape_number in 1:4
                 ),
                 cost=0.0u"W",
                 multiplier=endo_input.PANT_MULT,
-                T_core_ref=T_core_ref,
+                core_temperature_ref=core_temperature_ref,
             ),
             skin_wetness=SteppedParameter(;
                 current=evaporation_pars.skin_wetness,
@@ -255,9 +255,9 @@ for shape_number in 1:4
         endotherm_out = thermoregulate(
             organism,
             environment,
-            Q_gen,
-            T_skin,
-            T_insulation,
+            generated_heat_flow,
+            skin_temperature,
+            insulation_temperature,
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology

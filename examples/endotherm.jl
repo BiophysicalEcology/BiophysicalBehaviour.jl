@@ -43,7 +43,7 @@ physiology_traits = HeatExchangeTraits(
 )
 
 # Create thermoregulation limits
-T_core_ref = metabolism_pars.core_temperature
+core_temperature_ref = metabolism_pars.core_temperature
 thermoregulation_limits = ThermoregulationLimits(;
     control=RuleBasedSequentialControl(;
         mode=CoreFirst(),
@@ -65,20 +65,20 @@ thermoregulation_limits = ThermoregulationLimits(;
             step=0.0,
         ),
     ),
-    shape_b=SteppedParameter(;
+    aspect_ratio_factor=SteppedParameter(;
         current=shape_pars.b,
         max=5.0,
         step=0.1,
     ),
-    k_flesh=SteppedParameter(;
+    flesh_conductivity=SteppedParameter(;
         current=conduction_pars_internal.flesh_conductivity,
         max=2.8u"W/m/K",
         step=0.1u"W/m/K",
     ),
-    T_core=SteppedParameter(;
-        current=T_core_ref,
-        reference=T_core_ref,
-        max=T_core_ref + 5.0u"K",
+    core_temperature=SteppedParameter(;
+        current=core_temperature_ref,
+        reference=core_temperature_ref,
+        max=core_temperature_ref + 5.0u"K",
         step=0.1u"K",
     ),
     panting=PantingLimits(;
@@ -89,7 +89,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         ),
         cost=0.0u"W",
         multiplier=1.0,
-        T_core_ref=T_core_ref,
+        core_temperature_ref=core_temperature_ref,
     ),
     skin_wetness=SteppedParameter(;
         current=evaporation_pars.skin_wetness,
@@ -112,16 +112,16 @@ environment_pars = example_environment_pars()
 environment = (; environment_pars, environment_vars)
 
 # initial conditions
-T_skin = metabolism_pars.core_temperature - 3.0u"K"
-T_insulation = environment_vars.air_temperature
-Q_gen = 0.0u"W"
+skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
+insulation_temperature = environment_vars.air_temperature
+generated_heat_flow = 0.0u"W"
 
 endotherm_out = thermoregulate(
     organism,
     environment,
-    Q_gen,
-    T_skin,
-    T_insulation,
+    generated_heat_flow,
+    skin_temperature,
+    insulation_temperature,
 )
 thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology

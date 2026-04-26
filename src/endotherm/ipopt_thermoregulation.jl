@@ -1,5 +1,5 @@
 """
-    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, Q_gen_init, T_skin_init, T_ins_init)
+    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, generated_heat_flow_init, skin_temperature_init, insulation_temperature_init)
 
 Solve endotherm heat balance as a nonlinear program via IPOPT.
 
@@ -9,19 +9,19 @@ body shape) plus three temperature state variables (core, skin, insulation surfa
 Three heat-balance equality constraints from `HeatExchange.heat_balance` enforce
 physical consistency so that the temperatures are outcomes of the effectors, not
 independent choices. A fourth inequality constraint enforces Q10 metabolic scaling:
-`Q_gen >= Q_min_ref * Q10^((T_core − T_setpoint)/10)`.
+`generated_heat_flow >= heat_flow_min * Q10^((core_temperature − setpoint)/10)`.
 
-Q_gen is not penalised in the objective — it is a state variable driven by the
-energy balance. The T_core term implicitly sets Q_gen: in the cold it rises freely
-to close the deficit; in the heat it stays near Q_gen_min because extra heat would
-push T_core above setpoint. All penalty terms are normalised to [0,1].
+`generated_heat_flow` is not penalised in the objective — it is a state variable driven by the
+energy balance. The `core_temperature` term implicitly sets `generated_heat_flow`: in the cold it
+rises freely to close the deficit; in the heat it stays near `heat_flow_min` because extra heat
+would push `core_temperature` above setpoint. All penalty terms are normalised to [0,1].
 Penalty weights in `ThermoregulationLimits`:
-  - `core_temperature_penalty`  — lower → T_core rises sooner before effectors are exhausted
-  - `metabolic_heat_penalty`   — small regularisation (default 0.1) preventing high-panting/high-Q_gen
+  - `core_temperature_penalty`  — lower → core_temperature rises sooner before effectors are exhausted
+  - `metabolic_heat_penalty`   — small regularisation (default 0.1) preventing high-panting/high-generated_heat_flow
                                   degeneracy at cold temperatures; overridden at hot temperatures by
-                                  the Q10 inequality constraint which forces Q_gen to rise with T_core
+                                  the Q10 inequality constraint which forces generated_heat_flow to rise
   - `gradient_penalty`         — non-zero → penalise deviation from `target_core_skin_gradient`;
-                                  activates vasodilation/evaporation before T_core moves (default 0)
+                                  activates vasodilation/evaporation before core_temperature moves (default 0)
   - `panting_penalty`          — lower → panting activates sooner
   - `skin_wetness_penalty`     — higher than `panting_penalty` → panting activates before sweating
 
@@ -31,18 +31,18 @@ vegetation_view_factor. This matches the weighting used by `solve_metabolic_rate
 # Arguments
 - `organism`: must have `OrganismTraits` with `ThermoregulationLimits`
 - `environment`: NamedTuple with `environment_pars` and `environment_vars`
-- `Q_gen_init`: initial guess for metabolic heat generation (W)
-- `T_skin_init`: initial guess for skin temperature (K)
-- `T_ins_init`: initial guess for insulation surface temperature (K)
+- `generated_heat_flow_init`: initial guess for metabolic heat generation (W)
+- `skin_temperature_init`: initial guess for skin temperature (K)
+- `insulation_temperature_init`: initial guess for insulation surface temperature (K)
 """
 function thermoregulate(
     ::Endotherm,
     ::IPOPTControl,
     organism::Organism,
     environment::NamedTuple,
-    Q_gen_init,
-    T_skin_init,
-    T_ins_init;
+    generated_heat_flow_init,
+    skin_temperature_init,
+    insulation_temperature_init;
     verbose = false,
 )
     env_pars  = stripparams(environment.environment_pars)
@@ -134,7 +134,7 @@ function thermoregulate(
     mean_conduction_coeff     = ventral_conduction_coeff * ventral_weight
 
     # ---- Pack environment and traits for heat_balance ------------------------
-    mean_insulation_temperature_init = T_ins_init * 0.7 + T_skin_init * 0.3
+    mean_insulation_temperature_init = insulation_temperature_init * 0.7 + skin_temperature_init * 0.3
     insulation_props_init = insulation_properties(mean_ins_pars, mean_insulation_temperature_init, ventral_fraction)
 
     env_temperatures = EnvironmentTemperatures(
@@ -177,57 +177,58 @@ function thermoregulate(
     # ---- Decision variable bounds (SI, unitless Float64) --------------------
     # x = [core_temperature, skin_temperature, insulation_temperature,    ← temperature states
     #       log(generated_heat_flow), flesh_conductivity, panting_rate,   ← effectors
-    #       skin_wetness, insulation_depth, shape_b]                      ← effectors
+    #       skin_wetness, insulation_depth, aspect_ratio_factor]           ← effectors
     # The three equality constraints make temperatures outcomes of the six effectors.
-    air_temperature_K    = ustrip(u"K", T_air)
+    air_temperature_K      = ustrip(u"K", T_air)
     setpoint_temperature_K = ustrip(u"K", T_setpoint)
-    T_core_min = ustrip(u"K", limits.T_core.reference)
-    T_core_max = ustrip(u"K", limits.T_core.max)
-    T_skin_min = air_temperature_K - 5.0
-    T_skin_max = T_core_max + 5.0
-    Q_gen_min  = ustrip(u"W", limits.Q_minimum_ref)
-    Q_gen_max  = ustrip(u"W", limits.Q_minimum_ref) * 20.0
-    log_Q_gen_min = log(Q_gen_min)
-    log_Q_gen_max = log(Q_gen_max)
-    k_flesh_min = ustrip(u"W/m/K", limits.k_flesh.reference)
-    k_flesh_max = ustrip(u"W/m/K", limits.k_flesh.max)
-    panting_rate_min = 1.0
-    panting_rate_max = Float64(limits.panting.pant.max)
-    skin_wetness_min  = Float64(limits.skin_wetness.reference)
-    skin_wetness_max  = Float64(limits.skin_wetness.max)
-    insulation_depth_min = ustrip(u"m", limits.insulation.dorsal.reference)
-    insulation_depth_max = ustrip(u"m", limits.insulation.dorsal.max)
-    shape_b_min = Float64(limits.shape_b.reference)
-    shape_b_max = organism.body.shape isa Sphere ? shape_b_min : Float64(limits.shape_b.max)
+    core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
+    core_temperature_max   = ustrip(u"K", limits.core_temperature.max)
+    skin_temperature_min   = air_temperature_K - 5.0
+    skin_temperature_max   = core_temperature_max + 5.0
+    heat_flow_min          = ustrip(u"W", limits.Q_minimum_ref)
+    heat_flow_max          = ustrip(u"W", limits.Q_minimum_ref) * 20.0
+    log_heat_flow_min      = log(heat_flow_min)
+    log_heat_flow_max      = log(heat_flow_max)
+    flesh_conductivity_min = ustrip(u"W/m/K", limits.flesh_conductivity.reference)
+    flesh_conductivity_max = ustrip(u"W/m/K", limits.flesh_conductivity.max)
+    panting_rate_min       = 1.0
+    panting_rate_max       = Float64(limits.panting.pant.max)
+    skin_wetness_min       = Float64(limits.skin_wetness.reference)
+    skin_wetness_max       = Float64(limits.skin_wetness.max)
+    insulation_depth_min   = ustrip(u"m", limits.insulation.dorsal.reference)
+    insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
+    aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
+    aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
 
-    lower_bounds = [T_core_min, T_skin_min, T_skin_min, log_Q_gen_min,
-                    k_flesh_min, panting_rate_min, skin_wetness_min,
-                    insulation_depth_min, shape_b_min]
-    upper_bounds = [T_core_max, T_skin_max, T_skin_max, log_Q_gen_max,
-                    k_flesh_max, panting_rate_max, skin_wetness_max,
-                    insulation_depth_max, shape_b_max]
+    lower_bounds = [core_temperature_min, skin_temperature_min, skin_temperature_min, log_heat_flow_min,
+                    flesh_conductivity_min, panting_rate_min, skin_wetness_min,
+                    insulation_depth_min, aspect_ratio_min]
+    upper_bounds = [core_temperature_max, skin_temperature_max, skin_temperature_max, log_heat_flow_max,
+                    flesh_conductivity_max, panting_rate_max, skin_wetness_max,
+                    insulation_depth_max, aspect_ratio_max]
 
-    Q_gen_init_val = max(ustrip(u"W", Q_gen_init), Q_gen_min)
+    heat_flow_init = max(ustrip(u"W", generated_heat_flow_init), heat_flow_min)
     initial_effectors = clamp.(
         [setpoint_temperature_K,
-         ustrip(u"K", T_skin_init),
-         ustrip(u"K", T_ins_init),
-         log(Q_gen_init_val),
+         ustrip(u"K", skin_temperature_init),
+         ustrip(u"K", insulation_temperature_init),
+         log(heat_flow_init),
          ustrip(u"W/m/K", int_cond.flesh_conductivity),
          1.0,
          Float64(evap_pars.skin_wetness),
          insulation_depth_max,   # start with erected insulation
-         shape_b_min],           # start curled
+         aspect_ratio_min],      # start curled
         lower_bounds, upper_bounds,
     )
 
     # ---- Normalisation ranges for objective penalties -----------------------
-    Q_gen_range        = max(Q_gen_max - Q_gen_min, 1.0)
-    T_core_range       = max(T_core_max - setpoint_temperature_K, 1e-6)
-    panting_rate_range = max(panting_rate_max - 1.0, 1e-6)
-    skin_wetness_range = max(skin_wetness_max - skin_wetness_min, 1e-6)
-    # gradient_range reuses T_core_range: max plausible deviation of (T_core − T_skin)
-    # from target equals the maximum T_core excursion above setpoint.
+    heat_flow_range        = max(heat_flow_max - heat_flow_min, 1.0)
+    core_temperature_range = max(core_temperature_max - setpoint_temperature_K, 1e-6)
+    panting_rate_range     = max(panting_rate_max - 1.0, 1e-6)
+    skin_wetness_range     = max(skin_wetness_max - skin_wetness_min, 1e-6)
+    # gradient_range reuses core_temperature_range: max plausible deviation of
+    # (core_temperature − skin_temperature) from target equals the max core_temperature
+    # excursion above setpoint.
 
     nlp_pars = (;
         setpoint_temperature     = setpoint_temperature_K,
@@ -237,13 +238,13 @@ function thermoregulate(
         skin_wetness_penalty     = limits.skin_wetness_penalty,
         gradient_penalty         = limits.gradient_penalty,
         target_gradient          = limits.target_core_skin_gradient,
-        T_core_range,
-        gradient_range           = T_core_range,
+        core_temperature_range,
+        gradient_range           = core_temperature_range,
         panting_rate_range,
         skin_wetness_min,
         skin_wetness_range,
-        Q_gen_min,                # used by Q10 constraint and metabolic regularisation
-        Q_gen_range,
+        heat_flow_min,             # used by Q10 constraint and metabolic regularisation
+        heat_flow_range,
         q10                      = metab_pars.q10,
         mean_body,
         mean_ins_pars,
@@ -266,40 +267,39 @@ function thermoregulate(
     # ---- Objective -----------------------------------------------------------
     # metabolic_heat_penalty is a regularisation term (default 0.1) that breaks
     # degeneracy in cold conditions: without it, the optimizer can freely combine high
-    # Q_gen + high panting and satisfy the energy balance equally well. A small weight
-    # is enough — the Q10 inequality constraint (4th residual) overrides it in hot
-    # conditions and forces Q_gen up to the Q10-scaled minimum.
+    # generated_heat_flow + high panting and satisfy the energy balance equally well.
+    # The Q10 inequality constraint (4th residual) overrides it in hot conditions.
     # gradient_penalty (default 0) adds an optional term penalising deviation from the
     # target core–skin temperature difference, activating vasodilation/evaporation
-    # before absolute T_core deviation becomes the primary signal.
+    # before absolute core_temperature deviation becomes the primary signal.
     # skin_wetness_penalty > panting_penalty → panting activates before sweating.
     function objective(effectors, p)
-        p.core_temperature_penalty * ((effectors[1] - p.setpoint_temperature) / p.T_core_range)^2    +
-        p.metabolic_heat_penalty   * ((exp(effectors[4]) - p.Q_gen_min) / p.Q_gen_range)^2          +
+        p.core_temperature_penalty * ((effectors[1] - p.setpoint_temperature) / p.core_temperature_range)^2 +
+        p.metabolic_heat_penalty   * ((exp(effectors[4]) - p.heat_flow_min) / p.heat_flow_range)^2         +
         p.gradient_penalty         * ((effectors[1] - effectors[2] - p.target_gradient) / p.gradient_range)^2 +
-        p.panting_penalty          * ((effectors[6] - 1.0) / p.panting_rate_range)^2                +
+        p.panting_penalty          * ((effectors[6] - 1.0) / p.panting_rate_range)^2                       +
         p.skin_wetness_penalty     * ((effectors[7] - p.skin_wetness_min) / p.skin_wetness_range)^2
     end
 
     # ---- Constraints: three equality + one Q10 inequality residual ----------
     # residuals[1:3] = 0  (equality: energy balance, internal conduction, skin temp)
-    # residuals[4]  >= 0  (inequality: Q_gen >= Q_min_ref * Q10^((T_core − T_setpoint)/10))
+    # residuals[4]  >= 0  (inequality: generated_heat_flow >= heat_flow_min * Q10^((core_temperature − setpoint)/10))
     function heat_balance_residuals!(residuals, effectors, p)
-        core_temperature    = effectors[1] * u"K"
-        skin_temperature    = effectors[2] * u"K"
+        core_temperature       = effectors[1] * u"K"
+        skin_temperature       = effectors[2] * u"K"
         insulation_temperature = effectors[3] * u"K"
-        generated_heat_flow = exp(effectors[4]) * u"W"   # effectors[4] = log(Q_gen)
-        flesh_conductivity  = effectors[5] * u"W/m/K"
-        panting_rate        = effectors[6]
-        skin_wetness        = effectors[7]
-        insulation_depth    = effectors[8] * u"m"
-        shape_b             = effectors[9]
+        generated_heat_flow    = exp(effectors[4]) * u"W"   # effectors[4] = log(generated_heat_flow)
+        flesh_conductivity     = effectors[5] * u"W/m/K"
+        panting_rate           = effectors[6]
+        skin_wetness           = effectors[7]
+        insulation_depth       = effectors[8] * u"m"
+        aspect_ratio_factor    = effectors[9]
 
-        # Rebuild insulation and body from piloerection and shape_b effectors
+        # Rebuild insulation and body from piloerection and aspect_ratio_factor effectors
         trial_fibre_props  = setproperties(p.mean_fibre_props; depth = insulation_depth)
         trial_ins_pars     = setproperties(p.mean_ins_pars; dorsal = trial_fibre_props, ventral = trial_fibre_props)
         trial_fur          = Fur(insulation_depth, p.mean_fibre_props.diameter, p.mean_fibre_props.density)
-        trial_shape        = p.body_is_sphere ? p.body_shape : setproperties(p.body_shape; b = shape_b)
+        trial_shape        = p.body_is_sphere ? p.body_shape : setproperties(p.body_shape; aspect_ratio_b = aspect_ratio_factor)
         trial_body         = Body(trial_shape, CompositeInsulation(trial_fur, p.fat))
 
         # Recompute temperature-dependent insulation properties
@@ -327,7 +327,7 @@ function thermoregulate(
         residuals[1] = ustrip(u"W", balance.residual_energy_balance)
         residuals[2] = ustrip(u"W", balance.residual_internal_conduction)
         residuals[3] = ustrip(u"K", balance.residual_skin_temperature)
-        q10_minimum  = p.Q_gen_min * p.q10 ^ ((effectors[1] - p.setpoint_temperature) / 10.0)
+        q10_minimum  = p.heat_flow_min * p.q10 ^ ((effectors[1] - p.setpoint_temperature) / 10.0)
         residuals[4] = exp(effectors[4]) - q10_minimum   # >= 0 enforced via ucons[4] = Inf
         return nothing
     end
@@ -372,7 +372,7 @@ function thermoregulate(
         lb     = lower_bounds,
         ub     = upper_bounds,
         lcons  = [0.0, 0.0, 0.0, 0.0],
-        ucons  = [0.0, 0.0, 0.0, Inf],  # residuals[4] >= 0: Q_gen >= Q10-scaled minimum
+        ucons  = [0.0, 0.0, 0.0, Inf],  # residuals[4] >= 0: generated_heat_flow >= Q10-scaled minimum
     )
     # hessian_approximation and tolerance options go to the IpoptOptimizer struct (not solve kwargs).
     # reltol and maxiters are common interface args forwarded via solve.
@@ -392,19 +392,19 @@ function thermoregulate(
     core_temperature       = x_sol[1] * u"K"
     skin_temperature       = x_sol[2] * u"K"
     insulation_temperature = x_sol[3] * u"K"
-    generated_heat_flow    = exp(x_sol[4]) * u"W"   # x_sol[4] = log(Q_gen)
+    generated_heat_flow    = exp(x_sol[4]) * u"W"   # x_sol[4] = log(generated_heat_flow)
     flesh_conductivity     = x_sol[5] * u"W/m/K"
     panting_rate           = x_sol[6]
     skin_wetness           = x_sol[7]
     insulation_depth       = x_sol[8] * u"m"
-    shape_b                = x_sol[9]
+    aspect_ratio_factor    = x_sol[9]
 
     sol_fibre_props    = setproperties(mean_fibre_props; depth = insulation_depth)
     sol_ins_pars       = setproperties(mean_ins_pars; dorsal = sol_fibre_props, ventral = sol_fibre_props)
     sol_fur            = Fur(insulation_depth, mean_fibre_props.diameter, mean_fibre_props.density)
     sol_shape          = organism.body.shape isa Sphere ?
                          organism.body.shape :
-                         setproperties(organism.body.shape; b = shape_b)
+                         setproperties(organism.body.shape; aspect_ratio_b = aspect_ratio_factor)
     sol_body           = Body(sol_shape, CompositeInsulation(sol_fur, fat))
     sol_mean_insulation_temperature = insulation_temperature * 0.7 + skin_temperature * 0.3
     sol_insulation_props = insulation_properties(sol_ins_pars, sol_mean_insulation_temperature, ventral_fraction)
@@ -466,7 +466,7 @@ function thermoregulate(
         skin_temperature_ventral       = skin_temperature,
         insulation_temperature_dorsal  = insulation_temperature,
         insulation_temperature_ventral = insulation_temperature,
-        shape_b,
+        aspect_ratio_factor,
         pant                           = panting_rate,
         skin_wetness,
         flesh_conductivity,

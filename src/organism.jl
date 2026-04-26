@@ -99,7 +99,7 @@ IPOPT-based nonlinear programming control strategy.
 Solves the thermoregulation problem as a constrained optimisation:
 minimise deviation from the setpoint core temperature subject to three
 heat-balance equality constraints, with all physiological effectors
-(k_flesh, pant, skin_wetness) as continuous decision variables.
+(flesh_conductivity, pant, skin_wetness) as continuous decision variables.
 
 Requires `Optimization.jl` and `OptimizationIpopt.jl`.
 """
