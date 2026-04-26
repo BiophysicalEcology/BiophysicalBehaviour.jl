@@ -23,32 +23,32 @@ end
 # =============================================================================
 
 """
-    is_active(activity, zenith_angle, solar_rad) → Bool
+    is_active(activity, zenith_angle, sunlight) → Bool
 
 Return `true` if the animal is in its active period given current solar conditions.
 
 Ported from ECTOTHERM.f (DAYACT/NOCTURN/CREPUS flags). The zenith angle and
 solar radiation together identify day, night, and twilight.
 
-- `Diurnal`: active when the sun is above the horizon (solar_rad > 0, zenith < 90°)
-- `Nocturnal`: active at night (solar_rad == 0 or zenith ≥ 90°)
+- `Diurnal`: active when the sun is above the horizon (sunlight > 0, zenith < 90°)
+- `Nocturnal`: active at night (sunlight == 0 or zenith ≥ 90°)
 - `Crepuscular`: active at twilight (zenith within ±5° of 90°)
 - `CombinedActivity`: active if active in any of its constituent periods
 - `ResponsiveActivity`: delegates to the user-supplied function
 """
-is_active(::Diurnal, zenith, solar_rad) =
-    zenith < 90u"°" && solar_rad > zero(solar_rad)
+is_active(::Diurnal, zenith, sunlight) =
+    zenith < 90u"°" && sunlight > zero(sunlight)
 
-is_active(::Nocturnal, zenith, solar_rad) =
-    zenith >= 90u"°" || solar_rad <= zero(solar_rad)
+is_active(::Nocturnal, zenith, sunlight) =
+    zenith >= 90u"°" || sunlight <= zero(sunlight)
 
-is_active(::Crepuscular, zenith, solar_rad) =
+is_active(::Crepuscular, zenith, sunlight) =
     85u"°" <= zenith <= 95u"°"
 
-is_active(a::CombinedActivity, zenith, solar_rad) =
-    any(p -> is_active(p, zenith, solar_rad), a.periods)
+is_active(a::CombinedActivity, zenith, sunlight) =
+    any(p -> is_active(p, zenith, sunlight), a.periods)
 
-is_active(a::ResponsiveActivity, zenith, solar_rad) = a.isactive(zenith, solar_rad)
+is_active(a::ResponsiveActivity, zenith, sunlight) = a.isactive(zenith, sunlight)
 
 # =============================================================================
 # Position helper – blend between two scalar values
@@ -60,15 +60,15 @@ _blend(min_val, max_val, t) = min_val * (1 - t) + max_val * t
 # Underground shade blend factor (NicheMapR shdburrow 0/1/2)
 # =============================================================================
 
-_underground_blend_factor(::MinShadeOnly, limits, low_shade, high_shade, step) = 0.0
-_underground_blend_factor(::MaxShadeOnly, limits, low_shade, high_shade, step) = 1.0
+_underground_blend_factor(::MinShadeOnly, limits, min_shade, max_shade, step) = 0.0
+_underground_blend_factor(::MaxShadeOnly, limits, min_shade, max_shade, step) = 1.0
 
-function _underground_blend_factor(::AdaptiveBurrowShade, limits, low_shade, high_shade, step)
-    n_nodes  = size(low_shade.soil_temperature, 2)
-    min_node = clamp(limits.depth_min_underground, 1, n_nodes)
-    T_soil   = low_shade.soil_temperature[step, min_node]
-    too_hot  = T_soil > limits.T_active_max
-    too_cold = T_soil < limits.T_critical_min
+function _underground_blend_factor(::AdaptiveBurrowShade, limits, min_shade, max_shade, step)
+    n_nodes          = size(min_shade.soil_temperature, 2)
+    min_node         = clamp(limits.depth_min_underground, 1, n_nodes)
+    soil_temperature = min_shade.soil_temperature[step, min_node]
+    too_hot          = soil_temperature > limits.T_active_max
+    too_cold         = soil_temperature < limits.T_critical_min
     return (too_hot || too_cold) ? 1.0 : 0.0
 end
 
@@ -142,8 +142,8 @@ function reset_position(limits::EctothermBehavioralLimits)
     limits = @set limits.height.current        = limits.height.reference
     limits = @set limits.absorptivity.current  = limits.absorptivity.max
     limits = @set limits.pant_rate.current     = limits.pant_rate.reference
-    limits = @set limits.T_target.current   = limits.T_target.reference
-    limits = @set limits.sun_orientation    = 45.0
+    limits = @set limits.T_target.current  = limits.T_target.reference
+    limits = @set limits.sun_orientation   = 45.0
     limits = @set limits.pressed_to_ground = false
     return limits
 end
@@ -313,7 +313,7 @@ end
 # =============================================================================
 
 """
-    select_depth(limits, low_shadeesult, high_shadeesult, step, chosen_shade) → limits
+    select_depth(limits, min_shade, max_shade, step, underground_shade_factor) → limits
 
 Find the shallowest accessible soil node with a tolerable temperature (SELDEP.f).
 
@@ -324,26 +324,26 @@ the deepest node if no node is within tolerance.
 
 # Arguments
 - `limits`: Current behavioral limits (depth range and thermal thresholds)
-- `low_shadeesult`: `MicroResult` from the minimum-shade microclimate run
-- `high_shadeesult`: `MicroResult` from the maximum-shade microclimate run
+- `min_shade`: `MicroResult` from the minimum-shade microclimate run
+- `max_shade`: `MicroResult` from the maximum-shade microclimate run
 - `step`: Current simulation time step (1-based hour index)
-- `chosen_shade`: Currently chosen shade fraction (0–1), used to blend soil temps
+- `underground_shade_factor`: Blend factor (0=min-shade, 1=max-shade) for soil temperatures
 """
-function select_depth(limits::EctothermBehavioralLimits, low_shadeesult, high_shadeesult, step, chosen_shade, blend_factor)
-    T_max_threshold = limits.T_critical_max -
+function select_depth(limits::EctothermBehavioralLimits, min_shade, max_shade, step, underground_shade_factor)
+    depth_selection_threshold = limits.T_critical_max -
         (limits.T_critical_max - limits.T_active_max) / 2
 
-    n_nodes = size(low_shadeesult.soil_temperature, 2)
-    depth_min = clamp(limits.depth_min_underground,  1, n_nodes)
-    depth_max = clamp(limits.depth.max,        1, n_nodes)
+    n_nodes   = size(min_shade.soil_temperature, 2)
+    depth_min = clamp(limits.depth_min_underground, 1, n_nodes)
+    depth_max = clamp(limits.depth.max,             1, n_nodes)
 
     for node in depth_min:depth_max
-        T_soil = _blend(
-            low_shadeesult.soil_temperature[step, node],
-            high_shadeesult.soil_temperature[step, node],
-            blend_factor,
+        soil_temperature = _blend(
+            min_shade.soil_temperature[step, node],
+            max_shade.soil_temperature[step, node],
+            underground_shade_factor,
         )
-        if limits.T_critical_min < T_soil < T_max_threshold
+        if limits.T_critical_min < soil_temperature < depth_selection_threshold
             return @set limits.depth.current = node
         end
     end
@@ -388,124 +388,122 @@ T_sky = T_substrate = T_ground = blended soil temperature at the chosen node
 - `environmental_params`: `EnvironmentalPars` passed through to the output
 """
 function interpolate_environment(available_environments, step, limits::EctothermBehavioralLimits, environmental_params)
-    low_shade = available_environments.min_shade_result
-    high_shade = available_environments.max_shade_result
+    min_shade = available_environments.min_shade_result
+    max_shade = available_environments.max_shade_result
 
-    # Blend factor: 0 = fully min-shade environment, 1 = fully max-shade environment.
-    # Matches NicheMapR ABOVEGROUND.f: blend = SHADE / MAXSHD.
-    # The min-shade run is treated as the zero-shade reference regardless of its
-    # actual shade fraction, so blend(20%) = 20/90 = 0.222 (not 0.0).
-    blend_factor = available_environments.max_shade_fraction > 0 ?
-        clamp(limits.shade.current / available_environments.max_shade_fraction, 0.0, 1.0) :
+    # Shade blend factor: 0 = fully min-shade environment, 1 = fully max-shade environment.
+    # Interpolates shade.current between min_shade_fraction and max_shade_fraction.
+    shade_range        = available_environments.max_shade_fraction - available_environments.min_shade_fraction
+    shade_blend_factor = shade_range > 0 ?
+        clamp((limits.shade.current - available_environments.min_shade_fraction) / shade_range, 0.0, 1.0) :
         0.0
 
-    chosen_shade = limits.shade.current
+    current_shade  = limits.shade.current
     is_underground = limits.depth.current > limits.depth.reference
 
     # Common fields regardless of position
-    zenith_angle = low_shade.solar_radiation.zenith_angle[step]
-    P_atmos      = low_shade.pressure[step]
+    zenith_angle        = min_shade.solar_radiation.zenith_angle[step]
+    atmospheric_pressure = min_shade.pressure[step]
 
     if is_underground
         # ---- BELOWGROUND environment (BELOWGROUND.f) ----
         # Underground shade is binary: shaded retreat uses max-shade soil temps,
         # unshaded retreat uses min-shade soil temps (NicheMapR shade_burrow flag).
-        underground_bf = _underground_blend_factor(limits.burrow_shade_mode, limits, low_shade, high_shade, step)
-        node = limits.depth.current
-        T_soil = _blend(
-            low_shade.soil_temperature[step, node],
-            high_shade.soil_temperature[step, node],
-            underground_bf,
+        underground_shade_factor = _underground_blend_factor(limits.burrow_shade_mode, limits, min_shade, max_shade, step)
+        node             = limits.depth.current
+        soil_temperature = _blend(
+            min_shade.soil_temperature[step, node],
+            max_shade.soil_temperature[step, node],
+            underground_shade_factor,
         )
-        k_sub = _blend(
-            low_shade.soil_thermal_conductivity[step, node],
-            high_shade.soil_thermal_conductivity[step, node],
-            underground_bf,
+        substrate_conductivity = _blend(
+            min_shade.soil_thermal_conductivity[step, node],
+            max_shade.soil_thermal_conductivity[step, node],
+            underground_shade_factor,
         )
         # Conserve actual vapour pressure at the chosen underground conditions,
-        # then compute RH at T_soil (consistent with ABOVEGROUND.f WETAIR approach).
-        rh_ref = _blend(low_shade.soil_humidity[step, node], high_shade.soil_humidity[step, node], underground_bf)
-        P_v_ref = FluidProperties.vapour_pressure(T_soil) * rh_ref
-        rh = clamp(ustrip(u"Pa", P_v_ref) /
-                   ustrip(u"Pa", FluidProperties.vapour_pressure(T_soil)), 0.0, 1.0)
+        # then compute RH at soil_temperature (consistent with ABOVEGROUND.f WETAIR approach).
+        rh_ref  = _blend(min_shade.soil_humidity[step, node], max_shade.soil_humidity[step, node], underground_shade_factor)
+        P_v_ref = FluidProperties.vapour_pressure(soil_temperature) * rh_ref
+        rh      = clamp(ustrip(u"Pa", P_v_ref) /
+                        ustrip(u"Pa", FluidProperties.vapour_pressure(soil_temperature)), 0.0, 1.0)
         return EnvironmentalVars(;
-            air_temperature           = T_soil,
-            reference_air_temperature = T_soil,
-            sky_temperature           = T_soil,
-            ground_temperature        = T_soil,
-            substrate_temperature     = T_soil,
+            air_temperature           = soil_temperature,
+            reference_air_temperature = soil_temperature,
+            sky_temperature           = soil_temperature,
+            ground_temperature        = soil_temperature,
+            substrate_temperature     = soil_temperature,
             relative_humidity         = clamp(rh, 0.0, 1.0),
             wind_speed                = 0.01u"m/s",
-            atmospheric_pressure      = P_atmos,
+            atmospheric_pressure,
             zenith_angle,
-            substrate_conductivity    = k_sub,
-            global_radiation          = zero(low_shade.global_radiation[step]),
+            substrate_conductivity,
+            global_radiation          = zero(min_shade.global_radiation[step]),
             diffuse_fraction          = 0.0,
-            shade                     = chosen_shade,
+            shade                     = current_shade,
         )
     else
         # ---- ABOVEGROUND environment (ABOVEGROUND.f) ----
         height_node = limits.height.current
 
-        T_air = _blend(
-            low_shade.profile.air_temperature[step, height_node],
-            high_shade.profile.air_temperature[step, height_node],
-            blend_factor,
+        air_temperature = _blend(
+            min_shade.profile.air_temperature[step, height_node],
+            max_shade.profile.air_temperature[step, height_node],
+            shade_blend_factor,
         )
         # Conserve actual vapour pressure at min-shade reference conditions,
         # then compute RH at the blended temperature (ABOVEGROUND.f WETAIR logic).
-        rh_ref  = low_shade.profile.relative_humidity[step, height_node]
-        P_v_ref = FluidProperties.vapour_pressure(low_shade.profile.air_temperature[step, height_node]) * rh_ref
+        rh_ref  = min_shade.profile.relative_humidity[step, height_node]
+        P_v_ref = FluidProperties.vapour_pressure(min_shade.profile.air_temperature[step, height_node]) * rh_ref
         rh      = clamp(ustrip(u"Pa", P_v_ref) /
-                        ustrip(u"Pa", FluidProperties.vapour_pressure(T_air)), 0.0, 1.0)
+                        ustrip(u"Pa", FluidProperties.vapour_pressure(air_temperature)), 0.0, 1.0)
         wind_speed = _blend(
-            low_shade.profile.wind_speed[step, height_node],
-            high_shade.profile.wind_speed[step, height_node],
-            blend_factor,
+            min_shade.profile.wind_speed[step, height_node],
+            max_shade.profile.wind_speed[step, height_node],
+            shade_blend_factor,
         )
-        T_sky = _blend(
-            low_shade.sky_temperature[step],
-            high_shade.sky_temperature[step],
-            blend_factor,
+        sky_temperature = _blend(
+            min_shade.sky_temperature[step],
+            max_shade.sky_temperature[step],
+            shade_blend_factor,
         )
-        T_ground = _blend(
-            low_shade.soil_temperature[step, limits.depth.reference],
-            high_shade.soil_temperature[step, limits.depth.reference],
-            blend_factor,
+        ground_temperature = _blend(
+            min_shade.soil_temperature[step, limits.depth.reference],
+            max_shade.soil_temperature[step, limits.depth.reference],
+            shade_blend_factor,
         )
-        T_substrate = T_ground
-        k_sub = _blend(
-            low_shade.soil_thermal_conductivity[step, limits.depth.reference],
-            high_shade.soil_thermal_conductivity[step, limits.depth.reference],
-            blend_factor,
+        substrate_conductivity = _blend(
+            min_shade.soil_thermal_conductivity[step, limits.depth.reference],
+            max_shade.soil_thermal_conductivity[step, limits.depth.reference],
+            shade_blend_factor,
         )
         # Solar radiation: stored pre-shade in MicroResult. HeatExchange applies
         # (1 - shade) internally, so pass the raw pre-shade value here.
-        global_radiation = low_shade.global_radiation[step]
+        global_radiation = min_shade.global_radiation[step]
         diffuse_fraction = _blend(
-            low_shade.diffuse_fraction[step],
-            high_shade.diffuse_fraction[step],
-            blend_factor,
+            min_shade.diffuse_fraction[step],
+            max_shade.diffuse_fraction[step],
+            shade_blend_factor,
         )
 
         return EnvironmentalVars(;
-            air_temperature = T_air,
+            air_temperature,
             reference_air_temperature = _blend(
-                low_shade.reference_temperature[step],
-                high_shade.reference_temperature[step],
-                blend_factor,
+                min_shade.reference_temperature[step],
+                max_shade.reference_temperature[step],
+                shade_blend_factor,
             ),
-            sky_temperature       = T_sky,
-            ground_temperature    = T_ground,
-            substrate_temperature = T_substrate,
+            sky_temperature,
+            ground_temperature,
+            substrate_temperature = ground_temperature,
             relative_humidity     = clamp(rh, 0.0, 1.0),
             wind_speed,
-            atmospheric_pressure  = P_atmos,
+            atmospheric_pressure,
             zenith_angle,
-            substrate_conductivity = k_sub,
+            substrate_conductivity,
             global_radiation,
             diffuse_fraction,
-            shade                  = chosen_shade,
+            shade = current_shade,
         )
     end
 end

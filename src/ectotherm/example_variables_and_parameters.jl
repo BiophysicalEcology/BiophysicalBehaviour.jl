@@ -42,28 +42,28 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `depth_min_underground`      | 2         | mindepth (shallowest underground node)|
 | `depth_max`                  | all nodes | maxdepth (default: use all)   |
 | `height_max`                 | all nodes | (default: use all heights)    |
-| `alpha_min`                  | 0.9       | alpha_min                     |
-| `alpha_max`                  | 0.9       | alpha_max                     |
-| `alpha_step`                 | 0.0       | (derived: alpha_max-alpha_min)|
+| `absorptivity_min`           | 0.9       | alpha_min                     |
+| `absorptivity_max`           | 0.9       | alpha_max                     |
+| `absorptivity_step`          | 0.0       | (derived: alpha_max-alpha_min)|
 | `pant_max`                   | 1.0       | (panting multiplier max)      |
 | `pant_step`                  | 0.1       | (panting step)                |
-| `T_target`                   | 30.0 °C   | T_pref (TPREF, rises to T_F_max)|
-| `T_target_step`              | 1.0 K     | TBIG (TPREF increment, 0.5 in NicheMapR THERMOREG)|
-| `T_active_min`               | 24.0 °C   | T_F_min                       |
-| `T_active_max`               | 34.0 °C   | T_F_max                       |
-| `T_bask`                     | 17.5 °C   | T_B_min                       |
-| `T_critical_min`             | 6.0 °C    | CT_min                        |
-| `T_critical_max`             | 40.0 °C   | CT_max                        |
-| `T_emerge`                   | 17.5 °C   | T_RB_min                      |
-| `can_retreat_underground`    | `true`    | burrow                        |
-| `can_climb`                  | `false`   | climb                         |
-| `can_seek_shade`             | `true`    | shade_seek                    |
-| `can_change_absorptivity`    | `false`   | alpha_max ≠ alpha_min         |
-| `can_solar_orient`           | `true`    | postur                        |
-| `can_press_to_ground`        | `true`    | pct_cond > 0                  |
-| `can_pant`                   | `false`   | panting                       |
-| `underground_tb_equals_soil` | `true`    | (NicheMapR BELOWGROUND.f)     |
-| `burrow_shade_mode`          | `MaxShadeOnly()` | shdburrow=2 (NicheMapR) |
+| `T_pref`                          | 30.0 °C   | T_pref (TPREF, initial preferred temp; T_target rises to T_F_max)|
+| `T_target_step`                   | 0.5 K     | TBIG (TPREF increment, 0.5 in NicheMapR THERMOREG)|
+| `T_active_min`                    | 24.0 °C   | T_F_min                       |
+| `T_active_max`                    | 34.0 °C   | T_F_max                       |
+| `T_bask_min`                      | 17.5 °C   | T_B_min                       |
+| `T_critical_min`                  | 6.0 °C    | CT_min                        |
+| `T_critical_max`                  | 40.0 °C   | CT_max                        |
+| `T_emerge_min`                    | 15.0 °C   | T_RB_min                      |
+| `can_retreat_underground`         | `true`    | burrow                        |
+| `can_climb`                       | `false`   | climb                         |
+| `can_seek_shade`                  | `true`    | shade_seek                    |
+| `can_change_absorptivity`         | `false`   | alpha_max ≠ alpha_min         |
+| `can_solar_orient`                | `true`    | postur                        |
+| `can_press_to_ground`             | `true`    | pct_cond > 0                  |
+| `can_pant`                        | `false`   | panting                       |
+| `solve_underground`               | `false`   | (NicheMapR BELOWGROUND.f)     |
+| `burrow_shade_mode`               | `MaxShadeOnly()` | shdburrow=2 (NicheMapR) |
 """
 function example_ectotherm_behavioral_limits(;
     # Shade
@@ -71,37 +71,37 @@ function example_ectotherm_behavioral_limits(;
     shade_max        = 0.9,
     shade_step       = 0.03,
     # Solar absorptivity (NicheMapR alpha_min / alpha_max)
-    alpha_min        = 0.9,
-    alpha_max        = 0.9,
-    alpha_step       = alpha_max - alpha_min,   # jumps to max in one step by default
+    absorptivity_min  = 0.9,
+    absorptivity_max  = 0.9,
+    absorptivity_step = absorptivity_max - absorptivity_min,   # jumps to max in one step by default
     # Panting
     pant_max         = 1.0,
     pant_step        = 0.1,
     # Depth (soil node indices)
-    depth_min_underground = 2,      # mindepth: shallowest accessible underground node
-    depth_max        = typemax(Int), # maxdepth: default = use all available depth nodes
+    depth_min_underground = 2,       # mindepth: shallowest accessible underground node
+    depth_max             = typemax(Int), # maxdepth: default = use all available depth nodes
     # Height (atmospheric profile node indices)
-    height_max       = typemax(Int), # default = use all available height nodes
+    height_max            = typemax(Int), # default = use all available height nodes
     # Thermal thresholds
-    T_target      = u"K"(30.0u"°C"),   # TPREF: starting target temp (rises to T_active_max)
+    T_target      = u"K"(30.0u"°C"),   # TPREF: starting preferred temp (T_target rises to T_active_max)
     T_target_step = 0.5u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
     T_active_min  = u"K"(24.0u"°C"),
     T_active_max  = u"K"(34.0u"°C"),
-    T_bask           = u"K"(17.5u"°C"),
+    T_bask_min       = u"K"(17.5u"°C"),
     T_critical_min   = u"K"(6.0u"°C"),
     T_critical_max   = u"K"(40.0u"°C"),
-    T_emerge         = u"K"(15.0u"°C"),
+    T_emerge_min     = u"K"(15.0u"°C"),
     # Capability flags
-    can_retreat_underground = true,
-    can_climb               = false,
-    can_seek_shade          = true,
-    can_change_absorptivity = false,
-    can_solar_orient        = true,
-    can_press_to_ground     = true,
-    can_pant                = false,
-    underground_tb_equals_soil = true,
-    burrow_shade_mode          = MaxShadeOnly(),
-    Δsoil_signal                = 0.0u"K/hr",
+    can_retreat_underground      = true,
+    can_climb                    = false,
+    can_seek_shade               = true,
+    can_change_absorptivity      = false,
+    can_solar_orient             = true,
+    can_press_to_ground          = true,
+    can_pant                     = false,
+    solve_underground                = false,
+    burrow_shade_mode                = MaxShadeOnly(),
+    emerge_signal                = 0.0u"K/hr",
     # Control
     thermoregulation_mode = CoreFirst(),
     tolerance             = 0.005,
@@ -112,37 +112,37 @@ function example_ectotherm_behavioral_limits(;
         tolerance,
         max_iterations,
     )
-    shade_param = SteppedParameter(;
+    shade = SteppedParameter(;
         current   = shade_min,
         reference = shade_min,
         max       = shade_max,
         step      = shade_step,
     )
-    depth_param = SteppedParameter(;
+    depth = SteppedParameter(;
         current   = 1,
         reference = 1,
         max       = depth_max,
         step      = 1,
     )
-    height_param = SteppedParameter(;
+    height = SteppedParameter(;
         current   = 1,
         reference = 1,
         max       = height_max,
         step      = 1,
     )
-    absorptivity_param = SteppedParameter(;
-        current   = alpha_min,
-        reference = alpha_min,
-        max       = alpha_max,
-        step      = alpha_step,
+    absorptivity = SteppedParameter(;
+        current   = absorptivity_min,
+        reference = absorptivity_min,
+        max       = absorptivity_max,
+        step      = absorptivity_step,
     )
-    pant_param = SteppedParameter(;
+    pant_rate = SteppedParameter(;
         current   = 1.0,
         reference = 1.0,
         max       = pant_max,
         step      = pant_step,
     )
-    T_target_param = SteppedParameter(;
+    T_target = SteppedParameter(;
         current   = T_target,
         reference = T_target,
         max       = T_active_max,
@@ -150,19 +150,19 @@ function example_ectotherm_behavioral_limits(;
     )
     EctothermBehavioralLimits(;
         control,
-        shade            = shade_param,
-        depth            = depth_param,
+        shade,
+        depth,
         depth_min_underground,
-        height           = height_param,
-        absorptivity = absorptivity_param,
-        pant_rate    = pant_param,
-        T_target     = T_target_param,
+        height,
+        absorptivity,
+        pant_rate,
+        T_target,
         T_active_min,
         T_active_max,
-        T_bask,
+        T_bask_min,
         T_critical_min,
         T_critical_max,
-        T_emerge,
+        T_emerge_min,
         can_retreat_underground,
         can_climb,
         can_seek_shade,
@@ -170,9 +170,9 @@ function example_ectotherm_behavioral_limits(;
         can_solar_orient,
         can_press_to_ground,
         can_pant,
-        underground_tb_equals_soil,
+        solve_underground,
         burrow_shade_mode,
-        Δsoil_signal,
+        emerge_signal,
     )
 end
 

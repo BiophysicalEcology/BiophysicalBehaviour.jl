@@ -145,7 +145,7 @@ using CSV, DataFrames
                 can_climb               = false,
                 can_retreat_underground = true,
                 depth_min_underground   = 3,          # R: mindepth=3
-                Δsoil_signal             = 0.0u"K/hr", # R: warmsig=0
+                emerge_signal        = 0.0u"K/hr",  # R: warmsig=0
                 can_seek_shade          = scen.can_seek_shade,
                 can_solar_orient        = scen.can_solar_orient,
                 can_change_absorptivity = true,
@@ -156,13 +156,13 @@ using CSV, DataFrames
                 shade_min               = 0.0,
                 shade_max               = maximum_shade,
                 shade_step              = 0.03,        # R: delta_shade=3
-                alpha_min               = 0.6,         # R: alpha_min=0.6
-                alpha_max               = 0.9,         # R: alpha_max=0.9
-                alpha_step              = 0.003,
+                absorptivity_min        = 0.6,         # R: alpha_min=0.6
+                absorptivity_max        = 0.9,         # R: alpha_max=0.9
+                absorptivity_step       = 0.003,
                 T_active_min            = u"K"(24.0u"°C"),  # R: T_F_min=24
                 T_active_max            = u"K"(34.0u"°C"),  # R: T_F_max=34
-                T_bask                  = u"K"(17.5u"°C"),  # R: T_B_min=17.5
-                T_emerge                = u"K"(15.0u"°C"),  # R: T_RB_min=15
+                T_bask_min              = u"K"(17.5u"°C"),  # R: T_B_min=17.5
+                T_emerge_min            = u"K"(15.0u"°C"),  # R: T_RB_min=15
                 T_target                = u"K"(30.0u"°C"),  # R: T_pref=30
                 T_critical_min          = u"K"(6.0u"°C"),   # R: CT_min=6
                 T_critical_max          = u"K"(40.0u"°C"),  # R: CT_max=40
@@ -189,7 +189,7 @@ using CSV, DataFrames
             end
 
             # Julia outputs
-            T_body_C    = [ustrip(u"°C", r.T_core)  for r in results]
+            core_temperature_C = [ustrip(u"°C", r.core_temperature) for r in results]
             state       = [r.state                  for r in results]
             julia_act   = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
             jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.energy_balance.solar_flow)        for r in results]
@@ -204,7 +204,7 @@ using CSV, DataFrames
 
             # Body temperature: RMSE < 1.5°C (sun_orient scenarios ~1.25°C due to orientation differences)
             # Activity state agreement ≥ 80%
-            @test rmse(T_body_C, r_env.TC) < 1.5
+            @test rmse(core_temperature_C, r_env.TC) < 1.5
             @test sum(julia_act .== r_act) / nsteps ≥ 0.80
 
             # Heat fluxes: same NMR microclimate input; solar ~0.35 W RMSE from absorptivity
