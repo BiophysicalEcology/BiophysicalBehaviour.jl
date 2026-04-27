@@ -223,9 +223,7 @@ function thermoregulate(
         insulation_limits = @set insulation_limits.ventral.step = limits.insulation.ventral.step
     end
 
-    endotherm_out    = ThermoregulationOutput(
-        solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)...
-    )
+    endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
     skin_temperature = endotherm_out.thermoregulation.skin_temperature
     insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
     generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow
@@ -287,9 +285,7 @@ function thermoregulate(
             skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
         end
 
-        endotherm_out    = ThermoregulationOutput(
-            solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)...
-        )
+        endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
         skin_temperature = endotherm_out.thermoregulation.skin_temperature
         insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
         generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow

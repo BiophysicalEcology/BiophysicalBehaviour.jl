@@ -445,7 +445,7 @@ function thermoregulate(
         skin_temperature_ventral       = skin_temperature,
         insulation_temperature_dorsal  = insulation_temperature,
         insulation_temperature_ventral = insulation_temperature,
-        aspect_ratio_factor,
+        shape_b                        = aspect_ratio_factor,
         pant                           = panting_rate,
         skin_wetness,
         flesh_conductivity,

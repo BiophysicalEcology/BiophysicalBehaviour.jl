@@ -6,33 +6,6 @@
 # =============================================================================
 
 # ----------------------------------------------------------------------------
-# Inner-loop output type
-# ----------------------------------------------------------------------------
-
-"""
-    ThermoregulationOutput(thermoregulation, morphology, energy_flows, mass_flows)
-
-Return type of the inner physiological thermoregulation loop, produced by both
-the rule-based (`solve_metabolic_rate`) and IPOPT control paths.
-
-Each field is a NamedTuple:
-
-- `thermoregulation`: temperature states and effector values at the solution.
-- `morphology`: body surface areas and geometric measures.
-- `energy_flows`: heat fluxes (solar, longwave, generated, evaporation, etc.).
-- `mass_flows`: respiration and sweat mass flows.
-
-The behavioural outer loop embeds one of these as the `endotherm_out` field
-of its own (wider) NamedTuple result.
-"""
-struct ThermoregulationOutput{T, M, E, F}
-    thermoregulation::T
-    morphology::M
-    energy_flows::E
-    mass_flows::F
-end
-
-# ----------------------------------------------------------------------------
 # Mode dispatch helpers
 # ----------------------------------------------------------------------------
 

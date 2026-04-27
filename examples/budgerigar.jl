@@ -201,7 +201,7 @@ results = NamedTuple[]
     )
 
     # --- Environment ---
-    environment_vars = example_environment_vars(;
+    environment_vars_loop = example_environment_vars(;
         air_temperature,
         relative_humidity,
         wind_speed=0.1u"m/s",
@@ -213,30 +213,30 @@ results = NamedTuple[]
         shade=0,
     )
 
-    environment = (; environment_pars, environment_vars)
+    environment_loop = (; environment_pars, environment_vars = environment_vars_loop)
 
     # --- Metabolism (Q10 changes here) ---
-    metabolism_pars = example_metabolism_pars(
+    metabolism_pars_loop = example_metabolism_pars(
         core_temperature = (38.0 + 273.15)u"K",
         metabolic_heat_flow = min_metabolic_heat_flow,
         q10 = q10,
     )
 
-    organism = create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
-                               evaporation_pars, respiration_pars, metabolism_pars, geometry)
+    organism_loop = create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
+                                    evaporation_pars, respiration_pars, metabolism_pars_loop, geometry)
 
     #--- Initial conditions (reset every run!) ---
-    skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
-    insulation_temperature = environment_vars.air_temperature
-    generated_heat_flow = 0.0u"W"
+    skin_temperature_loop = metabolism_pars_loop.core_temperature - 3.0u"K"
+    insulation_temperature_loop = environment_vars_loop.air_temperature
+    generated_heat_flow_loop = 0.0u"W"
 
     # --- Thermoregulation ---
-    endotherm_out = thermoregulate(
-        organism,
-        environment,
-        generated_heat_flow,
-        skin_temperature,
-        insulation_temperature,
+    local endotherm_out = thermoregulate(
+        organism_loop,
+        environment_loop,
+        generated_heat_flow_loop,
+        skin_temperature_loop,
+        insulation_temperature_loop,
     )
 
     tr = endotherm_out.thermoregulation
@@ -261,7 +261,7 @@ results = NamedTuple[]
         insulation_conductivity_ventral = tr.insulation_conductivity_ventral,
         insulation_conductivity_effective = tr.insulation_conductivity_effective,
 
-        aspect_ratio_factor = tr.aspect_ratio_b,
+        shape_b = tr.shape_b,
         flesh_conductivity = tr.flesh_conductivity,
 
         pant = tr.pant,
@@ -546,9 +546,9 @@ insulation_temperature_ipopt    = air_temperatures[1]
         generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt,
     )
 
-    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
-    skin_temperature_ipopt       = out.thermoregulation.skin_temperature
-    insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
+    global generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    global skin_temperature_ipopt       = out.thermoregulation.skin_temperature
+    global insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
 
     tr = out.thermoregulation
     ef = out.energy_flows
@@ -563,7 +563,7 @@ insulation_temperature_ipopt    = air_temperatures[1]
         insulation_temperature_dorsal           = tr.insulation_temperature_dorsal,
         insulation_temperature_ventral          = tr.insulation_temperature_ventral,
         insulation_depth_dorsal       = tr.insulation_depth_dorsal,
-        aspect_ratio_factor           = tr.aspect_ratio_factor,
+        shape_b           = tr.shape_b,
         flesh_conductivity            = tr.flesh_conductivity,
         pant                          = tr.pant,
         skin_wetness                  = tr.skin_wetness,
@@ -685,13 +685,13 @@ plot!(pc6, u"°C".(air_temperatures), u"W/m/K".(ipopt_predicted.flesh_conductivi
 plot!(pc6, legend = :topleft, legendfontsize = 6)
 
 pc7 = plot(
-    u"°C".(air_temperatures), predicted.aspect_ratio_factor,
+    u"°C".(air_temperatures), predicted.shape_b,
     lw = 2, label = "predicted",
     xlabel = "air temperature (°C)", ylabel = "aspect ratio (b)",
     title = "body shape",
     xlim = (-5, 50),
 )
-plot!(pc7, u"°C".(air_temperatures), ipopt_predicted.aspect_ratio_factor,
+plot!(pc7, u"°C".(air_temperatures), ipopt_predicted.shape_b,
     lw = 2, linestyle = :dash, label = "IPOPT")
 plot!(pc7, legend = :bottomright, legendfontsize = 6)
 
