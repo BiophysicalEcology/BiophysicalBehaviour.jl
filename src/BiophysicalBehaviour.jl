@@ -50,7 +50,6 @@ export AbstractThermalStrategy,
 # Control strategies
 export AbstractControlStrategy,
     RuleBasedSequentialControl,
-    PDEControl,
     IPOPTControl
 
 # Thermoregulation modes
@@ -58,6 +57,9 @@ export AbstractThermoregulationMode,
     CoreFirst,
     CoreAndPantingFirst,
     CorePantingSweatingFirst
+
+# Thermoregulation output type
+export ThermoregulationOutput
 
 # Traits structs
 export BehavioralTraits,
@@ -138,14 +140,15 @@ export example_ectotherm_behavioral_limits,
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
-include("endotherm/thermoregulation.jl")
-include("endotherm/homeothermy.jl")
+include("endotherm/thermoregulation/heatexchange.jl")
+include("endotherm/thermoregulation/shared.jl")
+include("endotherm/thermoregulation/rulebased.jl")
+include("endotherm/thermoregulation/ipopt.jl")
 include("endotherm/example_variables_and_parameters.jl")
 include("ectotherm/ectotherm_traits.jl")
 include("ectotherm/thermoregulation.jl")
 include("ectotherm/ectothermy.jl")
 include("ectotherm/example_variables_and_parameters.jl")
-include("endotherm/behavioural_homeothermy.jl")
-include("endotherm/ipopt_thermoregulation.jl")
+include("endotherm/thermoregulation/behavioural.jl")
 
 end # module BiophysicalBehaviour

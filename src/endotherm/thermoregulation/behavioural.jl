@@ -1,5 +1,10 @@
 # =============================================================================
-# Endotherm behavioural habitat-selection + physiological thermoregulation
+# Endotherm behavioural habitat-selection layer.
+#
+# Outer loop selects shade, height, depth, posture, and absorptivity to bring
+# operative temperature into the active window before handing off to the
+# inner physiological thermoregulate (rule-based or IPOPT) at the chosen
+# position.
 # =============================================================================
 
 """
@@ -38,8 +43,8 @@ temperature of a passive body in the current environment) is compared to
 ## After the behavioural loop
 
 The full endotherm physiological thermoregulate (piloerection, vasodilation,
-hyperthermia, panting, sweating — `homeothermy.jl`) is run at the chosen
-behavioural position.
+hyperthermia, panting, sweating — `rulebased.jl` or `ipopt.jl`) is run at the
+chosen behavioural position.
 
 ## Returns
 
@@ -212,15 +217,11 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
     Te  = solve_body_temperature(organism, env_vars, env_pars)
     e   = (environment_pars=env_pars, environment_vars=env_vars)
 
-    # Initial conditions for physiological thermoregulate:
-    # generated_heat_flow = 0 (no metabolic heat pre-assumed), skin_temperature ≈ core_temperature − 3 K (typical
-    # skin-core gradient), insulation_temperature ≈ T_air.
-    physio_limits             = thermoregulation(organism)
-    generated_heat_flow_init  = zero(physio_limits.Q_minimum_ref)
-    skin_temperature_init     = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K"
-    insulation_temperature_init = env_vars.air_temperature
-
-    endotherm_out = thermoregulate(organism, e, generated_heat_flow_init, skin_temperature_init, insulation_temperature_init)
+    init = initial_physiological_state(organism, env_vars)
+    endotherm_out = thermoregulate(organism, e,
+                                   init.generated_heat_flow,
+                                   init.skin_temperature,
+                                   init.insulation_temperature)
 
     return (;
         Te,

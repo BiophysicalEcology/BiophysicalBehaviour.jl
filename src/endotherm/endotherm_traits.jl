@@ -57,7 +57,7 @@ Contains limits for all adjustable parameters: insulation depth, body shape,
 tissue conductivity, core temperature, panting, and skin wetness.
 
 # Fields
-- `control::C`: Control strategy (RuleBasedSequentialControl, PDEControl, etc.)
+- `control::C`: Control strategy (RuleBasedSequentialControl, IPOPTControl, etc.)
 - `Q_minimum_ref::Q`: Reference minimum metabolic rate
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
 - `aspect_ratio_factor::SteppedParameter`: Body shape adjustment limits (uncurling)
