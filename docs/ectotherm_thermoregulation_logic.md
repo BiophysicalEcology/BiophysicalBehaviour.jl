@@ -45,10 +45,10 @@ All microclimate quantities (temperature, wind, humidity, radiation) are blended
 them using:
 
 ```
-blend_factor = shade.current / max_shade_fraction    (clamped 0–1)
+blend_factor = (shade.current - min_shade_fraction) / (max_shade_fraction - min_shade_fraction)    (clamped 0–1)
 ```
 
-The `depths` and `heights` vectors record the physical depths (m) and heights (m/cm) corresponding to
+The `depths` and `heights` vectors record the physical depths and heights corresponding to
 soil-node and height-node indices.
 
 ### `EctothermBehavioralLimits`
@@ -66,14 +66,14 @@ far this hour). Key fields:
 | `pant_rate` | `SteppedParameter` — current/max pant multiplier | pantmax |
 | `T_target` | `SteppedParameter` — current/max preferred temperature | TPREF / T_F_max |
 | `T_active_min/max` | Foraging temperature range | TMINPR / TMAXPR (T_F_min / T_F_max) |
-| `T_bask` | Minimum basking temperature | TBASK (T_B_min) |
+| `T_bask_min` | Minimum basking temperature | TBASK (T_B_min) |
 | `T_critical_min/max` | Lethal thermal limits | CTMIN / CTMAX |
-| `T_emerge` | Minimum soil temperature to emerge from burrow | TEMERGE (T_RB_min) |
+| `T_emerge_min` | Minimum soil temperature to emerge from underground retreat | TEMERGE (T_RB_min) |
 | `can_*` | Boolean capability flags | BURROW / CLIMB / SHADE / postur / panting flags |
 | `sun_orientation` | Current posture angle (°): 45=Intermediate, 90=NormalToSun, 0=ParallelToSun | postur |
 | `pressed_to_ground` | Current ground-contact state | pct_cond |
 | `burrow_shade_mode` | `MinShadeOnly` / `AdaptiveBurrowShade` / `MaxShadeOnly` | shdburrow 0/1/2 |
-| `Δsoil_signal` | Required soil temp change rate before emergence (K/hr) | warmsig |
+| `emerge_signal` | Required soil temp change rate before emergence (K/hr) | warmsig |
 
 ---
 
@@ -113,17 +113,17 @@ clamped to the actual array sizes from `available_environments` each hour.
 ## Phase 2 — Activity period check
 
 ```julia
-zenith    = low_shade.solar_radiation.zenith_angle[step]
-solar_rad = low_shade.global_radiation[step]
-active    = is_active(activity_period(organism), zenith, solar_rad)
+zenith    = min_shade.solar_radiation.zenith_angle[step]
+sunlight = min_shade.global_radiation[step]
+active    = is_active(activity_period(organism), zenith, sunlight)
 ```
 
 `is_active` dispatches on the organism's activity period type:
 
 | Type | Active when |
 |---|---|
-| `Diurnal` | zenith < 90° **and** solar_rad > 0 |
-| `Nocturnal` | zenith ≥ 90° **or** solar_rad ≤ 0 |
+| `Diurnal` | zenith < 90° **and** sunlight > 0 |
+| `Nocturnal` | zenith ≥ 90° **or** sunlight ≤ 0 |
 | `Crepuscular` | 85° ≤ zenith ≤ 95° |
 | `CombinedActivity` | active in any constituent period |
 | `ResponsiveActivity` | user-supplied function |
@@ -163,16 +163,16 @@ The soil temperature at the previous-step depth is computed. The animal stays un
 
 **Condition A — Too cold to emerge:**
 ```
-T_soil_at_depth < T_emerge
+soil_temperature_at_depth < T_emerge_min
 ```
 
-**Condition B — WARMSIG: soil not yet warming fast enough** (mirrors ECTOTHERM.f lines 2218–2244):
+**Condition B — No emergence signal from soil temperature** (mirrors ECTOTHERM.f lines 2218–2244):
 ```
-Δsoil_signal != 0  AND  previous_depth > 2  AND  !activity_commenced  AND  step > 1
+emerge_signal != 0  AND  previous_depth > 2  AND  !activity_commenced  AND  step > 1
 ```
-`soil_delta = (T_soil[step] - T_soil[step-1]) / 1hr`  (K/hr; one step = one hour)
-- If `Δsoil_signal > 0`: requires `soil_delta ≥ Δsoil_signal` (diurnal basker waits for morning warm-up)
-- If `Δsoil_signal < 0`: requires `soil_delta ≤ Δsoil_signal` (nocturnal animal waits for evening cool-down)
+`soil_delta = (soil_temperature[step] - soil_temperature[step-1]) / 1hr`  (K/hr; one step = one hour)
+- If `emerge_signal > 0`: requires `soil_delta ≥ emerge_signal` (diurnal basker waits for morning warm-up)
+- If `emerge_signal < 0`: requires `soil_delta ≤ emerge_signal` (nocturnal animal waits for evening cool-down)
 
 If either condition holds: `select_depth` is called again (so the animal can move to a better node),
 `interpolate_environment` is called, and `_build_ectotherm_output` is returned with `active = false`.
@@ -186,15 +186,15 @@ If neither condition holds, the animal emerges and proceeds to Phase 4.
 Initial environment and body temperature are computed at the current (reset) position:
 
 ```julia
-env = interpolate_environment(available_environments, step, limits, environmental_params)
-Tb  = solve_body_temperature(organism_current, env, environmental_params)
+env              = interpolate_environment(available_environments, step, limits, environmental_params)
+core_temperature = solve_body_temperature(organism_current, env, environmental_params)
 ```
 
 Then the iteration loop runs up to `max_iterations` times. Each iteration:
 
 1. Evaluates which thermal branch to enter using direct unit-aware comparisons (all temperatures carry `K` units throughout).
 2. Applies exactly **one** behaviour per iteration.
-3. Recalculates `env` and `Tb` at the end of the iteration (except when retreating underground).
+3. Recalculates `env` and `core_temperature` at the end of the iteration (except when retreating underground).
 
 ### Body temperature solver
 
@@ -205,18 +205,18 @@ solver fails (e.g., no root in bracket), it returns `T_air` as a fallback.
 ### Acceptance (loop exit) condition
 
 ```
-T_active_min ≤ Tb ≤ T_target.current  →  break
+T_active_min ≤ core_temperature ≤ T_target.current  →  break
 ```
 
 **Special case — revert perpendicular→intermediate (NicheMapR THERMO.f phase 2, first sub-case):**
 If `can_solar_orient = true` and the organism is fully perpendicular (`sun_orientation = 90.0`)
-and `Tb` is now in `[T_active_min, T_target]`, orient back to `Intermediate()` first, recompute
-`Tb`, then break. This ensures the animal does not remain in a basking posture once it has
-warmed to its target.
+and `core_temperature` is now in `[T_active_min, T_target]`, orient back to `Intermediate()` first,
+recompute `core_temperature`, then break. This ensures the animal does not remain in a basking
+posture once it has warmed to its target.
 
 ---
 
-### Too-hot branch (`Tb > T_target.current`)
+### Too-hot branch (`core_temperature > T_target.current`)
 
 Behaviours are tried in strict priority order. Only the **first applicable** one fires per iteration.
 
@@ -226,7 +226,7 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 
 | Priority | Condition | Behaviour | Effect |
 |---|---|---|---|
-| 1 | `can_change_absorptivity` and `absorptivity.current > absorptivity.reference` | `lighten` | Decrease dorsal α by one step toward `alpha_min` |
+| 1 | `can_change_absorptivity` and `absorptivity.current > absorptivity.reference` | `lighten` | Decrease dorsal absorptivity by one step toward `absorptivity_min` |
 | 2 | `can_seek_shade` and `shade.current < shade.max` | `seek_shade` | Increase shade by `shade.step` |
 | 3 | `T_target.current < T_target.max` | `increment_T_target` | Raise tolerance threshold by one step toward `T_active_max` |
 | 4 | `can_climb` and `height.current < height.max` | `climb` | Move up one height node (cooler, windier air) |
@@ -235,11 +235,11 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 | fallback | — | **break** | No options left; accept current Tb |
 
 **Notes:**
-- Both `lighten` and `darken` update both `α_body_dorsal` and `α_body_ventral`.
+- Both `lighten` and `darken` update both `body_absorptivity_ventral` and `body_absorptivity_ventral`.
 - `increment_T_target` mirrors NicheMapR's TPREF incrementing: the animal tolerates getting
   hotter before triggering shade-seeking. Once `T_target.current = T_active_max`, shade-seeking
   begins. This means shade-seeking in the model starts only when the animal is above `T_active_max`,
-  not above `T_pref`.
+  not above the initial `T_target`.
 - `climb` moves to higher, typically cooler and windier, air layers. Shade is **not** reset when climbing.
 - When retreating underground (priority 6), `_underground_blend_factor` is computed, `select_depth`
   finds the best node, `interpolate_environment` is called, then the loop **breaks** immediately
@@ -247,17 +247,17 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 
 ---
 
-### Too-cold branch (`Tb < T_bask`)
+### Too-cold branch (`core_temperature < T_bask_min`)
 
 | Priority | Condition | Behaviour | Effect |
 |---|---|---|---|
-| 1 | `can_change_absorptivity` and `absorptivity.current < absorptivity.max` | `darken` | Increase dorsal α by one step toward `alpha_max` |
+| 1 | `can_change_absorptivity` and `absorptivity.current < absorptivity.max` | `darken` | Increase dorsal absorptivity by one step toward `absorptivity_max` |
 | 2 | `can_solar_orient` and `sun_orientation < 90.0` | `orient_perpendicular` | Orient NormalToSun; maximise silhouette area |
 | 3 | `can_press_to_ground` and `!pressed_to_ground` | `press_to_ground` | Record ground contact (conduction fraction from organism physiology) |
 | 4 | zenith < 90° (daytime) and `shade.current > shade.reference` | `avoid_shade` | Decrease shade by one step toward minimum |
 | 5 | `can_seek_shade` and zenith ≥ 90° (night) and `shade.current < shade.max` | `seek_shade` | At night, seek shade to reduce longwave cooling to cold sky |
-| 6 | `can_climb` and `Tb < T_critical_min` and `height.current < height.max` | `climb` | Emergency climb above critically cold layer |
-| 7 | `can_retreat_underground` | conditional `select_depth` then **break** | Retreat if Tb < CT_min (emergency) or underground is warmer than air |
+| 6 | `can_climb` and `core_temperature < T_critical_min` and `height.current < height.max` | `climb` | Emergency climb above critically cold layer |
+| 7 | `can_retreat_underground` | conditional `select_depth` then **break** | Retreat if `core_temperature < T_critical_min` (emergency) or underground is warmer than air |
 | fallback | — | **break** | No options left |
 
 **Notes:**
@@ -273,10 +273,10 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 
 ---
 
-### Basking range (`T_bask ≤ Tb < T_active_min`)
+### Basking range (`T_bask_min ≤ core_temperature < T_active_min`)
 
 ```julia
-if limits.can_solar_orient && limits.sun_orientation < 90.0 && Tb < T_active_min
+if limits.can_solar_orient && limits.sun_orientation < 90.0 && core_temperature < T_active_min
     orient_perpendicular(...)
 else
     break
@@ -293,8 +293,8 @@ Otherwise it accepts the current state and breaks.
 After any behaviour that does **not** break out of the loop:
 
 ```julia
-env = interpolate_environment(available_environments, step, limits, environmental_params)
-Tb  = solve_body_temperature(organism_current, env, environmental_params)
+env              = interpolate_environment(available_environments, step, limits, environmental_params)
+core_temperature = solve_body_temperature(organism_current, env, environmental_params)
 ```
 
 This recalculates both the microenvironment (blending min/max shade at the new shade/height) and
@@ -307,17 +307,18 @@ the steady-state body temperature. The next iteration then re-evaluates which br
 After the loop exits:
 
 1. Determines `is_underground = depth.current > depth.reference`.
-2. **Body temperature when underground:** By default (`underground_tb_equals_soil = true`),
-   sets `Tb = T_soil` directly at the chosen node (NicheMapR `BELOWGROUND.f` behaviour). The full
-   heat balance would give `Tb > T_soil` because metabolic heat has nowhere to go when all
-   surrounding temperatures equal `T_soil`, so this override is necessary for physical realism.
-3. Runs `ectotherm(Tb, organism, e)` once to get the full heat balance output at the final state.
+2. **Body temperature when underground:** By default (`solve_underground = false`),
+   sets `core_temperature = soil_temperature` directly at the chosen node (NicheMapR `BELOWGROUND.f`
+   behaviour). The full heat balance would give `core_temperature > soil_temperature` because
+   metabolic heat has nowhere to go when all surrounding temperatures equal `soil_temperature`,
+   so this override is necessary for physical realism.
+3. Runs `ectotherm(core_temperature, organism, e)` once to get the full heat balance output at the final state.
 4. Converts `depth_node` and `height_node` to physical depths/heights using `available_environments.depths`
    and `available_environments.heights`.
 5. **Activity state classification** (mirrors NicheMapR ACT column):
-   - `Resting()` (ACT=0): not in active period, or underground, or `Tb < T_bask` or `Tb > T_active_max`
-   - `Basking()` (ACT=1): `T_bask ≤ Tb < T_active_min`
-   - `Active()` (ACT=2): `T_active_min ≤ Tb ≤ T_active_max`
+   - `Resting()` (ACT=0): not in active period, or underground, or `core_temperature < T_bask_min` or `core_temperature > T_active_max`
+   - `Basking()` (ACT=1): `T_bask_min ≤ core_temperature < T_active_min`
+   - `Active()` (ACT=2): `T_active_min ≤ core_temperature ≤ T_active_max`
 
 ---
 
@@ -325,7 +326,7 @@ After the loop exits:
 
 | Field | Type | Description |
 |---|---|---|
-| `T_core` | `K` | Final body temperature |
+| `core_temperature` | `K` | Final body temperature |
 | `shade` | `Float64` | Shade fraction chosen (above-ground) or burrow shade fraction (underground) |
 | `depth_node` | `Int` | Soil-node index (1 = surface) |
 | `height` | length | Physical height (positive above ground, negative depth in m for underground) |
@@ -378,8 +379,8 @@ returns updated `(limits, organism)` or just `limits`. All updates use `@set` (S
 | Function | Changes |
 |---|---|
 | `reset_position(limits)` | Resets all stepped parameters to reference; called once per hour |
-| `lighten(organism, limits)` | Decrease `α_dorsal` and `α_ventral` by `absorptivity.step` |
-| `darken(organism, limits)` | Increase `α_dorsal` and `α_ventral` by `absorptivity.step` |
+| `lighten(organism, limits)` | Decrease `body_absorptivity_dorsal` and `body_absorptivity_ventral` by `absorptivity.step` |
+| `darken(organism, limits)` | Increase `body_absorptivity_dorsal` and `body_absorptivity_ventral` by `absorptivity.step` |
 | `seek_shade(limits)` | Increase `shade.current` by `shade.step` |
 | `avoid_shade(limits)` | Decrease `shade.current` by `shade.step` |
 | `increment_T_target(limits)` | Increase `T_target.current` by `T_target.step` |
@@ -401,7 +402,7 @@ Each hour:
   │
   ├─ reset_position() + reset solar_orientation if can_solar_orient
   │
-  ├─ is_active(activity_period, zenith, solar_rad)?
+  ├─ is_active(activity_period, zenith, sunlight)?
   │    │
   │    NO ──→ can_retreat_underground?
   │              YES → underground warmer than air? → select_depth()
@@ -410,26 +411,26 @@ Each hour:
   │    YES
   │    │
   │    ├─ previous_depth > 1? (was underground)
-  │    │    YES → T_soil < T_emerge OR Δsoil_signal not met?
+  │    │    YES → soil_temperature < T_emerge_min OR emerge_signal not met?
   │    │              YES → select_depth() → interpolate() → _build_output(active=false) → RETURN
   │    │              NO  → continue (emerge)
   │    │
   │    └─ Above-ground thermoregulation loop (max_iterations):
   │         │
-  │         ├─ [revert perpendicular → intermediate if Tb now in acceptance window] → break
-  │         ├─ T_active_min ≤ Tb ≤ T_target? → break
+  │         ├─ [revert perpendicular → intermediate if core_temperature now in acceptance window] → break
+  │         ├─ T_active_min ≤ core_temperature ≤ T_target? → break
   │         │
-  │         ├─ Tb > T_target? (too hot)
+  │         ├─ core_temperature > T_target? (too hot)
   │         │    [revert perpendicular if applicable, fall through]
   │         │    lighten → seek_shade → increment_T_target → climb → pant → select_depth+break → break
   │         │
-  │         ├─ Tb < T_bask? (too cold)
+  │         ├─ core_temperature < T_bask_min? (too cold)
   │         │    darken → orient_perpendicular → press_to_ground → avoid_shade →
   │         │    night-seek_shade → climb(CT_min) → select_depth+break → break
   │         │
-  │         └─ T_bask ≤ Tb < T_active_min? (basking)
+  │         └─ T_bask_min ≤ core_temperature < T_active_min? (basking)
   │              orient_perpendicular → break
   │
   └─ _build_ectotherm_output() → RETURN
-       (Tb = T_soil if underground; classify Resting/Basking/Active)
+       (core_temperature = soil_temperature if underground; classify Resting/Basking/Active)
 ```

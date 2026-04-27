@@ -99,7 +99,7 @@ IPOPT-based nonlinear programming control strategy.
 Solves the thermoregulation problem as a constrained optimisation:
 minimise deviation from the setpoint core temperature subject to three
 heat-balance equality constraints, with all physiological effectors
-(k_flesh, pant, skin_wetness) as continuous decision variables.
+(flesh_conductivity, pant, skin_wetness) as continuous decision variables.
 
 Requires `Optimization.jl` and `OptimizationIpopt.jl`.
 """
@@ -161,9 +161,9 @@ Abstract supertype for the instantaneous activity state of an organism.
 
 Concrete subtypes mirror NicheMapR's `ACT` output column:
 - [`Resting`](@ref) — underground or thermally unable to be active (ACT = 0)
-- [`Basking`](@ref) — above ground, warming up; `T_bask ≤ Tb < T_active_min` (ACT = 1)
+- [`Basking`](@ref) — above ground, warming up; `T_bask_min ≤ core_temperature < T_active_min` (ACT = 1)
 - [`Active`](@ref) — above ground, within activity thermal window;
-  `T_active_min ≤ Tb ≤ T_active_max` (ACT = 2)
+  `T_active_min ≤ core_temperature ≤ T_active_max` (ACT = 2)
 """
 abstract type OrganismState end
 

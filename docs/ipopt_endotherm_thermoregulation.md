@@ -21,7 +21,7 @@ biophysical models from `HeatExchange.jl`.
 The entry point is:
 
 ```julia
-thermoregulate(Endotherm(), IPOPTControl(), organism, environment, Q_gen_init, T_skin_init, T_ins_init)
+thermoregulate(Endotherm(), IPOPTControl(), organism, environment, generated_heat_flow_init, skin_temperature_init, insulation_temperature_init)
 ```
 
 ---
@@ -33,12 +33,12 @@ Following standard control theory, the nine NLP decision variables are split int
 **Control variables (effectors, u)** — things the animal actively adjusts:
 | Variable | Symbol | Description |
 |---|---|---|
-| Metabolic heat generation | `log(Q_gen)` | Log-space for numerical scaling; exponentiated inside the solver |
-| Flesh conductivity | `k_flesh` | Tissue conductivity (vasoconstriction/vasodilation) |
+| Metabolic heat generation | `log(generated_heat_flow)` | Log-space for numerical scaling; exponentiated inside the solver |
+| Flesh conductivity | `flesh_conductivity` | Tissue conductivity (vasoconstriction/vasodilation) |
 | Panting rate | `pant` | Multiplier on baseline ventilation (1 = resting) |
 | Skin wetness | `skin_wetness` | Fractional wetted surface area (sweating/cutaneous evaporation) |
 | Insulation depth | `insulation_depth` | Fur/feather erection depth (piloerection) |
-| Body shape | `shape_b` | Ellipsoid aspect ratio (curling/elongating posture) |
+| Body shape | `aspect_ratio_factor` | Ellipsoid aspect ratio (curling/elongating posture) |
 
 **State variables (x)** — outcomes determined by the effectors and the heat balance:
 | Variable | Description |
@@ -74,7 +74,7 @@ six effectors, not free choices.
 ### Constraint 4: Q10 metabolic scaling inequality (≥ 0)
 
 ```
-Q_gen ≥ Q_gen_min × Q10^((T_core − T_setpoint) / 10)
+generated_heat_flow ≥ heat_flow_min × Q10^((core_temperature − setpoint) / 10)
 ```
 
 This enforces that minimum metabolic rate rises with core temperature during hyperthermia,
@@ -93,28 +93,29 @@ active cooling effectors. All terms are normalised to [0, 1] so the penalty weig
 comparable:
 
 ```
-J = w_Tcore × ((T_core − T_setpoint) / ΔT_core)²
-  + w_met   × ((Q_gen − Q_gen_min) / ΔQ_gen)²       ← regularisation only
-  + w_grad  × ((T_core − T_skin − Δ*) / ΔT_core)²   ← optional; default disabled
-  + w_pant  × ((pant − 1) / Δpant)²
-  + w_wet   × ((skin_wetness − skin_wetness_min) / Δskin_wetness)²
+J = w_core × ((core_temperature − setpoint) / Δcore_temperature)²
+  + w_met  × ((generated_heat_flow − heat_flow_min) / Δheat_flow)²   ← regularisation only
+  + w_grad × ((core_temperature − skin_temperature − Δ*) / Δcore_temperature)²  ← optional; default disabled
+  + w_pant × ((pant − 1) / Δpant)²
+  + w_wet  × ((skin_wetness − skin_wetness_min) / Δskin_wetness)²
 ```
 
 where `Δ` denotes the range of each variable over its physiological limits.
 
 ### Why Q_gen is not the primary target
 
-`Q_gen` is a state variable. In cold conditions, keeping `T_core` near setpoint already forces
-`Q_gen` upward (less metabolic heat → larger energy deficit → colder core → objective penalty).
-No explicit Q_gen penalty is needed for thermogenesis.
+`generated_heat_flow` is a state variable. In cold conditions, keeping `core_temperature` near
+setpoint already forces `generated_heat_flow` upward (less metabolic heat → larger energy deficit
+→ colder core → objective penalty). No explicit penalty on `generated_heat_flow` is needed
+for thermogenesis.
 
-In hot conditions, the Q10 inequality constraint (constraint 4) prevents `Q_gen` from dropping
-below its temperature-scaled minimum, so the objective cannot drive `Q_gen` to zero.
+In hot conditions, the Q10 inequality constraint (constraint 4) prevents `generated_heat_flow`
+from dropping below its temperature-scaled minimum, so the objective cannot drive it to zero.
 
 The small `metabolic_heat_penalty` (default 0.1) acts as a **regularisation** term only: it
 breaks an otherwise degenerate manifold in cold conditions where combinations of high panting
-and high `Q_gen` satisfy the energy balance equally well. A small weight is enough; the Q10
-constraint takes over in hot conditions.
+and high `generated_heat_flow` satisfy the energy balance equally well. A small weight is
+enough; the Q10 constraint takes over in hot conditions.
 
 ### Penalty weights and their effects
 
@@ -185,24 +186,24 @@ rule-based solver and is the natural choice for a sequence that changes smoothly
 environmental conditions:
 
 ```julia
-Q_gen_ipopt  = Q_minimum                          # start at minimum metabolic rate
-T_skin_ipopt = core_temperature - 3.0u"K"
-T_ins_ipopt  = air_temperatures[1]
+generated_heat_flow_ipopt    = Q_minimum                          # start at minimum metabolic rate
+skin_temperature_ipopt       = core_temperature - 3.0u"K"
+insulation_temperature_ipopt = air_temperatures[1]
 
 for (T_air, ...) in zip(air_temperatures, ...)
     # ... build organism and environment ...
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
-                         Q_gen_ipopt, T_skin_ipopt, T_ins_ipopt)
+                         generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
 
-    Q_gen_ipopt  = out.energy_flows.generated_heat_flow
-    T_skin_ipopt = out.thermoregulation.skin_temperature
-    T_ins_ipopt  = out.thermoregulation.insulation_temperature
+    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    skin_temperature_ipopt       = out.thermoregulation.skin_temperature
+    insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
 end
 ```
 
 For a single solve (e.g., during testing), any physiologically plausible initial point works —
-for example `Q_gen_init = 0.0u"W"` (clamped to `Q_gen_min` inside the solver), `T_skin_init`
-near `T_setpoint - 3 K`, and `T_ins_init` near ambient temperature.
+for example `generated_heat_flow_init = 0.0u"W"` (clamped to `heat_flow_min` inside the solver),
+`skin_temperature_init` near `T_setpoint - 3 K`, and `insulation_temperature_init` near ambient temperature.
 
 ---
 
@@ -265,21 +266,21 @@ as input to the other.
 ```julia
 # Rule-based pass
 for (T_air, rh, q10) in zip(air_temperatures, ...)
-    out = thermoregulate(organism, environment, 0.0u"W", T_skin, T_insulation)
+    out = thermoregulate(organism, environment, 0.0u"W", skin_temperature, T_insulation)
     push!(results, ...)
 end
 
 # IPOPT pass (carry-forward initialisation)
-Q_gen_ipopt  = Q_minimum
-T_skin_ipopt = core_temperature - 3.0u"K"
-T_ins_ipopt  = air_temperatures[1]
+generated_heat_flow_ipopt    = Q_minimum
+skin_temperature_ipopt       = core_temperature - 3.0u"K"
+insulation_temperature_ipopt = air_temperatures[1]
 
 for (T_air, rh, q10) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
-                         Q_gen_ipopt, T_skin_ipopt, T_ins_ipopt)
-    Q_gen_ipopt  = out.energy_flows.generated_heat_flow
-    T_skin_ipopt = out.thermoregulation.skin_temperature
-    T_ins_ipopt  = out.thermoregulation.insulation_temperature
+                         generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
+    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    skin_temperature_ipopt       = out.thermoregulation.skin_temperature
+    insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
     push!(ipopt_results, ...)
 end
 ```
