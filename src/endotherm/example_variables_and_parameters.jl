@@ -51,10 +51,10 @@ end
 function example_ellipsoid_shape_pars(;
     mass=65.0u"kg",
     ρ_flesh=1000.0u"kg/m^3",
-    aspect_ratio_b=1.1,
-    aspect_ratio_c=1.1,
+    axis_ratio_b=1.1,
+    axis_ratio_c=1.1,
 )
-    Ellipsoid(mass, ρ_flesh, aspect_ratio_b, aspect_ratio_c)
+    Ellipsoid(mass, ρ_flesh, axis_ratio_b, axis_ratio_c)
 end
 
 # Alias for convenience

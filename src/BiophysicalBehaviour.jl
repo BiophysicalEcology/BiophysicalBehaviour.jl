@@ -58,9 +58,6 @@ export AbstractThermoregulationMode,
     CoreAndPantingFirst,
     CorePantingSweatingFirst
 
-# Thermoregulation output type
-export ThermoregulationOutput
-
 # Traits structs
 export BehavioralTraits,
     OrganismTraits
@@ -140,7 +137,6 @@ export example_ectotherm_behavioral_limits,
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
-include("endotherm/thermoregulation/heatexchange.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
 include("endotherm/thermoregulation/ipopt.jl")

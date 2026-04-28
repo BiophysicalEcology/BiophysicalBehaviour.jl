@@ -76,7 +76,7 @@ function uncurl(organism::Organism, aspect_ratio_limits::SteppedParameter)
     aspect_ratio_factor = min(aspect_ratio_limits.current + aspect_ratio_limits.step, aspect_ratio_limits.max)
     aspect_ratio_limits = @set aspect_ratio_limits.current = aspect_ratio_factor
 
-    new_shape_pars = @set shape_pars.aspect_ratio_b = aspect_ratio_factor
+    new_shape_pars = @set shape_pars.axis_ratio_b = aspect_ratio_factor
     fat = BiophysicalGeometry.inner_insulation(organism.body.insulation)
     fur = BiophysicalGeometry.outer_insulation(organism.body.insulation)
     geometry = rebuild_body(new_shape_pars, fur, fat)
@@ -173,7 +173,7 @@ end
 
 """
     thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment,
-                   generated_heat_flow, skin_temperature, insulation_temperature)
+                   metabolic_heat_flow, skin_temperature, insulation_temperature)
 
 Run the endotherm thermoregulation loop using rule-based sequential control.
 
@@ -192,7 +192,7 @@ function thermoregulate(
     ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
@@ -226,13 +226,13 @@ function thermoregulate(
     endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
     skin_temperature = endotherm_out.thermoregulation.skin_temperature
     insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-    generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow
+    metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
 
     Q_minimum = limits.Q_minimum_ref
 
     iteration = 0
 
-    while generated_heat_flow < Q_minimum * (1 - tolerance)
+    while metabolic_heat_flow < Q_minimum * (1 - tolerance)
         iteration += 1
         if iteration > max_iterations
             @warn "max_iterations exceeded"
@@ -288,7 +288,7 @@ function thermoregulate(
         endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
         skin_temperature = endotherm_out.thermoregulation.skin_temperature
         insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-        generated_heat_flow = endotherm_out.energy_flows.generated_heat_flow
+        metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
     end
 
     return endotherm_out

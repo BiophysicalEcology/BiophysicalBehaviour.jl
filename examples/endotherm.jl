@@ -17,14 +17,14 @@ respiration_pars = example_respiration_pars()
 
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+fat = FatLayer(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
 mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.depth * radiation_pars.ventral_fraction
 mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
 mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.density * radiation_pars.ventral_fraction
-fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
+fur = FibrousLayer(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
 # Create physiology traits (HeatExchangeTraits)
@@ -114,12 +114,12 @@ environment = (; environment_pars, environment_vars)
 # initial conditions
 skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
 insulation_temperature = environment_vars.air_temperature
-generated_heat_flow = 0.0u"W"
+metabolic_heat_flow = 0.0u"W"
 
 endotherm_out = thermoregulate(
     organism,
     environment,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
