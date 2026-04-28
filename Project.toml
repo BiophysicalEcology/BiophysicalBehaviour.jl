@@ -23,7 +23,7 @@ UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 [sources]
 BiophysicalGeometry = {rev = "characteristic-dimension-options", url = "https://github.com/BiophysicalEcology/BiophysicalGeometry.jl"}
 FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
-#HeatExchange = {rev = "main", url = "https://github.com/BiophysicalEcology/HeatExchange.jl"}
+HeatExchange = {rev = "main", url = "https://github.com/BiophysicalEcology/HeatExchange.jl"}
 
 [compat]
 Aqua = "0.8"
