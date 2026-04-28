@@ -76,22 +76,6 @@ Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,
 end
 
 """
-    PDEControl <: AbstractControlStrategy
-
-Partial differential equation-based control strategy.
-
-Uses a PDE formulation to solve the thermoregulation problem, allowing
-for spatially-resolved temperature distributions and continuous control
-of effectors.
-
-!!! warning
-    This control strategy is not yet implemented.
-"""
-struct PDEControl <: AbstractControlStrategy
-    # Add any reqired settings here
-end
-
-"""
     IPOPTControl <: AbstractControlStrategy
 
 IPOPT-based nonlinear programming control strategy.

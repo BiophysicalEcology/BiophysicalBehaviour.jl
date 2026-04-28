@@ -1,7 +1,8 @@
 # IPOPT-Based Endotherm Thermoregulation
 
 **Source files:**
-- `src/endotherm/ipopt_thermoregulation.jl` — NLP formulation, solver setup, output assembly (branch: `IPOPT-implementation`)
+- `src/endotherm/thermoregulation/ipopt.jl` — NLP formulation, solver setup, output assembly (branch: `IPOPT-implementation`)
+- `src/endotherm/thermoregulation/heatexchange.jl` — interim copy of helpers to be moved into `HeatExchange.jl`
 - `src/endotherm/endotherm_traits.jl` — `ThermoregulationLimits` struct and penalty fields
 - `HeatExchange.jl/src/endotherm/heat_balance.jl` — `heat_balance` function used as NLP constraints (branch: `IPOPT-preparation`)
 
