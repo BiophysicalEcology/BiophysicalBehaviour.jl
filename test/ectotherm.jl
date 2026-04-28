@@ -77,7 +77,7 @@ using CSV, DataFrames
         )
         (
             solar_radiation           = (zenith_angle = met_df.ZEN .* u"°",),
-            pressure                  = fill(atmospheric_pressure(elevation), n),
+            pressure                  = fill(FluidProperties.atmospheric_pressure(elevation), n),
             profile                   = profile,
             sky_temperature           = (met_df.TSKYC .+ 273.15) .* u"K",
             soil_temperature          = soil_T,
@@ -159,13 +159,13 @@ using CSV, DataFrames
                 absorptivity_min        = 0.6,         # R: alpha_min=0.6
                 absorptivity_max        = 0.9,         # R: alpha_max=0.9
                 absorptivity_step       = 0.003,
-                T_active_min            = u"K"(24.0u"°C"),  # R: T_F_min=24
-                T_active_max            = u"K"(34.0u"°C"),  # R: T_F_max=34
-                T_bask_min              = u"K"(17.5u"°C"),  # R: T_B_min=17.5
-                T_emerge_min            = u"K"(15.0u"°C"),  # R: T_RB_min=15
-                T_target                = u"K"(30.0u"°C"),  # R: T_pref=30
-                T_critical_min          = u"K"(6.0u"°C"),   # R: CT_min=6
-                T_critical_max          = u"K"(40.0u"°C"),  # R: CT_max=40
+                active_temperature_min   = u"K"(24.0u"°C"),  # R: T_F_min=24
+                active_temperature_max   = u"K"(34.0u"°C"),  # R: T_F_max=34
+                basking_temperature_min  = u"K"(17.5u"°C"),  # R: T_B_min=17.5
+                emerge_temperature_min   = u"K"(15.0u"°C"),  # R: T_RB_min=15
+                target_temperature       = u"K"(30.0u"°C"),  # R: T_pref=30
+                critical_temperature_min = u"K"(6.0u"°C"),   # R: CT_min=6
+                critical_temperature_max = u"K"(40.0u"°C"),  # R: CT_max=40
                 heat_exchange           = common_heat_exchange,
             )
             organism = Organism(body, organism_traits)
@@ -192,9 +192,9 @@ using CSV, DataFrames
             core_temperature_C = [ustrip(u"°C", r.core_temperature) for r in results]
             state       = [r.state                  for r in results]
             julia_act   = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
-            jl_Q_solar  = [ustrip(u"W", r.ectotherm_out.energy_balance.solar_flow)        for r in results]
-            jl_Q_ir_in  = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_in)  for r in results]
-            jl_Q_ir_out = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_out) for r in results]
+            julia_solar_flow  = [ustrip(u"W", r.ectotherm_out.energy_balance.solar_flow)        for r in results]
+            julia_longwave_in  = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_in)  for r in results]
+            julia_longwave_out = [ustrip(u"W", r.ectotherm_out.energy_balance.longwave_flow_out) for r in results]
 
             # NicheMapR reference
             scen_dir = joinpath(@__DIR__, "data", "ectotherm", scen.name)
@@ -209,9 +209,9 @@ using CSV, DataFrames
 
             # Heat fluxes: same NMR microclimate input; solar ~0.35 W RMSE from absorptivity
             # differences between Julia and NicheMapR colour-change algorithms
-            @test rmse(jl_Q_solar,  r_eb.QSOL)   < 0.5
-            @test rmse(jl_Q_ir_in,  r_eb.QIRIN)  < 0.3
-            @test rmse(jl_Q_ir_out, r_eb.QIROUT) < 0.3
+            @test rmse(julia_solar_flow,  r_eb.QSOL)   < 0.5
+            @test rmse(julia_longwave_in,  r_eb.QIRIN)  < 0.3
+            @test rmse(julia_longwave_out, r_eb.QIROUT) < 0.3
         end
     end
 

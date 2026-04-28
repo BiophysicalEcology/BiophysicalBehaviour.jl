@@ -1,10 +1,9 @@
 # IPOPT-Based Endotherm Thermoregulation
 
 **Source files:**
-- `src/endotherm/thermoregulation/ipopt.jl` — NLP formulation, solver setup, output assembly (branch: `IPOPT-implementation`)
-- `src/endotherm/thermoregulation/heatexchange.jl` — interim copy of helpers to be moved into `HeatExchange.jl`
+- `src/endotherm/thermoregulation/ipopt.jl` — NLP formulation, solver setup, output assembly
 - `src/endotherm/endotherm_traits.jl` — `ThermoregulationLimits` struct and penalty fields
-- `HeatExchange.jl/src/endotherm/heat_balance.jl` — `heat_balance` function used as NLP constraints (branch: `IPOPT-preparation`)
+- `HeatExchange.jl/src/nlp_interface.jl` — `nlp_pack`, `nlp_residuals`, `nlp_assemble_output` functions used by the NLP solver
 
 ---
 
@@ -44,9 +43,9 @@ Following standard control theory, the nine NLP decision variables are split int
 **State variables (x)** — outcomes determined by the effectors and the heat balance:
 | Variable | Description |
 |---|---|
-| Core temperature | `T_core` (K) |
-| Skin temperature | `T_skin` (K) |
-| Insulation surface temperature | `T_insulation` (K) |
+| Core temperature | `core_temperature` (K) |
+| Skin temperature | `skin_temperature` (K) |
+| Insulation surface temperature | `insulation_temperature` (K) |
 
 In principle, state variables are fully determined by the effectors via the heat balance
 constraints. Including them explicitly as NLP variables (with equality constraints to enforce
@@ -54,14 +53,27 @@ consistency) improves numerical stability and allows IPOPT to find feasible poin
 
 ---
 
+## NLP Strategies
+
+Two NLP formulations are available via `IPOPTControl(nlp_strategy=...)`:
+
+| Strategy | Decision variables | Constraints | Description |
+|---|---|---|---|
+| `WeightedMeanNLP()` | 9 | 4 (3 equality + 1 Q10) | Single mean-weighted body; dorsal/ventral merged by view-factor weights |
+| `MultiSidedNLP()` | 11 | 6 (5 equality + 1 Q10) | Explicit dorsal and ventral sides; two skin temperatures, two insulation temperatures |
+
+`WeightedMeanNLP` is the default. `MultiSidedNLP` gives more accurate results under strongly
+asymmetric conditions (high solar loading) at the cost of a slightly larger NLP.
+
+---
+
 ## Constraints
 
-Four constraints are imposed on the NLP:
+### `WeightedMeanNLP`: 4 constraints
 
-### Constraints 1–3: Heat balance equalities (= 0)
+**Constraints 1–3: Heat balance equalities (= 0)**
 
-These are provided by `HeatExchange.heat_balance(T_core, T_skin, T_insulation, Q_gen; ...)`, which
-returns three residuals:
+Provided by `HeatExchange.nlp_residuals(::WeightedMeanNLPPacked, ...)`, which returns three residuals:
 
 1. **Energy balance residual** (W): net heat flow at the insulation surface must be zero.
 2. **Internal conduction residual** (W): heat flow from core to skin through flesh and fat must
@@ -69,19 +81,45 @@ returns three residuals:
 3. **Skin temperature consistency** (K): skin temperature must be consistent with the
    core–skin gradient given flesh conductivity and body geometry.
 
-These three equality constraints make the three temperature state variables outcomes of the
-six effectors, not free choices.
-
-### Constraint 4: Q10 metabolic scaling inequality (≥ 0)
+**Constraint 4: Q10 metabolic scaling inequality (≥ 0)**
 
 ```
-generated_heat_flow ≥ heat_flow_min × Q10^((core_temperature − setpoint) / 10)
+generated_heat_flow ≥ minimum_heat_flow × Q10^((core_temperature − setpoint) / 10)
+```
+
+### `MultiSidedNLP`: 6 constraints
+
+**Constraints 1–2: Dorsal surface physics (= 0)**
+
+1. **Dorsal surface balance** (W): `residual_energy_balance_d − residual_internal_conduction_d = 0`
+   — pure surface heat exchange (solar, longwave, convection, conduction, net internal heat flow);
+   metabolic and respiration terms cancel algebraically.
+2. **Dorsal skin temperature** (K): `residual_skin_temperature_d = 0`
+
+**Constraints 3–4: Ventral surface physics (= 0)**
+
+3. **Ventral surface balance** (W): `residual_energy_balance_v − residual_internal_conduction_v = 0`
+4. **Ventral skin temperature** (K): `residual_skin_temperature_v = 0`
+
+**Constraint 5: Whole-organism energy balance (= 0)**
+
+```
+metabolic_heat_flow − respiration_heat_flow = dmult × net_metabolic_heat_internal_d + vmult × net_metabolic_heat_internal_v
+```
+
+where `dmult = sky_view_factor + vegetation_view_factor` and `vmult = 1 − dmult`. This mirrors
+the validated rule-based multi-sided solver criterion exactly.
+
+**Constraint 6: Q10 metabolic scaling inequality (≥ 0)**
+
+```
+generated_heat_flow ≥ minimum_heat_flow × Q10^((core_temperature − setpoint) / 10)
 ```
 
 This enforces that minimum metabolic rate rises with core temperature during hyperthermia,
 consistent with the Q10 temperature coefficient of biochemical reactions. In cold conditions it
-has no effect (Q_gen rises naturally to close the energy deficit). In hot conditions it ensures
-the solver does not suppress Q_gen below its temperature-corrected minimum.
+has no effect (generated_heat_flow rises naturally to close the energy deficit). In hot conditions
+it ensures the solver does not suppress generated_heat_flow below its temperature-corrected minimum.
 
 The Q10 value is taken from `MetabolismParameters.q10` in `HeatExchange.jl`.
 
@@ -103,7 +141,7 @@ J = w_core × ((core_temperature − setpoint) / Δcore_temperature)²
 
 where `Δ` denotes the range of each variable over its physiological limits.
 
-### Why Q_gen is not the primary target
+### Why generated_heat_flow is not the primary target
 
 `generated_heat_flow` is a state variable. In cold conditions, keeping `core_temperature` near
 setpoint already forces `generated_heat_flow` upward (less metabolic heat → larger energy deficit
@@ -124,12 +162,12 @@ The weights are stored as fields of `ThermoregulationLimits`:
 
 | Field | Default | Effect |
 |---|---|---|
-| `core_temperature_penalty` | 1.0 | Lower → T_core allowed to deviate more before effectors are exhausted |
-| `metabolic_heat_penalty` | 0.1 | Small regularisation to prevent high-panting/high-Q_gen degeneracy in cold |
+| `core_temperature_penalty` | 1.0 | Lower → core temperature allowed to deviate more before effectors are exhausted |
+| `metabolic_heat_penalty` | 0.1 | Small regularisation to prevent high-panting/high-generated_heat_flow degeneracy in cold |
 | `panting_penalty` | 1.0 | Lower → panting activates sooner |
 | `skin_wetness_penalty` | 1.0 | Higher than `panting_penalty` → panting before sweating (birds/rabbits); lower → sweating first (humans) |
 | `gradient_penalty` | 0.0 | Non-zero → penalises deviation from `target_core_skin_gradient` (K); disabled by default |
-| `target_core_skin_gradient` | 2.0 | Target T_core − T_skin (K); only used when `gradient_penalty > 0` |
+| `target_core_skin_gradient` | 2.0 | Target `core_temperature − skin_temperature` (K); only used when `gradient_penalty > 0` |
 
 ---
 
@@ -141,7 +179,7 @@ The weights are stored as fields of `ThermoregulationLimits`:
 | **Cold response** | Piloerect → curl → vasoconstrict → thermogenesis (strict order) | All effectors adjusted together; `metabolic_heat_penalty` regularisation biases toward the rule-based ordering |
 | **Hot response** | Vasodilate → allow hyperthermia → pant → sweat (strict order) | Order emerges from relative penalty weights |
 | **Panting vs sweating** | Set by `mode` (e.g. `CorePantingSweatingFirst`) | Set by `panting_penalty` vs `skin_wetness_penalty` relative magnitudes |
-| **Q10 scaling** | Applied explicitly: `Q_gen_min` rises with Q10 at each step | Enforced via inequality constraint 4 |
+| **Q10 scaling** | Applied explicitly: `generated_heat_flow_min` rises with Q10 at each step | Enforced via inequality constraint 4 |
 | **Core temperature** | Set explicitly by `hyperthermia()` when energy balance cannot close | Free to rise within bounds; penalised by `core_temperature_penalty` |
 | **Speed** | Fast (iterative, closed-form steps) | Comparable in practice; both approaches take similar wall time per temperature point |
 | **Tuning** | Logic rules and step sizes | Five scalar penalty weights |
@@ -187,11 +225,11 @@ rule-based solver and is the natural choice for a sequence that changes smoothly
 environmental conditions:
 
 ```julia
-generated_heat_flow_ipopt    = Q_minimum                          # start at minimum metabolic rate
+generated_heat_flow_ipopt    = minimum_heat_flow                          # start at minimum metabolic rate
 skin_temperature_ipopt       = core_temperature - 3.0u"K"
 insulation_temperature_ipopt = air_temperatures[1]
 
-for (T_air, ...) in zip(air_temperatures, ...)
+for (air_temperature, ...) in zip(air_temperatures, ...)
     # ... build organism and environment ...
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
@@ -204,7 +242,7 @@ end
 
 For a single solve (e.g., during testing), any physiologically plausible initial point works —
 for example `generated_heat_flow_init = 0.0u"W"` (clamped to `heat_flow_min` inside the solver),
-`skin_temperature_init` near `T_setpoint - 3 K`, and `insulation_temperature_init` near ambient temperature.
+`skin_temperature_init` near `setpoint_temperature - 3 K`, and `insulation_temperature_init` near ambient temperature.
 
 ---
 
@@ -224,36 +262,30 @@ by `solve_metabolic_rate` and keeps the NLP problem dimensionality manageable.
 
 ---
 
-## HeatExchange.jl: `heat_balance` Function
+## HeatExchange.jl NLP Interface
 
-The IPOPT solver does **not** call `solve_metabolic_rate`. Instead it calls a dedicated lower-level
-function `HeatExchange.heat_balance` (added on the `IPOPT-preparation` branch), which evaluates
-the heat balance residuals for an arbitrary set of trial temperatures and effectors without
-performing any iterative solve of its own.
+The IPOPT solver does **not** call `solve_metabolic_rate`. Instead it uses three functions from
+`HeatExchange.jl/src/nlp_interface.jl`:
+
+- **`nlp_pack(strategy, organism, environment, skin_temperature_init, insulation_temperature_init)`** —
+  pre-computes all geometry and environment quantities that are fixed for a given hour, returning a
+  packed parameter struct (`WeightedMeanNLPPacked` or `MultiSidedNLPPacked`).
+
+- **`nlp_residuals(packed, core_temperature, skin_temperature, insulation_temperature, metabolic_heat_flow, ...)`** —
+  evaluates the heat balance residuals for a trial set of decision variables without any iterative
+  solve. Returns a `NamedTuple` with `residuals` (tuple of physics residuals in W/K) plus
+  individual heat flow components.
+
+- **`nlp_assemble_output(packed, organism, environment, ...)`** —
+  reconstructs the full thermoregulation output `NamedTuple` from the solver solution, including
+  respiration, mass flows, and energy flows in the same format as `solve_metabolic_rate`.
 
 This distinction is critical: `solve_metabolic_rate` internally iterates to find consistent
 temperatures given a fixed set of physiological parameters. The IPOPT solver cannot use it as a
-constraint because the temperatures themselves are decision variables — passing a trial `T_core`
-to `solve_metabolic_rate` would trigger a nested solve that ignores the optimizer's current
-guess. `heat_balance` instead accepts all four temperature/heat values as explicit arguments and
-simply returns the residuals, leaving the root-finding entirely to IPOPT.
-
-The function signature is:
-
-```julia
-HeatExchange.heat_balance(
-    core_temperature, skin_temperature, insulation_temperature, generated_heat_flow;
-    body, insulation_pars, insulation, geometry_vars, environment_vars, traits,
-    resp_pars, k_flesh, pant, skin_wetness,
-)
-```
-
-It returns a `NamedTuple` with:
-- `residual_energy_balance` (W) — net heat flow at the body surface (must equal zero at equilibrium)
-- `residual_internal_conduction` (W) — internal core-to-skin conduction imbalance (must equal zero)
-- `residual_skin_temperature` (K) — skin temperature consistency residual (must equal zero)
-- `radiation_heat_flow`, `convection_heat_flow`, `conduction_heat_flow` — individual fluxes
-- `skin_evaporation_heat_flow`, `insulation_evaporation_heat_flow`, `respiration_heat_flow`
+constraint because the temperatures themselves are decision variables — passing a trial
+`core_temperature` to `solve_metabolic_rate` would trigger a nested solve that ignores the
+optimizer's current guess. `nlp_residuals` instead accepts all temperature and effector values
+as explicit arguments and simply returns the residuals, leaving the root-finding entirely to IPOPT.
 
 ---
 
@@ -266,17 +298,17 @@ as input to the other.
 
 ```julia
 # Rule-based pass
-for (T_air, rh, q10) in zip(air_temperatures, ...)
-    out = thermoregulate(organism, environment, 0.0u"W", skin_temperature, T_insulation)
+for (air_temperature, rh, q10) in zip(air_temperatures, ...)
+    out = thermoregulate(organism, environment, 0.0u"W", skin_temperature, insulation_temperature)
     push!(results, ...)
 end
 
 # IPOPT pass (carry-forward initialisation)
-generated_heat_flow_ipopt    = Q_minimum
+generated_heat_flow_ipopt    = minimum_heat_flow
 skin_temperature_ipopt       = core_temperature - 3.0u"K"
 insulation_temperature_ipopt = air_temperatures[1]
 
-for (T_air, rh, q10) in zip(air_temperatures, ...)
+for (air_temperature, rh, q10) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
     generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow

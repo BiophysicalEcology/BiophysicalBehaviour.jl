@@ -224,7 +224,7 @@ function example_thermoregulation_limits(;
     tolerance=0.005,
     max_iterations=1000,
     # Metabolic reference
-    Q_minimum_ref=77.61842u"W",
+    minimum_heat_flow=77.61842u"W",
     # Insulation (piloerection)
     insulation_depth_dorsal=2e-03u"m",
     insulation_depth_ventral=2e-03u"m",
@@ -315,7 +315,7 @@ function example_thermoregulation_limits(;
 
     ThermoregulationLimits(;
         control,
-        Q_minimum_ref,
+        minimum_heat_flow,
         insulation,
         aspect_ratio_factor=aspect_ratio_param,
         flesh_conductivity=flesh_conductivity_param,

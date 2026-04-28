@@ -50,7 +50,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         tolerance=0.005,
         max_iterations=200,
     ),
-    Q_minimum_ref=metabolism_pars.metabolic_heat_flow,
+    minimum_heat_flow=metabolism_pars.metabolic_heat_flow,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
             current=insulation_pars.dorsal.depth,
@@ -66,7 +66,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         ),
     ),
     aspect_ratio_factor=SteppedParameter(;
-        current=shape_pars.b,
+        current=shape_pars.axis_ratio_b,
         max=5.0,
         step=0.1,
     ),

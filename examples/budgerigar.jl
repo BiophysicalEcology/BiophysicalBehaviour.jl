@@ -39,8 +39,8 @@ insulation_pars = example_insulation_pars(;
                     insulation_reflectance_ventral=0.351,
                     )
 radiation_pars = example_radiation_pars()
-Q_metabolism = metabolic_rate(McKechnieWolf(), shape_pars.mass)
-metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, metabolic_heat_flow = Q_metabolism)
+metabolic_heat_flow = metabolic_rate(McKechnieWolf(), shape_pars.mass)
+metabolism_pars = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = 2, metabolic_heat_flow)
 respiration_pars = example_respiration_pars(; oxygen_extraction_efficiency=0.25, exhaled_temperature_offset=5.0u"K")
 evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
 
@@ -107,7 +107,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             tolerance=0.005,
             max_iterations=1000,
         ),
-        Q_minimum_ref=min_metabolic_heat_flow,
+        minimum_heat_flow=min_metabolic_heat_flow,
         insulation=InsulationLimits(;
             dorsal=SteppedParameter(;
                 current=insulation_pars.dorsal.length * 0.7,
@@ -169,7 +169,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
 end
 
 # Initial run
-metabolism_pars_init = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = q10s[1], metabolic_heat_flow = Q_metabolism)
+metabolism_pars_init = example_metabolism_pars(; core_temperature = (38.0 + 273.15)u"K", q10 = q10s[1], metabolic_heat_flow)
 organism = create_organism(shape_pars, insulation_pars, conduction_pars_internal, radiation_pars,
                            evaporation_pars, respiration_pars, metabolism_pars_init, geometry)
 environment = (; environment_pars, environment_vars)

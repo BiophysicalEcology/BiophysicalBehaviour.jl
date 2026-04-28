@@ -149,22 +149,22 @@ available_environments = AvailableEnvironments(
 
 # ── Organism ──────────────────────────────────────────────────────────────
 # 40 g desert iguana (Dipsosaurus dorsalis) — parameters from Porter et al. (1973)
-#   alpha_max = 0.80 (maximum absorption at Tb < T_active_min, p. 10)
-#   alpha_min = 0.60 (minimum absorption at Tb > T_active_max, p. 10)
-#   T_active_min = 38°C (minimum activity temperature, p. 20)
-#   T_active_max = 43°C (maximum voluntary Tb, p. 20)
-#   T_target     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
+#   alpha_max = 0.80 (maximum absorption at Tb < active_temperature_min, p. 10)
+#   alpha_min = 0.60 (minimum absorption at Tb > active_temperature_max, p. 10)
+#   active_temperature_min = 38°C (minimum activity temperature, p. 20)
+#   active_temperature_max = 43°C (maximum voluntary Tb, p. 20)
+#   target_temperature     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
 #   can_climb = true (paper explicitly models climbing into creosote bushes to 200 cm)
 body            = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism_traits = example_ectotherm_organism_traits(
     activity_period         = CombinedActivity(Diurnal(), Crepuscular()), #Diurnal(),
-    T_target                = u"K"(38.5u"°C"),
-    T_active_min            = u"K"(38.0u"°C"),
-    T_active_max            = u"K"(43.0u"°C"),
-    T_bask_min              = u"K"(34.0u"°C"),
-    T_emerge_min            = u"K"(15.0u"°C"),
-    T_critical_min          = u"K"(3.0u"°C"),
-    T_critical_max          = u"K"(44.0u"°C"),
+    target_temperature       = u"K"(38.5u"°C"),
+    active_temperature_min   = u"K"(38.0u"°C"),
+    active_temperature_max   = u"K"(43.0u"°C"),
+    basking_temperature_min  = u"K"(34.0u"°C"),
+    emerge_temperature_min   = u"K"(15.0u"°C"),
+    critical_temperature_min = u"K"(3.0u"°C"),
+    critical_temperature_max = u"K"(44.0u"°C"),
     can_climb               = true,
     can_retreat_underground = true,
     depth_min_underground   = 3,
@@ -251,8 +251,8 @@ month_ht     = [ustrip.(u"m", height[r]) for r in month_ranges]
 month_pos    = [pos_cm[r]               for r in month_ranges]
 month_Ta     = [ustrip.(u"°C", air_temperature[r]) for r in month_ranges]
 
-T_active_min_C = ustrip(u"°C", limits.T_active_min)
-T_active_max_C = ustrip(u"°C", limits.T_active_max)
+active_temperature_min_C = ustrip(u"°C", limits.active_temperature_min)
+active_temperature_max_C = ustrip(u"°C", limits.active_temperature_max)
 
 # ── Fig. 1 – Body temperature for all 12 months (4×3 grid) ───────────────
 # Porter (1973) Tb overlay shown only for March (month 3) and July (month 7)
@@ -262,7 +262,7 @@ panels_Tb = map(1:ndays) do m
         title = months[m] * " (day $(days[m]))",
         ylabel = "°C", ylim = (0, 55), titlefontsize = 9)
     plot!(p, hours, month_Ta[m]; lw = 1, color = :steelblue, linestyle = :dash, label = "")
-    hline!(p, [T_active_min_C, T_active_max_C]; color = :orange, linestyle = :dash, lw = 1, label = "")
+    hline!(p, [active_temperature_min_C, active_temperature_max_C]; color = :orange, linestyle = :dash, lw = 1, label = "")
     p
 end
 

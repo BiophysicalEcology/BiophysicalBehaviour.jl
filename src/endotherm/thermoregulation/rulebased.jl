@@ -106,21 +106,21 @@ end
 
 Allow core temperature to rise (hyperthermia).
 
-Returns updated `SteppedParameter`, new Q_minimum, and `organism`.
+Returns updated `SteppedParameter`, new minimum_heat_flow, and `organism`.
 """
 function hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
-    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
+    minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     core_temp = min(core_temperature_limits.current + core_temperature_limits.step, core_temperature_limits.max)
     core_temperature_limits = @set core_temperature_limits.current = core_temp
 
     metabolism = HeatExchange.metabolism_pars(organism)
-    Q_minimum = (Q_minimum_ref + pant_cost) *
+    minimum_heat_flow = (minimum_heat_flow + pant_cost) *
                 q10_scale(metabolism.q10, core_temp, core_temperature_limits.reference)
 
     organism = @set organism.traits.heat_exchange.metabolism_pars.core_temperature = core_temp
-    organism = @set organism.traits.heat_exchange.metabolism_pars.metabolic_heat_flow = Q_minimum
+    organism = @set organism.traits.heat_exchange.metabolism_pars.metabolic_heat_flow = minimum_heat_flow
 
-    return core_temperature_limits, Q_minimum, organism
+    return core_temperature_limits, minimum_heat_flow, organism
 end
 
 """
@@ -128,27 +128,27 @@ end
 
 Increase panting rate for evaporative cooling.
 
-Returns updated `PantingLimits`, new Q_minimum, and `organism`.
+Returns updated `PantingLimits`, new minimum_heat_flow, and `organism`.
 """
 function pant(organism::Organism, panting_limits::PantingLimits)
-    Q_minimum_ref = thermoregulation(organism).Q_minimum_ref
+    minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     pant_rate_limits = panting_limits.pant
     pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
 
     pant_cost = ((pant_rate - 1) / (pant_rate_limits.max + 1e-6 - 1)) *
-                (panting_limits.multiplier - 1) * Q_minimum_ref
+                (panting_limits.multiplier - 1) * minimum_heat_flow
 
     panting_limits = @set panting_limits.pant.current = pant_rate
     panting_limits = @set panting_limits.cost = pant_cost
 
     metabolism = HeatExchange.metabolism_pars(organism)
-    Q_minimum = (Q_minimum_ref + pant_cost) *
+    minimum_heat_flow = (minimum_heat_flow + pant_cost) *
                 q10_scale(metabolism.q10, metabolism.core_temperature, panting_limits.core_temperature_ref)
 
-    organism = @set organism.traits.heat_exchange.metabolism_pars.metabolic_heat_flow = Q_minimum
+    organism = @set organism.traits.heat_exchange.metabolism_pars.metabolic_heat_flow = minimum_heat_flow
     organism = @set organism.traits.heat_exchange.respiration_pars.pant = pant_rate
 
-    return panting_limits, Q_minimum, organism
+    return panting_limits, minimum_heat_flow, organism
 end
 
 """
@@ -228,11 +228,11 @@ function thermoregulate(
     insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
     metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
 
-    Q_minimum = limits.Q_minimum_ref
+    minimum_heat_flow = limits.minimum_heat_flow
 
     iteration = 0
 
-    while metabolic_heat_flow < Q_minimum * (1 - tolerance)
+    while metabolic_heat_flow < minimum_heat_flow * (1 - tolerance)
         iteration += 1
         if iteration > max_iterations
             @warn "max_iterations exceeded"
@@ -251,11 +251,11 @@ function thermoregulate(
             flesh_conductivity_limits, organism = vasodilate(organism, flesh_conductivity_limits)
 
         elseif core_temperature_limits.current < core_temperature_limits.max
-            core_temperature_limits, Q_minimum, organism = hyperthermia(
+            core_temperature_limits, minimum_heat_flow, organism = hyperthermia(
                 organism, core_temperature_limits, panting_limits.cost
             )
             if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
-                panting_limits, Q_minimum, organism = pant(organism, panting_limits)
+                panting_limits, minimum_heat_flow, organism = pant(organism, panting_limits)
             end
             if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
@@ -267,7 +267,7 @@ function thermoregulate(
             end
 
         elseif panting_limits.pant.current < panting_limits.pant.max
-            panting_limits, Q_minimum, organism = pant(organism, panting_limits)
+            panting_limits, minimum_heat_flow, organism = pant(organism, panting_limits)
             if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) ||
                    (skin_wetness_limits.step <= 0)

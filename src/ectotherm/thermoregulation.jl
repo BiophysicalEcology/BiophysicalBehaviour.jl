@@ -67,8 +67,8 @@ function _underground_blend_factor(::AdaptiveBurrowShade, limits, min_shade, max
     n_nodes          = size(min_shade.soil_temperature, 2)
     min_node         = clamp(limits.depth_min_underground, 1, n_nodes)
     soil_temperature = min_shade.soil_temperature[step, min_node]
-    too_hot          = soil_temperature > limits.T_active_max
-    too_cold         = soil_temperature < limits.T_critical_min
+    too_hot          = soil_temperature > limits.active_temperature_max
+    too_cold         = soil_temperature < limits.critical_temperature_min
     return (too_hot || too_cold) ? 1.0 : 0.0
 end
 
@@ -142,28 +142,28 @@ function reset_position(limits::EctothermBehavioralLimits)
     limits = @set limits.height.current        = limits.height.reference
     limits = @set limits.absorptivity.current  = limits.absorptivity.max
     limits = @set limits.pant_rate.current     = limits.pant_rate.reference
-    limits = @set limits.T_target.current  = limits.T_target.reference
+    limits = @set limits.target_temperature.current  = limits.target_temperature.reference
     limits = @set limits.sun_orientation   = 45.0
     limits = @set limits.pressed_to_ground = false
     return limits
 end
 
 """
-    increment_T_target(limits::EctothermBehavioralLimits) → limits
+    increment_target_temperature(limits::EctothermBehavioralLimits) → limits
 
-Increment the target body temperature by one step toward `T_active_max`.
+Increment the target body temperature by one step toward `active_temperature_max`.
 
 Matches NicheMapR's TPREF incrementing (ECTOTHERM.f ENB>0 branch): the organism
 tolerates a progressively warmer body temperature before triggering cooling
-behaviours. Once `T_target.current` reaches `T_active_max`, shade-seeking and
+behaviours. Once `target_temperature.current` reaches `active_temperature_max`, shade-seeking and
 other cooling responses begin.
 
 Returns updated `EctothermBehavioralLimits`.
 """
-function increment_T_target(limits::EctothermBehavioralLimits)
-    new_T = min(limits.T_target.current + limits.T_target.step,
-                limits.T_target.max)
-    @set limits.T_target.current = new_T
+function increment_target_temperature(limits::EctothermBehavioralLimits)
+    new_T = min(limits.target_temperature.current + limits.target_temperature.step,
+                limits.target_temperature.max)
+    @set limits.target_temperature.current = new_T
 end
 
 # =============================================================================
@@ -253,7 +253,7 @@ Revert solar orientation to the neutral/foraging posture (`sun_orientation = 45.
 
 Sets `solar_orientation = Intermediate()` and `A_silhouette` to the average of
 normal and parallel areas. Called when body temperature re-enters the active range
-after basking (perpendicular → intermediate) or when Tb drops back to T_target
+after basking (perpendicular → intermediate) or when Tb drops back to target_temperature
 after parallel cooling (parallel → intermediate).
 
 Mirrors NicheMapR THERMO.f lines 119-128: revert when TC ≥ TMINPR (from perpendicular)
@@ -318,8 +318,8 @@ end
 Find the shallowest accessible soil node with a tolerable temperature (SELDEP.f).
 
 Iterates from `limits.depth_min_underground` to `limits.depth.max`, selecting the first
-node where the blended soil temperature lies between `T_critical_min` and a
-mid-point threshold between `T_active_max` and `T_critical_max`. Falls back to
+node where the blended soil temperature lies between `critical_temperature_min` and a
+mid-point threshold between `active_temperature_max` and `critical_temperature_max`. Falls back to
 the deepest node if no node is within tolerance.
 
 # Arguments
@@ -330,8 +330,8 @@ the deepest node if no node is within tolerance.
 - `underground_shade_factor`: Blend factor (0=min-shade, 1=max-shade) for soil temperatures
 """
 function select_depth(limits::EctothermBehavioralLimits, min_shade, max_shade, step, underground_shade_factor)
-    depth_selection_threshold = limits.T_critical_max -
-        (limits.T_critical_max - limits.T_active_max) / 2
+    depth_selection_threshold = limits.critical_temperature_max -
+        (limits.critical_temperature_max - limits.active_temperature_max) / 2
 
     n_nodes   = size(min_shade.soil_temperature, 2)
     depth_min = clamp(limits.depth_min_underground, 1, n_nodes)
@@ -343,7 +343,7 @@ function select_depth(limits::EctothermBehavioralLimits, min_shade, max_shade, s
             max_shade.soil_temperature[step, node],
             underground_shade_factor,
         )
-        if limits.T_critical_min < soil_temperature < depth_selection_threshold
+        if limits.critical_temperature_min < soil_temperature < depth_selection_threshold
             return @set limits.depth.current = node
         end
     end

@@ -52,6 +52,9 @@ export AbstractControlStrategy,
     RuleBasedSequentialControl,
     IPOPTControl
 
+# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy)
+export NLPStrategy, WeightedMeanNLP, MultiSidedNLP
+
 # Thermoregulation modes
 export AbstractThermoregulationMode,
     CoreFirst,
@@ -101,7 +104,7 @@ export is_active,
     orient_perpendicular,
     orient_parallel,
     press_to_ground,
-    increment_T_target
+    increment_target_temperature
 
 # Example constructors – endotherm
 export example_environment_vars,

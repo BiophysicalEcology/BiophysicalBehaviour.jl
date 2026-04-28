@@ -95,16 +95,16 @@ end
 # ----------------------------------------------------------------------------
 
 """
-    q10_scale(q10, T, T_reference) -> Real
+    q10_scale(q10, temperature, reference_temperature) -> Real
 
-Q10 metabolic-rate multiplier: `q10 ^ ((T − T_reference) / 10)`.
+Q10 metabolic-rate multiplier: `q10 ^ ((temperature − reference_temperature) / 10)`.
 
 Inputs must be Unitful temperatures. Scientific code in this package never
 operates on stripped temperatures; if a caller has Float64 K it has crossed
 a unit boundary it shouldn't have crossed.
 """
-q10_scale(q10, T::Unitful.Quantity, T_reference::Unitful.Quantity) =
-    q10 ^ (ustrip(u"K", T - T_reference) / 10)
+q10_scale(q10, temperature::Unitful.Quantity, reference_temperature::Unitful.Quantity) =
+    q10 ^ (ustrip(u"K", temperature - reference_temperature) / 10)
 
 # ----------------------------------------------------------------------------
 # Body reconstruction helper
@@ -137,7 +137,7 @@ and insulation surface at air temperature.
 """
 function initial_physiological_state(organism::Organism, environment_vars)
     (;
-        metabolic_heat_flow    = zero(thermoregulation(organism).Q_minimum_ref),
+        metabolic_heat_flow    = zero(thermoregulation(organism).minimum_heat_flow),
         skin_temperature       = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K",
         insulation_temperature = environment_vars.air_temperature,
     )

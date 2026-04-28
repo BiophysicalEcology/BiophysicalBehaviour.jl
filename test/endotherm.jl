@@ -181,7 +181,7 @@ for shape_number in 1:4
         # initial conditions
         skin_temperature = u"K"((endo_input.TS)u"°C")
         insulation_temperature = u"K"((endo_input.TFA)u"°C")
-        Q_minimum_ref = (endo_input.QBASAL)u"W"
+        minimum_heat_flow = (endo_input.QBASAL)u"W"
         metabolic_heat_flow = 0.0u"W"
         core_temperature_ref = metabolism_pars.core_temperature
 
@@ -194,7 +194,7 @@ for shape_number in 1:4
                 tolerance=0.005,
                 max_iterations=1000,
             ),
-            Q_minimum_ref,
+            minimum_heat_flow,
             insulation=InsulationLimits(;
                 dorsal=SteppedParameter(;
                     current=insulation_pars.dorsal.depth,
