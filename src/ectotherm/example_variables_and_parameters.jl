@@ -47,14 +47,14 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `absorptivity_step`          | 0.0       | (derived: alpha_max-alpha_min)|
 | `pant_max`                   | 1.0       | (panting multiplier max)      |
 | `pant_step`                  | 0.1       | (panting step)                |
-| `T_pref`                          | 30.0 °C   | T_pref (TPREF, initial preferred temp; T_target rises to T_F_max)|
-| `T_target_step`                   | 0.5 K     | TBIG (TPREF increment, 0.5 in NicheMapR THERMOREG)|
-| `T_active_min`                    | 24.0 °C   | T_F_min                       |
-| `T_active_max`                    | 34.0 °C   | T_F_max                       |
-| `T_bask_min`                      | 17.5 °C   | T_B_min                       |
-| `T_critical_min`                  | 6.0 °C    | CT_min                        |
-| `T_critical_max`                  | 40.0 °C   | CT_max                        |
-| `T_emerge_min`                    | 15.0 °C   | T_RB_min                      |
+| `target_temperature`              | 30.0 °C   | T_pref (TPREF, initial preferred temp; rises to active_temperature_max)|
+| `target_temperature_step`         | 0.5 K     | TBIG (TPREF increment, 0.5 in NicheMapR THERMOREG)|
+| `active_temperature_min`          | 24.0 °C   | T_F_min                       |
+| `active_temperature_max`          | 34.0 °C   | T_F_max                       |
+| `basking_temperature_min`         | 17.5 °C   | T_B_min                       |
+| `critical_temperature_min`        | 6.0 °C    | CT_min                        |
+| `critical_temperature_max`        | 40.0 °C   | CT_max                        |
+| `emerge_temperature_min`          | 15.0 °C   | T_RB_min                      |
 | `can_retreat_underground`         | `true`    | burrow                        |
 | `can_climb`                       | `false`   | climb                         |
 | `can_seek_shade`                  | `true`    | shade_seek                    |
@@ -83,14 +83,14 @@ function example_ectotherm_behavioral_limits(;
     # Height (atmospheric profile node indices)
     height_max            = typemax(Int), # default = use all available height nodes
     # Thermal thresholds
-    T_target      = u"K"(30.0u"°C"),   # TPREF: starting preferred temp (T_target rises to T_active_max)
-    T_target_step = 0.5u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
-    T_active_min  = u"K"(24.0u"°C"),
-    T_active_max  = u"K"(34.0u"°C"),
-    T_bask_min       = u"K"(17.5u"°C"),
-    T_critical_min   = u"K"(6.0u"°C"),
-    T_critical_max   = u"K"(40.0u"°C"),
-    T_emerge_min     = u"K"(15.0u"°C"),
+    target_temperature      = u"K"(30.0u"°C"),   # TPREF: starting preferred temp (rises to active_temperature_max)
+    target_temperature_step = 0.5u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
+    active_temperature_min  = u"K"(24.0u"°C"),
+    active_temperature_max  = u"K"(34.0u"°C"),
+    basking_temperature_min    = u"K"(17.5u"°C"),
+    critical_temperature_min   = u"K"(6.0u"°C"),
+    critical_temperature_max   = u"K"(40.0u"°C"),
+    emerge_temperature_min     = u"K"(15.0u"°C"),
     # Capability flags
     can_retreat_underground      = true,
     can_climb                    = false,
@@ -142,11 +142,11 @@ function example_ectotherm_behavioral_limits(;
         max       = pant_max,
         step      = pant_step,
     )
-    T_target = SteppedParameter(;
-        current   = T_target,
-        reference = T_target,
-        max       = T_active_max,
-        step      = T_target_step,
+    target_temperature = SteppedParameter(;
+        current   = target_temperature,
+        reference = target_temperature,
+        max       = active_temperature_max,
+        step      = target_temperature_step,
     )
     EctothermBehavioralLimits(;
         control,
@@ -156,13 +156,13 @@ function example_ectotherm_behavioral_limits(;
         height,
         absorptivity,
         pant_rate,
-        T_target,
-        T_active_min,
-        T_active_max,
-        T_bask_min,
-        T_critical_min,
-        T_critical_max,
-        T_emerge_min,
+        target_temperature,
+        active_temperature_min,
+        active_temperature_max,
+        basking_temperature_min,
+        critical_temperature_min,
+        critical_temperature_max,
+        emerge_temperature_min,
         can_retreat_underground,
         can_climb,
         can_seek_shade,

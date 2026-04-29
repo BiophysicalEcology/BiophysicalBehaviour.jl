@@ -34,7 +34,7 @@ simultaneous_sweat(::CorePantingSweatingFirst) = true
 # ----------------------------------------------------------------------------
 
 """
-    thermoregulate(organism, environment, generated_heat_flow, skin_temperature,
+    thermoregulate(organism, environment, metabolic_heat_flow, skin_temperature,
                    insulation_temperature)
 
 Run the thermoregulation loop to find heat balance.
@@ -46,7 +46,7 @@ Dispatches on the organism's thermal strategy (`Endotherm`, `Ectotherm`,
 function thermoregulate(
     organism::Organism,
     environment::NamedTuple,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
@@ -54,7 +54,7 @@ function thermoregulate(
         thermal_strategy(organism),
         organism,
         environment,
-        generated_heat_flow,
+        metabolic_heat_flow,
         skin_temperature,
         insulation_temperature,
     )
@@ -64,7 +64,7 @@ function thermoregulate(
     ::Endotherm,
     organism::Organism,
     environment::NamedTuple,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
@@ -73,7 +73,7 @@ function thermoregulate(
         control_strategy(organism),
         organism,
         environment,
-        generated_heat_flow,
+        metabolic_heat_flow,
         skin_temperature,
         insulation_temperature,
     )
@@ -83,7 +83,7 @@ function thermoregulate(
     ::Heterotherm,
     organism::Organism,
     environment::NamedTuple,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )
@@ -95,33 +95,33 @@ end
 # ----------------------------------------------------------------------------
 
 """
-    q10_scale(q10, T, T_reference) -> Real
+    q10_scale(q10, temperature, reference_temperature) -> Real
 
-Q10 metabolic-rate multiplier: `q10 ^ ((T − T_reference) / 10)`.
+Q10 metabolic-rate multiplier: `q10 ^ ((temperature − reference_temperature) / 10)`.
 
 Inputs must be Unitful temperatures. Scientific code in this package never
 operates on stripped temperatures; if a caller has Float64 K it has crossed
 a unit boundary it shouldn't have crossed.
 """
-q10_scale(q10, T::Unitful.Quantity, T_reference::Unitful.Quantity) =
-    q10 ^ (ustrip(u"K", T - T_reference) / 10)
+q10_scale(q10, temperature::Unitful.Quantity, reference_temperature::Unitful.Quantity) =
+    q10 ^ (ustrip(u"K", temperature - reference_temperature) / 10)
 
 # ----------------------------------------------------------------------------
 # Body reconstruction helper
 # ----------------------------------------------------------------------------
 
 """
-    rebuild_body(shape, fur::Fur, fat) -> Body
+    rebuild_body(shape, fur::FibrousLayer, fat) -> Body
     rebuild_body(shape, fur_depth, fur_diameter, fur_density, fat) -> Body
 
 Construct a `Body` from a shape, a fur insulation layer, and a fat layer.
-The 5-argument form constructs the `Fur` from its primitive fields. Used by
+The 5-argument form constructs the `FibrousLayer` from its primitive fields. Used by
 rule-based effectors that mutate the organism (`piloerect`, `uncurl`) and by
 IPOPT to build trial bodies inside the residual function.
 """
-rebuild_body(shape, fur::Fur, fat) = Body(shape, CompositeInsulation(fur, fat))
+rebuild_body(shape, fur::FibrousLayer, fat) = Body(shape, CompositeInsulation(fur, fat))
 rebuild_body(shape, fur_depth, fur_diameter, fur_density, fat) =
-    rebuild_body(shape, Fur(fur_depth, fur_diameter, fur_density), fat)
+    rebuild_body(shape, FibrousLayer(fur_depth, fur_diameter, fur_density), fat)
 
 # ----------------------------------------------------------------------------
 # Initial state for the inner physiological thermoregulate
@@ -129,7 +129,7 @@ rebuild_body(shape, fur_depth, fur_diameter, fur_density, fat) =
 
 """
     initial_physiological_state(organism, environment_vars) ->
-        (; generated_heat_flow, skin_temperature, insulation_temperature)
+        (; metabolic_heat_flow, skin_temperature, insulation_temperature)
 
 Standard initial guesses for the inner physiological thermoregulate loop:
 no pre-assumed metabolic heat, skin 3 K below the setpoint core temperature,
@@ -137,7 +137,7 @@ and insulation surface at air temperature.
 """
 function initial_physiological_state(organism::Organism, environment_vars)
     (;
-        generated_heat_flow    = zero(thermoregulation(organism).Q_minimum_ref),
+        metabolic_heat_flow    = zero(thermoregulation(organism).minimum_heat_flow),
         skin_temperature       = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K",
         insulation_temperature = environment_vars.air_temperature,
     )

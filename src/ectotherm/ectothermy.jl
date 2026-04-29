@@ -44,14 +44,14 @@ Find the steady-state body temperature for an ectotherm using Brent's method
 
 Returns the air temperature as a fallback if root-finding fails.
 """
-function solve_body_temperature(organism, env_vars, env_pars, T_bask_min=nothing, T_active_max=nothing)
+function solve_body_temperature(organism, env_vars, env_pars, basking_temperature_min=nothing, active_temperature_max=nothing)
     e = (environment_pars=env_pars, environment_vars=env_vars)
     # Fixed bracket covering physiologically plausible ectotherm body temps (0–70°C).
     lo = 273.15
     hi = 343.15
     # Eyes open only when basking or active (NicheMapR SEVAP.f line 119:
     # IF((TC.GE.TBASK).AND.(TC.LE.TMAXPR))). Pre-build closed-eye organism.
-    org_closed = if !isnothing(T_bask_min)
+    org_closed = if !isnothing(basking_temperature_min)
         @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0
     else
         organism
@@ -59,7 +59,7 @@ function solve_body_temperature(organism, env_vars, env_pars, T_bask_min=nothing
     try
         core_temperature = zbrent(
             T -> begin
-                org = (!isnothing(T_bask_min) && (T * u"K" < T_bask_min || T * u"K" > T_active_max)) ?
+                org = (!isnothing(basking_temperature_min) && (T * u"K" < basking_temperature_min || T * u"K" > active_temperature_max)) ?
                     org_closed : organism
                 ustrip(u"W", heat_balance(T * u"K", org, e).heat_balance)
             end,
@@ -139,19 +139,19 @@ Core ectotherm behavioural thermoregulation loop (ECTOTHERM.f / ectotherm.R logi
 3. **Inactive period**: if the animal can retreat underground, call `select_depth` to find
    the optimal soil node; otherwise stay above ground.
 4. **Emergence check**: if the animal was underground at the previous step and the soil
-   at that depth is still below `T_emerge_min`, stay underground.
+   at that depth is still below `emerge_temperature_min`, stay underground.
 5. **Active period thermoregulation loop** — organism traits modified in-place via `@set`:
 
-   *Too hot* (core_temperature > T_target.current):
+   *Too hot* (core_temperature > target_temperature.current):
    revert perpendicular→intermediate (same iteration as shade seeking, mirrors
    NicheMapR THERMO.f phase 2 no-RETURN) → `lighten` → `seek_shade` → `climb` →
-   `pant` → `increment_T_target` → `retreat_underground`
+   `pant` → `increment_target_temperature` → `retreat_underground`
 
-   *Too cold* (core_temperature < T_bask_min):
+   *Too cold* (core_temperature < basking_temperature_min):
    `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-   `retreat_underground` (if core_temperature < T_critical_min)
+   `retreat_underground` (if core_temperature < critical_temperature_min)
 
-   *Basking* (T_bask_min ≤ core_temperature < T_active_min): `orient_perpendicular`
+   *Basking* (basking_temperature_min ≤ core_temperature < active_temperature_min): `orient_perpendicular`
 
    Each behaviour modifies both `limits` (state flags / stepped parameters) and a
    local `organism_current` (organism traits). The loop exits when core_temperature
@@ -216,7 +216,7 @@ function thermoregulate(
     end
 
     # -------------------------------------------------------------------------
-    # 3b. Active but was underground last step → check T_emerge_min condition
+    # 3b. Active but was underground last step → check emerge_temperature_min condition
     # -------------------------------------------------------------------------
     if previous_depth > limits.depth.reference
         # Underground temperature is binary (shaded or unshaded location),
@@ -246,7 +246,7 @@ function thermoregulate(
                               (limits.emerge_signal < zero(limits.emerge_signal) && soil_delta > limits.emerge_signal)
         end
 
-        if soil_temperature_at_depth < limits.T_emerge_min || stay_for_signal
+        if soil_temperature_at_depth < limits.emerge_temperature_min || stay_for_signal
             # Stay underground — re-run select_depth to find the best available node for
             # this hour (mirrors NicheMapR calling SELDEP.f each inactive hour). This
             # allows the animal to move deeper when its current node cools below CT_min.
@@ -260,7 +260,7 @@ function thermoregulate(
     # 4. Active above ground: behavioural thermoregulation loop
     # -------------------------------------------------------------------------
     env                      = interpolate_environment(available_environments, step, limits, environmental_params)
-    core_temperature         = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask_min, limits.T_active_max)
+    core_temperature         = solve_body_temperature(organism_current, env, environmental_params, limits.basking_temperature_min, limits.active_temperature_max)
     underground_shade_factor = 0.0  # updated if the animal retreats underground during the loop
 
     iteration = 0
@@ -268,25 +268,25 @@ function thermoregulate(
         iteration += 1
 
         # NicheMapR THERMO.f phase 2 (first sub-case): revert perpendicular → intermediate
-        # when core_temperature has risen into the accepted active range [T_active_min, T_target].
+        # when core_temperature has risen into the accepted active range [active_temperature_min, target_temperature].
         # In NicheMapR THERMO.f the revert fires BEFORE the acceptance check, so the
-        # animal always relaxes its posture once it has warmed to T_active_min.
+        # animal always relaxes its posture once it has warmed to active_temperature_min.
         # After reverting, recalculate core_temperature (now lower with intermediate area) and break;
         # no further actions are attempted (matches THERMO.f phase 4 no-action → return).
         if limits.can_solar_orient && limits.sun_orientation == 90.0 &&
-               core_temperature >= limits.T_active_min && core_temperature <= limits.T_target.current
+               core_temperature >= limits.active_temperature_min && core_temperature <= limits.target_temperature.current
             limits, organism_current = orient_intermediate(organism_current, limits)
             env              = interpolate_environment(available_environments, step, limits, environmental_params)
-            core_temperature = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask_min, limits.T_active_max)
+            core_temperature = solve_body_temperature(organism_current, env, environmental_params, limits.basking_temperature_min, limits.active_temperature_max)
             break
         end
 
-        # NicheMapR ECTOTHERM.f line 3333: accept if core_temperature ∈ [T_active_min, T_target].
-        if core_temperature >= limits.T_active_min && core_temperature <= limits.T_target.current
+        # NicheMapR ECTOTHERM.f line 3333: accept if core_temperature ∈ [active_temperature_min, target_temperature].
+        if core_temperature >= limits.active_temperature_min && core_temperature <= limits.target_temperature.current
             break
         end
 
-        if core_temperature > limits.T_target.current
+        if core_temperature > limits.target_temperature.current
             # -- Too hot --
             # NicheMapR THERMO.f phase 2 (second sub-case, no RETURN): revert
             # perpendicular → intermediate in the SAME iteration as shade seeking.
@@ -302,8 +302,8 @@ function thermoregulate(
             elseif limits.can_seek_shade && limits.shade.current < limits.shade.max
                 limits = seek_shade(limits)
 
-            elseif limits.T_target.current < limits.T_target.max
-                limits = increment_T_target(limits)
+            elseif limits.target_temperature.current < limits.target_temperature.max
+                limits = increment_target_temperature(limits)
 
             elseif limits.can_climb && limits.height.current < limits.height.max
                 limits = climb(limits)
@@ -320,7 +320,7 @@ function thermoregulate(
                 break
             end
 
-        elseif core_temperature < limits.T_bask_min
+        elseif core_temperature < limits.basking_temperature_min
             # -- Too cold: darken → perpendicular → press to ground → avoid shade → retreat_underground --
             if limits.can_change_absorptivity &&
                limits.absorptivity.current < limits.absorptivity.max
@@ -339,7 +339,7 @@ function thermoregulate(
                 # Night: seek shade to reduce longwave loss to cold sky
                 limits = seek_shade(limits)
 
-            elseif limits.can_climb && core_temperature < limits.T_critical_min && limits.height.current < limits.height.max
+            elseif limits.can_climb && core_temperature < limits.critical_temperature_min && limits.height.current < limits.height.max
                 limits = climb(limits)
 
             elseif limits.can_retreat_underground
@@ -354,8 +354,8 @@ function thermoregulate(
             end
 
         elseif limits.can_solar_orient && limits.sun_orientation < 90.0 &&
-               core_temperature < limits.T_active_min
-            # -- Basking range [T_bask_min, T_active_min): orient NormalToSun to maximise solar gain --
+               core_temperature < limits.active_temperature_min
+            # -- Basking range [basking_temperature_min, active_temperature_min): orient NormalToSun to maximise solar gain --
             limits, organism_current = orient_perpendicular(organism_current, limits)
 
         else
@@ -363,7 +363,7 @@ function thermoregulate(
         end
 
         env              = interpolate_environment(available_environments, step, limits, environmental_params)
-        core_temperature = solve_body_temperature(organism_current, env, environmental_params, limits.T_bask_min, limits.T_active_max)
+        core_temperature = solve_body_temperature(organism_current, env, environmental_params, limits.basking_temperature_min, limits.active_temperature_max)
     end
 
     return _build_ectotherm_output(organism_current, env, environmental_params, limits, active, available_environments, underground_shade_factor)
@@ -382,8 +382,8 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     # surrounding temperatures equal soil_temperature and heat loss pathways are near zero.
     core_temperature = (is_underground && !limits.solve_underground) ?
                        env_vars.air_temperature :
-                       solve_body_temperature(organism, env_vars, env_pars, limits.T_bask_min, limits.T_active_max)
-    org_out  = (limits.T_bask_min <= core_temperature <= limits.T_active_max) ? organism :
+                       solve_body_temperature(organism, env_vars, env_pars, limits.basking_temperature_min, limits.active_temperature_max)
+    org_out  = (limits.basking_temperature_min <= core_temperature <= limits.active_temperature_max) ? organism :
                @set organism.traits.heat_exchange.evaporation_pars.eye_fraction = 0.0
     ecto_out = heat_balance(core_temperature, org_out, e)
     height = if is_underground
@@ -398,9 +398,9 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     #   ACT=2 (Active):   T_F_min <= Tc <= T_F_max
     state = if !in_active_period || is_underground
         Resting()
-    elseif limits.T_active_min <= core_temperature <= limits.T_active_max
+    elseif limits.active_temperature_min <= core_temperature <= limits.active_temperature_max
         Active()
-    elseif limits.T_bask_min <= core_temperature < limits.T_active_min
+    elseif limits.basking_temperature_min <= core_temperature < limits.active_temperature_min
         Basking()
     else
         Resting()

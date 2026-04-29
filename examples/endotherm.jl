@@ -17,14 +17,14 @@ respiration_pars = example_respiration_pars()
 
 # set up geometry
 conduction_pars_internal = example_conduction_pars_internal()
-fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+fat = FatLayer(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
 mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.depth * radiation_pars.ventral_fraction
 mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
 mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
     insulation_pars.ventral.density * radiation_pars.ventral_fraction
-fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
+fur = FibrousLayer(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
 geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
 # Create physiology traits (HeatExchangeTraits)
@@ -50,7 +50,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         tolerance=0.005,
         max_iterations=200,
     ),
-    Q_minimum_ref=metabolism_pars.metabolic_heat_flow,
+    minimum_heat_flow=metabolism_pars.metabolic_heat_flow,
     insulation=InsulationLimits(;
         dorsal=SteppedParameter(;
             current=insulation_pars.dorsal.depth,
@@ -66,7 +66,7 @@ thermoregulation_limits = ThermoregulationLimits(;
         ),
     ),
     aspect_ratio_factor=SteppedParameter(;
-        current=shape_pars.b,
+        current=shape_pars.axis_ratio_b,
         max=5.0,
         step=0.1,
     ),
@@ -114,12 +114,12 @@ environment = (; environment_pars, environment_vars)
 # initial conditions
 skin_temperature = metabolism_pars.core_temperature - 3.0u"K"
 insulation_temperature = environment_vars.air_temperature
-generated_heat_flow = 0.0u"W"
+metabolic_heat_flow = 0.0u"W"
 
 endotherm_out = thermoregulate(
     organism,
     environment,
-    generated_heat_flow,
+    metabolic_heat_flow,
     skin_temperature,
     insulation_temperature,
 )

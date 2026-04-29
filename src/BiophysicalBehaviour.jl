@@ -52,14 +52,14 @@ export AbstractControlStrategy,
     RuleBasedSequentialControl,
     IPOPTControl
 
+# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy)
+export NLPStrategy, WeightedMeanNLP, MultiSidedNLP
+
 # Thermoregulation modes
 export AbstractThermoregulationMode,
     CoreFirst,
     CoreAndPantingFirst,
     CorePantingSweatingFirst
-
-# Thermoregulation output type
-export ThermoregulationOutput
 
 # Traits structs
 export BehavioralTraits,
@@ -104,7 +104,7 @@ export is_active,
     orient_perpendicular,
     orient_parallel,
     press_to_ground,
-    increment_T_target
+    increment_target_temperature
 
 # Example constructors – endotherm
 export example_environment_vars,
@@ -140,7 +140,6 @@ export example_ectotherm_behavioral_limits,
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
-include("endotherm/thermoregulation/heatexchange.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
 include("endotherm/thermoregulation/ipopt.jl")

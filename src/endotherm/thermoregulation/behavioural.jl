@@ -26,10 +26,10 @@ positional options (shade, climbing, retreating underground, posture, absorptivi
 
 Operative temperature `Te` (= `solve_body_temperature`: the equilibrium body
 temperature of a passive body in the current environment) is compared to
-`behavioral_limits.T_active_min/max`:
+`behavioral_limits.active_temperature_min/max`:
 
-- `Te > T_active_max` → environment too hot in the open → seek cool microhabitat
-- `Te < T_active_min` → environment too cold → seek warm microhabitat
+- `Te > active_temperature_max` → environment too hot in the open → seek cool microhabitat
+- `Te < active_temperature_min` → environment too cold → seek warm microhabitat
 
 ## Priority sequences
 
@@ -38,7 +38,7 @@ temperature of a passive body in the current environment) is compared to
 
 *Too cold*:
 `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-`retreat_underground` (only if `Te < T_critical_min`)
+`retreat_underground` (only if `Te < critical_temperature_min`)
 
 ## After the behavioural loop
 
@@ -117,7 +117,7 @@ function thermoregulate(
     end
 
     # -------------------------------------------------------------------------
-    # 3b. Active but was underground last step → check T_emerge_min condition
+    # 3b. Active but was underground last step → check emerge_temperature_min condition
     # -------------------------------------------------------------------------
     if prev_step_depth > behavioral_limits.depth.reference
         underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.reference)
@@ -126,7 +126,7 @@ function thermoregulate(
             max_shade.soil_temperature[step, prev_step_depth],
             underground_shade_factor,
         )
-        if soil_temperature_prev < behavioral_limits.T_emerge_min
+        if soil_temperature_prev < behavioral_limits.emerge_temperature_min
             behavioral_limits = @set behavioral_limits.depth.current = prev_step_depth
             env = interpolate_environment(available_environments, step, behavioral_limits, environmental_params)
             return _build_endotherm_behavioral_output(
@@ -144,7 +144,7 @@ function thermoregulate(
     while iteration < max_iterations
         iteration += 1
 
-        if Te > behavioral_limits.T_active_max * (1 - tolerance)
+        if Te > behavioral_limits.active_temperature_max * (1 - tolerance)
             # Too hot: seek cool microhabitat before panting (water-loss avoidance)
             # lighten → parallel → shade → climb → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -172,7 +172,7 @@ function thermoregulate(
                 break
             end
 
-        elseif Te < behavioral_limits.T_active_min * (1 + tolerance)
+        elseif Te < behavioral_limits.active_temperature_min * (1 + tolerance)
             # Too cold: seek warm microhabitat
             # darken → perpendicular → press to ground → avoid shade → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -188,7 +188,7 @@ function thermoregulate(
             elseif behavioral_limits.shade.current > behavioral_limits.shade.reference
                 behavioral_limits = avoid_shade(behavioral_limits)
 
-            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.T_critical_min
+            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.critical_temperature_min
                 underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.current)
                 behavioral_limits = select_depth(behavioral_limits, min_shade, max_shade, step,
                                                  underground_shade_factor)
@@ -219,7 +219,7 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
 
     init = initial_physiological_state(organism, env_vars)
     endotherm_out = thermoregulate(organism, e,
-                                   init.generated_heat_flow,
+                                   init.metabolic_heat_flow,
                                    init.skin_temperature,
                                    init.insulation_temperature)
 

@@ -58,7 +58,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 
 # Fields
 - `control::C`: Control strategy (RuleBasedSequentialControl, IPOPTControl, etc.)
-- `Q_minimum_ref::Q`: Reference minimum metabolic rate
+- `minimum_heat_flow::Q`: Reference minimum metabolic rate
 - `insulation::InsulationLimits`: Piloerection limits (dorsal/ventral)
 - `aspect_ratio_factor::SteppedParameter`: Body shape adjustment limits (uncurling)
 - `flesh_conductivity::SteppedParameter`: Tissue conductivity limits (vasodilation)
@@ -67,8 +67,8 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
 - `core_temperature_penalty::Float64`: IPOPT objective penalty for core temperature deviation from setpoint. Default 1.0.
 - `metabolic_heat_penalty::Float64`: Regularisation weight on metabolic heat generation. A small value
-  (default 0.1) prevents high-panting/high-generated_heat_flow degeneracy in cold conditions. In hot
-  conditions the Q10 inequality constraint overrides this and forces generated_heat_flow up with
+  (default 0.1) prevents high-panting/high-metabolic_heat_flow degeneracy in cold conditions. In hot
+  conditions the Q10 inequality constraint overrides this and forces metabolic_heat_flow up with
   core_temperature, so this value does not impede thermogenesis.
 - `panting_penalty::Float64`: IPOPT objective penalty for panting (normalised to [0,1] range).
   Relative to `skin_wetness_penalty` this controls which activates first. Default 1.0.
@@ -85,7 +85,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
-    Q_minimum_ref::Q
+    minimum_heat_flow::Q
     insulation::I
     aspect_ratio_factor::Sh
     flesh_conductivity::K
