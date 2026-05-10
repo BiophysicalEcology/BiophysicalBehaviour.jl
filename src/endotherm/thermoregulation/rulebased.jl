@@ -226,7 +226,7 @@ function thermoregulate(
     endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
     skin_temperature = endotherm_out.thermoregulation.skin_temperature
     insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-    metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+    metabolic_heat_flow = endotherm_out.energy_flows.generated_heat_flow
 
     minimum_heat_flow = limits.minimum_heat_flow
 
@@ -288,7 +288,7 @@ function thermoregulate(
         endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
         skin_temperature = endotherm_out.thermoregulation.skin_temperature
         insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-        metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+        metabolic_heat_flow = endotherm_out.energy_flows.generated_heat_flow
     end
 
     return endotherm_out

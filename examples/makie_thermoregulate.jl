@@ -1,0 +1,270 @@
+using BiophysicalBehaviour
+using HeatExchange
+using BiophysicalGeometry
+using FluidProperties
+using ConstructionBase
+using ModelParameters
+using Unitful, UnitfulMoles
+using GLMakie
+
+# Interactive parameters for environment and organism
+# These will generate sliders via MakieModel
+interactive_pars = (;
+    # Environment
+    air_temperature = Param(20.0; bounds=(0.0, 50.0), label="Air Temp (°C)"),
+    relative_humidity = Param(0.3; bounds=(0.0, 1.0), label="Rel. Humidity"),
+    wind_speed = Param(0.1; bounds=(0.01, 5.0), label="Wind (m/s)"),
+    # Organism
+    mass = Param(1.0; bounds=(0.01, 100.0), label="Mass (kg)"),
+    core_temperature = Param(37.0; bounds=(35.0, 42.0), label="Core Temp (°C)"),
+    panting_rate_max = Param(10.0; bounds=(1.0, 20.0), label="Max Pant Rate"),
+    skin_wetness_max = Param(0.5; bounds=(0.01, 1.0), label="Max Skin Wet"),
+)
+
+"""
+Run thermoregulation simulation across a temperature range with given parameters.
+Returns arrays of results for plotting.
+"""
+function run_thermoregulation_sweep(pars; temp_range=-10.0:1.0:50.0)
+    # Convert parameters
+    air_temp_offset = pars.air_temperature  # Used as a base offset
+    base_air_temp = u"K"((air_temp_offset)u"°C")
+    mass = pars.mass * u"kg"
+    core_temp = u"K"((pars.core_temperature)u"°C")
+
+    # Set up organism parameters
+    shape_pars = example_ellipsoid_shape_pars(; mass, shape_coefficient_b=1.1, shape_coefficient_c=1.1)
+    insulation_pars = example_insulation_pars()
+    radiation_pars = example_radiation_pars()
+    metabolism_pars = example_metabolism_pars(;
+        core_temperature=core_temp,
+        metabolic_heat_flow=metabolic_rate(Kleiber(), mass)
+    )
+    respiration_pars = example_respiration_pars()
+    evaporation_pars = example_evaporation_pars()
+    conduction_pars_internal = example_conduction_pars_internal()
+
+    # Geometry
+    fat = Fat(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+    mean_insulation_depth = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) +
+        insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+    mean_fibre_diameter = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) +
+        insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+    mean_fibre_density = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) +
+        insulation_pars.ventral.density * radiation_pars.ventral_fraction
+    fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
+    geometry = Body(shape_pars, CompositeInsulation(fur, fat))
+
+    # Physiology traits
+    physiology_traits = HeatExchangeTraits(
+        shape_pars,
+        insulation_pars,
+        example_conduction_pars_external(),
+        conduction_pars_internal,
+        radiation_pars,
+        ConvectionParameters(),
+        evaporation_pars,
+        example_hydraulic_pars(),
+        respiration_pars,
+        metabolism_pars,
+        example_metabolic_rate_options(),
+    )
+
+    # Thermoregulation limits
+    thermoregulation_limits = ThermoregulationLimits(;
+        control=RuleBasedSequentialControl(;
+            mode=CorePantingSweatingFirst(),
+            tolerance=0.005,
+            max_iterations=200,
+        ),
+        minimum_metabolic_heat_flow_ref=metabolism_pars.metabolic_heat_flow,
+        insulation=InsulationLimits(;
+            dorsal=SteppedParameter(;
+                current=insulation_pars.dorsal.depth,
+                reference=insulation_pars.dorsal.depth,
+                max=insulation_pars.dorsal.depth,
+                step=0.0,
+            ),
+            ventral=SteppedParameter(;
+                current=insulation_pars.ventral.depth,
+                reference=insulation_pars.ventral.depth,
+                max=insulation_pars.ventral.depth,
+                step=0.0,
+            ),
+        ),
+        shape_coefficient_b=SteppedParameter(;
+            current=shape_pars.b,
+            max=5.0,
+            step=0.1,
+        ),
+        flesh_conductivity=SteppedParameter(;
+            current=conduction_pars_internal.flesh_conductivity,
+            max=2.8u"W/m/K",
+            step=0.1u"W/m/K",
+        ),
+        core_temperature=SteppedParameter(;
+            current=core_temp,
+            reference=core_temp,
+            max=core_temp + 5.0u"K",
+            step=0.1u"K",
+        ),
+        panting=PantingLimits(;
+            panting_rate=SteppedParameter(;
+                current=1.0,
+                max=pars.panting_rate_max,
+                step=0.01,
+            ),
+            cost=0.0u"W",
+            multiplier=1.0,
+            core_temperature_ref=core_temp,
+        ),
+        skin_wetness=SteppedParameter(;
+            current=evaporation_pars.skin_wetness,
+            max=pars.skin_wetness_max,
+            step=0.01,
+        ),
+    )
+
+    # Build organism
+    behavioral_traits = BehavioralTraits(; thermoregulation=thermoregulation_limits, activity=Diurnal())
+    organism_traits = OrganismTraits(Endotherm(), physiology_traits, behavioral_traits)
+    organism = Organism(geometry, organism_traits)
+
+    # Environment parameters
+    environment_pars = example_environment_pars()
+
+    # Results storage
+    n = length(temp_range)
+    air_temps = collect(temp_range)
+    generated_flux = zeros(n)
+    core_temps = zeros(n)
+    skin_temps = zeros(n)
+    panting_rates = zeros(n)
+    skin_wetness = zeros(n)
+    water_loss_total = zeros(n)
+    water_loss_resp = zeros(n)
+    water_loss_cut = zeros(n)
+
+    for (i, ta) in enumerate(temp_range)
+        air_temp = u"K"((ta)u"°C")
+
+        environment_vars = example_environment_vars(;
+            air_temperature=air_temp,
+            relative_humidity=pars.relative_humidity,
+            wind_speed=pars.wind_speed * u"m/s",
+        )
+        environment = (; environment_pars, environment_vars)
+
+        # Initial conditions
+        skin_temperature = core_temp - 3.0u"K"
+        insulation_temperature = air_temp
+        gen_flux = 0.0u"W"
+
+        try
+            endotherm_out = thermoregulate(
+                organism,
+                environment,
+                gen_flux,
+                skin_temperature,
+                insulation_temperature,
+            )
+
+            tr = endotherm_out.thermoregulation
+            ef = endotherm_out.energy_flows
+            mf = endotherm_out.mass_flows
+
+            generated_flux[i] = ustrip(u"W", ef.generated_heat_flow)
+            core_temps[i] = ustrip(u"°C", tr.core_temperature)
+            skin_temps[i] = ustrip(u"°C", (tr.skin_temperature_dorsal + tr.skin_temperature_ventral) / 2)
+            panting_rates[i] = tr.pant
+            skin_wetness[i] = tr.skin_wetness
+            water_loss_total[i] = ustrip(u"g/hr", mf.m_evap)
+            water_loss_resp[i] = ustrip(u"g/hr", mf.respiration_mass)
+            water_loss_cut[i] = ustrip(u"g/hr", mf.m_sweat)
+        catch e
+            # If thermoregulation fails, use NaN
+            generated_flux[i] = NaN
+            core_temps[i] = NaN
+            skin_temps[i] = NaN
+            panting_rates[i] = NaN
+            skin_wetness[i] = NaN
+            water_loss_total[i] = NaN
+            water_loss_resp[i] = NaN
+            water_loss_cut[i] = NaN
+        end
+    end
+
+    return (;
+        air_temps,
+        generated_flux,
+        core_temps,
+        skin_temps,
+        panting_rates,
+        skin_wetness,
+        water_loss_total,
+        water_loss_resp,
+        water_loss_cut,
+    )
+end
+
+# Create the MakieModel interface
+mm = MakieModel(interactive_pars; ncolumns=2) do layout, pars_obs
+    # Run initial simulation
+    results = lift(pars_obs) do pars
+        run_thermoregulation_sweep(pars)
+    end
+
+    # Extract observables for each output
+    air_temps = lift(r -> r.air_temps, results)
+    generated_flux = lift(r -> r.generated_flux, results)
+    core_temps = lift(r -> r.core_temps, results)
+    skin_temps = lift(r -> r.skin_temps, results)
+    panting_rates = lift(r -> r.panting_rates, results)
+    skin_wetness = lift(r -> r.skin_wetness, results)
+    water_loss_total = lift(r -> r.water_loss_total, results)
+    water_loss_resp = lift(r -> r.water_loss_resp, results)
+    water_loss_cut = lift(r -> r.water_loss_cut, results)
+
+    # Create plots in a 2x2 grid
+    # Plot 1: Metabolic rate
+    ax1 = Axis(layout[1, 1];
+        xlabel="Air Temperature (°C)",
+        ylabel="Metabolic Rate (W)",
+        title="Metabolic Rate"
+    )
+    lines!(ax1, air_temps, generated_flux; linewidth=2, color=:blue)
+
+    # Plot 2: Body temperatures
+    ax2 = Axis(layout[1, 2];
+        xlabel="Air Temperature (°C)",
+        ylabel="Temperature (°C)",
+        title="Body Temperatures"
+    )
+    lines!(ax2, air_temps, core_temps; linewidth=2, color=:red, label="Core")
+    lines!(ax2, air_temps, skin_temps; linewidth=2, color=:orange, label="Skin")
+    lines!(ax2, air_temps, air_temps; linewidth=1, color=:gray, linestyle=:dash, label="Air")
+    axislegend(ax2; position=:lt)
+
+    # Plot 3: Water loss
+    ax3 = Axis(layout[2, 1];
+        xlabel="Air Temperature (°C)",
+        ylabel="Water Loss (g/hr)",
+        title="Evaporative Water Loss"
+    )
+    lines!(ax3, air_temps, water_loss_total; linewidth=2, color=:blue, label="Total")
+    lines!(ax3, air_temps, water_loss_resp; linewidth=2, color=:cyan, label="Respiratory")
+    lines!(ax3, air_temps, water_loss_cut; linewidth=2, color=:green, label="Cutaneous")
+    axislegend(ax3; position=:lt)
+
+    # Plot 4: Thermoregulation effectors
+    ax4 = Axis(layout[2, 2];
+        xlabel="Air Temperature (°C)",
+        ylabel="Value",
+        title="Thermoregulation Effectors"
+    )
+    lines!(ax4, air_temps, panting_rates; linewidth=2, color=:purple, label="Pant Rate")
+    lines!(ax4, air_temps, skin_wetness; linewidth=2, color=:teal, label="Skin Wetness")
+    axislegend(ax4; position=:lt)
+end
+
+display(mm)

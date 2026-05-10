@@ -1,0 +1,18 @@
+[deps]
+BiophysicalBehaviour = "17159459-d6a3-4a3d-a4c5-9872d9e70704"
+BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FluidProperties = "d16f1b92-71d3-42f3-aafa-43e5bb0efda8"
+HeatExchange = "720bd838-cdd6-4aad-926b-452b962dce21"
+ModelParameters = "4744a3fa-6c31-4707-899e-a3298e4618ad"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
+
+[sources]
+BiophysicalBehaviour = {path = "/home/raf/.julia/dev/BiophysicalBehaviour"}
+BiophysicalGeometry = {path = "/home/raf/.julia/dev/BiophysicalGeometry"}
+FluidProperties = {path = "/home/raf/.julia/dev/FluidProperties"}
+HeatExchange = {path = "/home/raf/.julia/dev/HeatExchange"}

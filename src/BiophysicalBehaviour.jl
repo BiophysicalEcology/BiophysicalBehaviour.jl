@@ -11,7 +11,7 @@ using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
 
-using FiniteDiff
+using Enzyme
 using Optimization
 using OptimizationIpopt
 import SciMLBase
