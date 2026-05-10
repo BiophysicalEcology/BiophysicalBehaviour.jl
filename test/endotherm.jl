@@ -330,7 +330,7 @@ for shape_number in 1:4
         @testset "endotherm energy flux comparisons" begin
             @test enbal_output_vec.QSOL ≈ ustrip(u"W", energy_fluxes.solar_flow) rtol = rtol
             @test enbal_output_vec.QIRIN ≈ ustrip(u"W", energy_fluxes.longwave_flow_in) rtol = rtol
-            @test enbal_output_vec.QGEN ≈ ustrip(u"W", energy_fluxes.generated_heat_flow) rtol = rtol
+            @test enbal_output_vec.QGEN ≈ ustrip(u"W", energy_fluxes.metabolic_heat_flow) rtol = rtol
             @test QEVAP ≈ ustrip(u"W", energy_fluxes.evaporation_heat_flow) rtol = rtol
             @test enbal_output_vec.QIROUT ≈ ustrip(u"W", energy_fluxes.longwave_flow_out) rtol = rtol
             @test enbal_output_vec.QCONV ≈ ustrip(u"W", energy_fluxes.convection_heat_flow) rtol = rtol

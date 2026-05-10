@@ -495,7 +495,8 @@ function thermoregulate(
     evap_pars  = evaporation_pars(organism)
 
     nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
-                                       skin_temperature_init, insulation_temperature_init)
+                                       skin_temperature_init, insulation_temperature_init;
+                                       smoothing = control.smoothing)
 
     _run_ipopt(nlp_packed, organism, environment, limits, metab_pars, int_cond, evap_pars,
                metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;

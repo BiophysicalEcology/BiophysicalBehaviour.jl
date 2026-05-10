@@ -248,20 +248,20 @@ results = NamedTuple[]
         relative_humidity = relative_humidity,
         q10 = q10,
 
-        metabolic_heat_flow = ef.generated_heat_flow,
+        metabolic_heat_flow = ef.metabolic_heat_flow,
         core_temperature = tr.core_temperature,
         skin_temperature_dorsal = tr.dorsal.skin_temperature,
         skin_temperature_ventral = tr.ventral.skin_temperature,
         insulation_temperature_dorsal = tr.dorsal.insulation_temperature,
         insulation_temperature_ventral = tr.ventral.insulation_temperature,
 
-        insulation_depth_dorsal = tr.insulation_depth_dorsal,
-        insulation_depth_ventral = tr.insulation_depth_ventral,
-        insulation_conductivity_dorsal = tr.insulation_conductivity_dorsal,
-        insulation_conductivity_ventral = tr.insulation_conductivity_ventral,
+        insulation_depth_dorsal = tr.dorsal.insulation_depth,
+        insulation_depth_ventral = tr.ventral.insulation_depth,
+        insulation_conductivity_dorsal = tr.dorsal.insulation_conductivity,
+        insulation_conductivity_ventral = tr.ventral.insulation_conductivity,
         insulation_conductivity_effective = tr.insulation_conductivity_effective,
 
-        axis_ratio_b = tr.shape_b,
+        axis_ratio_b = tr.axis_ratio_b,
         flesh_conductivity = tr.flesh_conductivity,
 
         pant = tr.pant,
@@ -269,7 +269,7 @@ results = NamedTuple[]
 
         air_flow = mf.air_flow,
         evaporation_mass = mf.m_evap,
-        respiration_mass = mf.respiration_mass,
+        respiration_mass = mf.respiration_mass_flow,
         sweat_mass = mf.m_sweat,
     ))
 end
@@ -547,7 +547,7 @@ insulation_temperature_ipopt    = air_temperatures[1]
         metabolic_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt,
     )
 
-    global metabolic_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    global metabolic_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
     global skin_temperature_ipopt       = out.thermoregulation.skin_temperature
     global insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
 
@@ -557,21 +557,21 @@ insulation_temperature_ipopt    = air_temperatures[1]
 
     push!(ipopt_results, (
         air_temperature               = air_temperature,
-        metabolic_heat_flow           = ef.generated_heat_flow,
+        metabolic_heat_flow           = ef.metabolic_heat_flow,
         core_temperature              = tr.core_temperature,
         skin_temperature_dorsal       = tr.dorsal.skin_temperature,
         skin_temperature_ventral      = tr.ventral.skin_temperature,
         insulation_temperature_dorsal           = tr.dorsal.insulation_temperature,
         insulation_temperature_ventral          = tr.ventral.insulation_temperature,
-        insulation_depth_dorsal       = tr.insulation_depth_dorsal,
-        axis_ratio_b      = tr.shape_b,
+        insulation_depth_dorsal       = tr.dorsal.insulation_depth,
+        axis_ratio_b      = tr.axis_ratio_b,
         flesh_conductivity            = tr.flesh_conductivity,
         pant                          = tr.pant,
         skin_wetness                  = tr.skin_wetness,
         balance                       = ef.balance,
         air_flow                      = mf.air_flow,
         evaporation_mass              = mf.m_evap,
-        respiration_mass              = mf.respiration_mass,
+        respiration_mass              = mf.respiration_mass_flow,
         sweat_mass                    = mf.m_sweat,
     ))
 end

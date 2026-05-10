@@ -173,7 +173,7 @@ function run_thermoregulation_sweep(pars; temp_range=-10.0:1.0:50.0)
             ef = endotherm_out.energy_flows
             mf = endotherm_out.mass_flows
 
-            generated_flux[i] = ustrip(u"W", ef.generated_heat_flow)
+            generated_flux[i] = ustrip(u"W", ef.metabolic_heat_flow)
             core_temps[i] = ustrip(u"°C", tr.core_temperature)
             skin_temps[i] = ustrip(u"°C", (tr.skin_temperature_dorsal + tr.skin_temperature_ventral) / 2)
             panting_rates[i] = tr.pant

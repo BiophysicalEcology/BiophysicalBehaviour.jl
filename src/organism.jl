@@ -89,11 +89,15 @@ pant, skin_wetness) as continuous decision variables.
 - `nlp_strategy`: NLP formulation — `WeightedMeanNLP()` (default, dorsal/ventral
   weighted-mean single body, 9 variables, 4 constraints) or `MultiSidedNLP()`
   (explicit per-side heat balance, 11 variables, 7 constraints).
+- `smoothing`: smoothing policy passed to the heat-balance physics so AD sees
+  differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()` to
+  match the rule-based path's exact `abs`/`max`/`step` behaviour.
 
 Requires `Optimization.jl` and `OptimizationIpopt.jl`.
 """
-Base.@kwdef struct IPOPTControl <: AbstractControlStrategy
+Base.@kwdef struct IPOPTControl{S<:HeatExchange.SmoothingStrategy} <: AbstractControlStrategy
     nlp_strategy::HeatExchange.NLPStrategy = HeatExchange.WeightedMeanNLP()
+    smoothing::S = HeatExchange.SmoothBound(1.0e-5)
 end
 
 # =============================================================================

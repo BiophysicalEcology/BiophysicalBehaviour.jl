@@ -234,7 +234,7 @@ for (air_temperature, ...) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
 
-    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
     skin_temperature_ipopt       = out.thermoregulation.skin_temperature
     insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
 end
@@ -311,7 +311,7 @@ insulation_temperature_ipopt = air_temperatures[1]
 for (air_temperature, rh, q10) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
-    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
     skin_temperature_ipopt       = out.thermoregulation.skin_temperature
     insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
     push!(ipopt_results, ...)
