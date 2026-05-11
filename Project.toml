@@ -6,7 +6,7 @@ authors = ["Michael Kearney and Rafael Schouten"]
 [deps]
 BiophysicalGeometry = "06c61620-4f66-4020-a018-07befe374221"
 ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-FiniteDiff = "6a86dc24-6348-571c-b903-95158fe2bd41"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 Flatten = "4c728ea3-d9ee-5c9a-9642-b6f7d7dc04fa"
 FluidProperties = "d16f1b92-71d3-42f3-aafa-43e5bb0efda8"
 HeatExchange = "720bd838-cdd6-4aad-926b-452b962dce21"
@@ -21,7 +21,7 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 UnitfulMoles = "999f2bd7-36bf-5ba7-9bc1-c9473aa75374"
 
 [sources]
-BiophysicalGeometry = {rev = "characteristic-dimension-options", url = "https://github.com/BiophysicalEcology/BiophysicalGeometry.jl"}
+BiophysicalGeometry = {rev = "main", url = "https://github.com/BiophysicalEcology/BiophysicalGeometry.jl"}
 FluidProperties = {rev = "main", url = "https://github.com/BiophysicalEcology/FluidProperties.jl"}
 HeatExchange = {rev = "main", url = "https://github.com/BiophysicalEcology/HeatExchange.jl"}
 
@@ -31,7 +31,7 @@ BiophysicalGeometry = "0.1"
 CSV = "0.10"
 ConstructionBase = "1.6"
 DataFrames = "1"
-FiniteDiff = "2.30.0"
+Enzyme = "0.13.144"
 Flatten = "0.4.3"
 FluidProperties = "0.1"
 HeatExchange = "0.1"

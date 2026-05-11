@@ -208,11 +208,9 @@ performance. The exact Hessian requires O(n²) = 81 finite-difference evaluation
 iteration; L-BFGS constructs a low-rank approximation from gradient differences instead,
 reducing the cost substantially.
 
-**Why finite differences?** `Unitful.jl` units propagate through `HeatExchange.heat_balance`,
-making the residuals and objective incompatible with Julia automatic differentiation packages
-(Zygote, ForwardDiff). All gradients, Jacobians, and Hessians are computed via `FiniteDiff.jl`.
-The `hess` and `cons_h` callbacks are registered (required by `IpoptOptimizer`) but never
-called at runtime when L-BFGS is active.
+**Differentiation strategy.** Gradients and constraint Jacobians are computed via
+[`Enzyme.jl`](https://github.com/EnzymeAD/Enzyme.jl): reverse-mode for the scalar objective
+gradient and forward-mode for the constraint Jacobian.
 
 ---
 
@@ -234,7 +232,7 @@ for (air_temperature, ...) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
 
-    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
     skin_temperature_ipopt       = out.thermoregulation.skin_temperature
     insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
 end
@@ -311,7 +309,7 @@ insulation_temperature_ipopt = air_temperatures[1]
 for (air_temperature, rh, q10) in zip(air_temperatures, ...)
     out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
                          generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
-    generated_heat_flow_ipopt    = out.energy_flows.generated_heat_flow
+    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
     skin_temperature_ipopt       = out.thermoregulation.skin_temperature
     insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
     push!(ipopt_results, ...)
@@ -331,6 +329,6 @@ Typical tuning guidance for penalty weights:
 
 ## Limitations and Future Work
 
-- **Automatic differentiation:** `Unitful.jl` units propagate through `HeatExchange.heat_balance`, making it incompatible with `ForwardDiff` or `Zygote`. All derivatives are computed by finite differences via `FiniteDiff.jl`. Stripping units from the inner-loop heat balance computation would allow exact derivatives and potentially faster convergence.
+- **Automatic differentiation:** derivatives are computed via `Enzyme.jl` (reverse-mode for the objective gradient, forward-mode for the constraint Jacobian). The Hessian and constraint Hessian callbacks are stubs because IPOPT runs with the L-BFGS Hessian approximation; supplying exact second-order information may improve convergence further.
 - **Dorsal/ventral symmetry:** the mean-weighted body approximation merges dorsal and ventral sides. The full `solve_metabolic_rate` computes them separately. In strongly asymmetric conditions (e.g. high solar loading on dorsal surface) this may introduce small errors.
 - **Global optimality:** IPOPT finds a local optimum of the NLP. For well-posed problems the objective is approximately convex and the local optimum is unique, but unusual initial conditions or extreme parameter combinations may yield suboptimal solutions.

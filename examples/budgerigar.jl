@@ -516,6 +516,7 @@ skin_temperature_ipopt          = metabolism_pars_init.core_temperature - 3.0u"K
 insulation_temperature_ipopt    = air_temperatures[1]
 
 @time for (air_temperature, relative_humidity, q10) in zip(air_temperatures, experimental_relative_humdities, q10s)
+    global generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt
 
     environment_vars_loop = example_environment_vars(;
         air_temperature,
@@ -563,7 +564,7 @@ insulation_temperature_ipopt    = air_temperatures[1]
         insulation_temperature_dorsal           = tr.dorsal.insulation_temperature,
         insulation_temperature_ventral          = tr.ventral.insulation_temperature,
         insulation_depth_dorsal       = tr.dorsal.insulation_depth,
-        axis_ratio_b      = tr.aspect_ratio,
+        axis_ratio_b      = tr.axis_ratio_b,
         flesh_conductivity            = tr.flesh_conductivity,
         pant                          = tr.pant,
         skin_wetness                  = tr.skin_wetness,
@@ -701,6 +702,9 @@ plot(pc5, pc6, pc7, layout = (1, 3), size = (1200, 350))
 #      layout = (7, 1),
 #      size = (700, 1600))
 
-plot(pc1, pc2, pc3, pc4, pc5, pc6, pc7,
+final_plot = plot(pc1, pc2, pc3, pc4, pc5, pc6, pc7,
     layout = (4, 2),
     size = (700, 1000))
+display(final_plot)
+println("\nPlot window open. Press Enter to exit.")
+readline()

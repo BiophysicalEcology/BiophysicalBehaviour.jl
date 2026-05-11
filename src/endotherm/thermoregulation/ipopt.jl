@@ -145,22 +145,48 @@ function _run_ipopt(
         setpoint_temperature = setpoint_temperature_K,
     )
 
-    obj_fn(x, _)    = _objective_value_weighted(x, opt_pars)
+    obj_fn(x, _)     = _objective_value_weighted(x, opt_pars)
     res_fn!(r, x, _) = _heat_balance_residuals_weighted!(r, x, nlp_pars)
-    grad_fn!(g, x, _) = FiniteDiff.finite_difference_gradient!(g, e -> _objective_value_weighted(e, opt_pars), x)
-    hess_fn!(H, x, _) = (H .= FiniteDiff.finite_difference_hessian(e -> _objective_value_weighted(e, opt_pars), x))
-    cons_j_fn!(J, x, _) = (J .= FiniteDiff.finite_difference_jacobian(
-        e -> (r = zeros(eltype(e), 4); _heat_balance_residuals_weighted!(r, e, nlp_pars); r),
-        x,
-    ))
-    function cons_h_fn!(res, x, _)
-        for i in eachindex(res)
-            res[i] .= FiniteDiff.finite_difference_hessian(
-                e -> (r = zeros(4); _heat_balance_residuals_weighted!(r, e, nlp_pars); r[i]),
-                x,
-            )
-        end
+
+    # Enzyme reverse-mode AD. Bypass DifferentiationInterface — the params
+    # NamedTuples are already captured in the closures, and DI's vector packing
+    # of `p` doesn't compose with Unitful values.
+    # hess! and cons_h! are registered (required by IpoptOptimizer) but not
+    # called at runtime when hessian_approximation="limited-memory" is set.
+    function grad_fn!(g, x, _)
+        fill!(g, 0)
+        Enzyme.autodiff(Enzyme.Reverse, _objective_value_weighted,
+                        Enzyme.Active,
+                        Enzyme.Duplicated(x, g),
+                        Enzyme.Const(opt_pars))
+        return nothing
     end
+    function cons_j_fn!(J, x, _)
+        # Forward mode: 9 passes (one per input) instead of reverse's 4.
+        # Reverse mode currently produces silent NaN for cols 2 (skin_T)
+        # and 3 (ins_T) in this call chain — even though every called
+        # function is type-stable per JET. Forward mode gives correct
+        # finite values matching finite differences. The reverse-mode
+        # NaN is an Enzyme limitation unrelated to type stability; revisit
+        # when the Enzyme issue is resolved upstream.
+        m = size(J, 1)
+        n = length(x)
+        r  = zeros(m)
+        dr = zeros(m)
+        dx = zeros(n)
+        for j in 1:n
+            fill!(r, 0); fill!(dr, 0); fill!(dx, 0); dx[j] = 1.0
+            Enzyme.autodiff(Enzyme.Forward, _heat_balance_residuals_weighted!,
+                            Enzyme.Const,
+                            Enzyme.Duplicated(r, dr),
+                            Enzyme.Duplicated(x, dx),
+                            Enzyme.Const(nlp_pars))
+            @views J[:, j] .= dr
+        end
+        return nothing
+    end
+    hess_fn!(H, x, _)        = (fill!(H, 0); nothing)
+    cons_h_fn!(res, x, _)    = (foreach(r -> fill!(r, 0), res); nothing)
 
     optimization_func = OptimizationFunction(obj_fn, SciMLBase.NoAD();
         cons     = res_fn!,
@@ -343,20 +369,34 @@ function _run_ipopt(
 
     obj_fn(x, _)     = _objective_value_multisided(x, opt_pars)
     res_fn!(r, x, _) = _heat_balance_residuals_multisided!(r, x, nlp_pars)
-    grad_fn!(g, x, _) = FiniteDiff.finite_difference_gradient!(g, e -> _objective_value_multisided(e, opt_pars), x)
-    hess_fn!(H, x, _) = (H .= FiniteDiff.finite_difference_hessian(e -> _objective_value_multisided(e, opt_pars), x))
-    cons_j_fn!(J, x, _) = (J .= FiniteDiff.finite_difference_jacobian(
-        e -> (r = zeros(eltype(e), 6); _heat_balance_residuals_multisided!(r, e, nlp_pars); r),
-        x,
-    ))
-    function cons_h_fn!(res, x, _)
-        for i in eachindex(res)
-            res[i] .= FiniteDiff.finite_difference_hessian(
-                e -> (r = zeros(6); _heat_balance_residuals_multisided!(r, e, nlp_pars); r[i]),
-                x,
-            )
-        end
+
+    function grad_fn!(g, x, _)
+        fill!(g, 0)
+        Enzyme.autodiff(Enzyme.Reverse, _objective_value_multisided,
+                        Enzyme.Active,
+                        Enzyme.Duplicated(x, g),
+                        Enzyme.Const(opt_pars))
+        return nothing
     end
+    function cons_j_fn!(J, x, _)
+        m = size(J, 1)
+        n = length(x)
+        r  = zeros(m)
+        dr = zeros(m)
+        dx = zeros(n)
+        for j in 1:n
+            fill!(r, 0); fill!(dr, 0); fill!(dx, 0); dx[j] = 1.0
+            Enzyme.autodiff(Enzyme.Forward, _heat_balance_residuals_multisided!,
+                            Enzyme.Const,
+                            Enzyme.Duplicated(r, dr),
+                            Enzyme.Duplicated(x, dx),
+                            Enzyme.Const(nlp_pars))
+            @views J[:, j] .= dr
+        end
+        return nothing
+    end
+    hess_fn!(H, x, _)     = (fill!(H, 0); nothing)
+    cons_h_fn!(res, x, _) = (foreach(r -> fill!(r, 0), res); nothing)
 
     optimization_func = OptimizationFunction(obj_fn, SciMLBase.NoAD();
         cons     = res_fn!,
@@ -455,7 +495,8 @@ function thermoregulate(
     evap_pars  = evaporation_pars(organism)
 
     nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
-                                       skin_temperature_init, insulation_temperature_init)
+                                       skin_temperature_init, insulation_temperature_init;
+                                       smoothing = control.smoothing)
 
     _run_ipopt(nlp_packed, organism, environment, limits, metab_pars, int_cond, evap_pars,
                metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
