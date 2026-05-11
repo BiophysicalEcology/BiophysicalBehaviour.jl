@@ -210,9 +210,7 @@ reducing the cost substantially.
 
 **Differentiation strategy.** Gradients and constraint Jacobians are computed via
 [`Enzyme.jl`](https://github.com/EnzymeAD/Enzyme.jl): reverse-mode for the scalar objective
-gradient and forward-mode for the constraint Jacobian. The `hess` and `cons_h` callbacks
-are registered (required by `IpoptOptimizer`) but zero out at runtime — the L-BFGS Hessian
-approximation never calls them.
+gradient and forward-mode for the constraint Jacobian.
 
 ---
 
