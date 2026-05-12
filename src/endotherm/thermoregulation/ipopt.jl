@@ -148,6 +148,13 @@ function _run_ipopt(
     obj_fn(x, _)     = _objective_value_weighted(x, opt_pars)
     res_fn!(r, x, _) = _heat_balance_residuals_weighted!(r, x, nlp_pars)
 
+    # Per-iteration Jacobian work buffers — allocated once per solve and reused
+    # across every Ipopt Jacobian evaluation. The constraint count (m=4) and
+    # variable count (n=9) are fixed by the WeightedMeanNLP formulation.
+    jac_r  = zeros(4)
+    jac_dr = zeros(4)
+    jac_dx = zeros(9)
+
     # Enzyme reverse-mode AD. Bypass DifferentiationInterface — the params
     # NamedTuples are already captured in the closures, and DI's vector packing
     # of `p` doesn't compose with Unitful values.
@@ -169,19 +176,14 @@ function _run_ipopt(
         # finite values matching finite differences. The reverse-mode
         # NaN is an Enzyme limitation unrelated to type stability; revisit
         # when the Enzyme issue is resolved upstream.
-        m = size(J, 1)
-        n = length(x)
-        r  = zeros(m)
-        dr = zeros(m)
-        dx = zeros(n)
-        for j in 1:n
-            fill!(r, 0); fill!(dr, 0); fill!(dx, 0); dx[j] = 1.0
+        for j in eachindex(jac_dx)
+            fill!(jac_r, 0); fill!(jac_dr, 0); fill!(jac_dx, 0); jac_dx[j] = 1.0
             Enzyme.autodiff(Enzyme.Forward, _heat_balance_residuals_weighted!,
                             Enzyme.Const,
-                            Enzyme.Duplicated(r, dr),
-                            Enzyme.Duplicated(x, dx),
+                            Enzyme.Duplicated(jac_r, jac_dr),
+                            Enzyme.Duplicated(x, jac_dx),
                             Enzyme.Const(nlp_pars))
-            @views J[:, j] .= dr
+            @views J[:, j] .= jac_dr
         end
         return nothing
     end
@@ -370,6 +372,11 @@ function _run_ipopt(
     obj_fn(x, _)     = _objective_value_multisided(x, opt_pars)
     res_fn!(r, x, _) = _heat_balance_residuals_multisided!(r, x, nlp_pars)
 
+    # Per-iteration Jacobian work buffers (m=6, n=11 for MultiSidedNLP).
+    jac_r  = zeros(6)
+    jac_dr = zeros(6)
+    jac_dx = zeros(11)
+
     function grad_fn!(g, x, _)
         fill!(g, 0)
         Enzyme.autodiff(Enzyme.Reverse, _objective_value_multisided,
@@ -379,19 +386,14 @@ function _run_ipopt(
         return nothing
     end
     function cons_j_fn!(J, x, _)
-        m = size(J, 1)
-        n = length(x)
-        r  = zeros(m)
-        dr = zeros(m)
-        dx = zeros(n)
-        for j in 1:n
-            fill!(r, 0); fill!(dr, 0); fill!(dx, 0); dx[j] = 1.0
+        for j in eachindex(jac_dx)
+            fill!(jac_r, 0); fill!(jac_dr, 0); fill!(jac_dx, 0); jac_dx[j] = 1.0
             Enzyme.autodiff(Enzyme.Forward, _heat_balance_residuals_multisided!,
                             Enzyme.Const,
-                            Enzyme.Duplicated(r, dr),
-                            Enzyme.Duplicated(x, dx),
+                            Enzyme.Duplicated(jac_r, jac_dr),
+                            Enzyme.Duplicated(x, jac_dx),
                             Enzyme.Const(nlp_pars))
-            @views J[:, j] .= dr
+            @views J[:, j] .= jac_dr
         end
         return nothing
     end
