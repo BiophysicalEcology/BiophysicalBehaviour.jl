@@ -1,0 +1,108 @@
+using BiophysicalBehaviour
+using HeatExchange
+using BiophysicalGeometry
+using FluidProperties
+using ConstructionBase
+using ModelParameters
+using Unitful, UnitfulMoles
+using Statistics
+
+shape_pars = example_ellipsoid_shape_pars(; mass = 33.7u"g", axis_ratio_b = 1.1, axis_ratio_c = 1.1)
+insulation_pars = example_insulation_pars(;
+    fibre_diameter_dorsal = 30.0u"μm", fibre_diameter_ventral = 30.0u"μm",
+    fibre_length_dorsal = 23.1u"mm", fibre_length_ventral = 22.7u"mm",
+    insulation_depth_dorsal = 5.9u"mm", insulation_depth_ventral = 5.7u"mm",
+    insulation_depth_compressed = 5.7u"mm",
+    fibre_density_dorsal = 5000e+04u"1/m^2", fibre_density_ventral = 5000e+04u"1/m^2",
+    insulation_reflectance_dorsal = 0.248, insulation_reflectance_ventral = 0.351,
+)
+radiation_pars = example_radiation_pars()
+metabolic_heat_flow = HeatExchange.metabolic_rate(HeatExchange.McKechnieWolf(), shape_pars.mass)
+respiration_pars = example_respiration_pars(; oxygen_extraction_efficiency = 0.25, exhaled_temperature_offset = 5.0u"K")
+evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
+conduction_pars_internal = example_conduction_pars_internal()
+fat = HeatExchange.FatLayer(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+mean_d  = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+mean_di = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+mean_de = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.density * radiation_pars.ventral_fraction
+fur = HeatExchange.FibrousLayer(mean_d, mean_di, mean_de)
+geometry = HeatExchange.Body(shape_pars, HeatExchange.CompositeInsulation(fur, fat))
+
+core_T_ref = (38.0 + 273.15)u"K"; core_T_max = (43.0 + 273.15)u"K"
+metab_pars = example_metabolism_pars(; core_temperature = core_T_ref, q10 = 1.0, metabolic_heat_flow)
+physiology_traits = HeatExchange.HeatExchangeTraits(
+    shape_pars, insulation_pars, example_conduction_pars_external(),
+    conduction_pars_internal, radiation_pars, HeatExchange.ConvectionParameters(),
+    evaporation_pars, example_hydraulic_pars(), respiration_pars, metab_pars,
+    example_metabolic_rate_options(),
+)
+thermo_limits = BiophysicalBehaviour.ThermoregulationLimits(;
+    control = BiophysicalBehaviour.RuleBasedSequentialControl(;
+        mode = BiophysicalBehaviour.CorePantingSweatingFirst(), tolerance = 0.005, max_iterations = 1000),
+    minimum_heat_flow = metabolic_heat_flow,
+    insulation = BiophysicalBehaviour.InsulationLimits(;
+        dorsal = BiophysicalBehaviour.SteppedParameter(;
+            current = insulation_pars.dorsal.length * 0.7, reference = insulation_pars.dorsal.depth,
+            max = insulation_pars.dorsal.length * 0.7, step = 0.1),
+        ventral = BiophysicalBehaviour.SteppedParameter(;
+            current = insulation_pars.ventral.length * 0.7, reference = insulation_pars.ventral.depth,
+            max = insulation_pars.ventral.length * 0.7, step = 0.1)),
+    aspect_ratio_factor = BiophysicalBehaviour.SteppedParameter(; current = 1.1, max = 5.0, step = 0.1),
+    flesh_conductivity = BiophysicalBehaviour.SteppedParameter(; current = 0.9u"W/m/K", max = 2.8u"W/m/K", step = 0.1u"W/m/K"),
+    core_temperature = BiophysicalBehaviour.SteppedParameter(; current = core_T_ref, reference = core_T_ref, max = core_T_max, step = 0.1u"K"),
+    panting = BiophysicalBehaviour.PantingLimits(;
+        pant = BiophysicalBehaviour.SteppedParameter(; current = 1.0, max = 15.0, step = 0.01),
+        cost = 0.0u"W", multiplier = 1.0, core_temperature_ref = core_T_ref),
+    skin_wetness = BiophysicalBehaviour.SteppedParameter(; current = evaporation_pars.skin_wetness, max = 0.05, step = 0.0025),
+    core_temperature_penalty = 0.1, panting_penalty = 5.0, skin_wetness_penalty = 0.1, metabolic_heat_penalty = 10.0,
+)
+organism = BiophysicalBehaviour.Organism(geometry,
+    BiophysicalBehaviour.OrganismTraits(BiophysicalBehaviour.Endotherm(), physiology_traits,
+        BiophysicalBehaviour.BehavioralTraits(; thermoregulation = thermo_limits, activity_period = BiophysicalBehaviour.Diurnal())))
+
+env_pars = example_environment_pars()
+mk_env(T) = (; environment_pars = env_pars,
+              environment_vars = example_environment_vars(;
+                  air_temperature = T, relative_humidity = 0.15,
+                  wind_speed = 0.1u"m/s", atmospheric_pressure = 101325.0u"Pa",
+                  zenith_angle = 20.0u"°", substrate_conductivity = 2.79u"W/m/K",
+                  global_radiation = 0.0u"W/m^2", diffuse_fraction = 0, shade = 0))
+
+air_Ts = (collect(0.0:1.0:50) .+ 273.15) .* u"K"
+control = BiophysicalBehaviour.IPOPTControl()
+
+let env0 = mk_env(air_Ts[1])
+    BiophysicalBehaviour.thermoregulate(BiophysicalBehaviour.Endotherm(), control, organism, env0,
+        metabolic_heat_flow, core_T_ref - 3u"K", env0.environment_vars.air_temperature)
+end
+
+function sweep_cold()
+    M = metabolic_heat_flow; sT = core_T_ref - 3u"K"; iT = air_Ts[1]
+    for T in air_Ts
+        env = mk_env(T)
+        out = BiophysicalBehaviour.thermoregulate(BiophysicalBehaviour.Endotherm(), control, organism, env, M, sT, iT)
+        M = out.energy_flows.metabolic_heat_flow; sT = out.thermoregulation.skin_temperature; iT = out.thermoregulation.insulation_temperature
+    end
+end
+function sweep_warm()
+    cache = IPOPTSolverCache(control, organism, mk_env(air_Ts[1]),
+        metabolic_heat_flow, core_T_ref - 3u"K", air_Ts[1])
+    M = metabolic_heat_flow; sT = core_T_ref - 3u"K"; iT = air_Ts[1]
+    for T in air_Ts
+        env = mk_env(T)
+        out = BiophysicalBehaviour.thermoregulate(BiophysicalBehaviour.Endotherm(), control, organism, env, M, sT, iT, cache)
+        M = out.energy_flows.metabolic_heat_flow; sT = out.thermoregulation.skin_temperature; iT = out.thermoregulation.insulation_temperature
+    end
+end
+
+sweep_cold(); sweep_warm()
+n = 5
+cold = minimum(@elapsed sweep_cold() for _ in 1:n) * 1e3
+warm = minimum(@elapsed sweep_warm() for _ in 1:n) * 1e3
+GC.gc(); cold_alloc = @allocated sweep_cold()
+GC.gc(); warm_alloc = @allocated sweep_warm()
+println("cold: ", round(cold; digits=1), " ms total, ", round(cold/51; digits=2), " ms/solve, ",
+        round(cold_alloc/51/1024; digits=1), " KiB/solve")
+println("warm: ", round(warm; digits=1), " ms total, ", round(warm/51; digits=2), " ms/solve, ",
+        round(warm_alloc/51/1024; digits=1), " KiB/solve")
+println("speedup: ", round(cold/warm; digits=2), "×")

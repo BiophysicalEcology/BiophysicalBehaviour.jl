@@ -1,0 +1,177 @@
+using BiophysicalBehaviour
+using HeatExchange
+using BiophysicalGeometry
+using FluidProperties
+using ConstructionBase
+using ModelParameters
+using Unitful, UnitfulMoles
+using Enzyme
+using LinearAlgebra
+using Statistics
+
+# Reuse the budgerigar setup
+shape_pars = example_ellipsoid_shape_pars(; mass = 33.7u"g", axis_ratio_b = 1.1, axis_ratio_c = 1.1)
+insulation_pars = example_insulation_pars(;
+    fibre_diameter_dorsal = 30.0u"μm", fibre_diameter_ventral = 30.0u"μm",
+    fibre_length_dorsal = 23.1u"mm", fibre_length_ventral = 22.7u"mm",
+    insulation_depth_dorsal = 5.9u"mm", insulation_depth_ventral = 5.7u"mm",
+    insulation_depth_compressed = 5.7u"mm",
+    fibre_density_dorsal = 5000e+04u"1/m^2", fibre_density_ventral = 5000e+04u"1/m^2",
+    insulation_reflectance_dorsal = 0.248, insulation_reflectance_ventral = 0.351,
+)
+radiation_pars = example_radiation_pars()
+metabolic_heat_flow = HeatExchange.metabolic_rate(HeatExchange.McKechnieWolf(), shape_pars.mass)
+respiration_pars = example_respiration_pars(; oxygen_extraction_efficiency = 0.25, exhaled_temperature_offset = 5.0u"K")
+evaporation_pars = example_evaporation_pars(; skin_wetness = 0.005)
+conduction_pars_internal = example_conduction_pars_internal()
+fat = HeatExchange.FatLayer(conduction_pars_internal.fat_fraction, conduction_pars_internal.fat_density)
+mean_d  = insulation_pars.dorsal.depth * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.depth * radiation_pars.ventral_fraction
+mean_di = insulation_pars.dorsal.diameter * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.diameter * radiation_pars.ventral_fraction
+mean_de = insulation_pars.dorsal.density * (1 - radiation_pars.ventral_fraction) + insulation_pars.ventral.density * radiation_pars.ventral_fraction
+fur = HeatExchange.FibrousLayer(mean_d, mean_di, mean_de)
+geometry = HeatExchange.Body(shape_pars, HeatExchange.CompositeInsulation(fur, fat))
+
+core_T_ref = (38.0 + 273.15)u"K"
+core_T_max = (43.0 + 273.15)u"K"
+metab_pars = example_metabolism_pars(; core_temperature = core_T_ref, q10 = 1.0, metabolic_heat_flow)
+physiology_traits = HeatExchange.HeatExchangeTraits(
+    shape_pars, insulation_pars, example_conduction_pars_external(),
+    conduction_pars_internal, radiation_pars, HeatExchange.ConvectionParameters(),
+    evaporation_pars, example_hydraulic_pars(), respiration_pars, metab_pars,
+    example_metabolic_rate_options(),
+)
+thermo_limits = BiophysicalBehaviour.ThermoregulationLimits(;
+    control = BiophysicalBehaviour.RuleBasedSequentialControl(;
+        mode = BiophysicalBehaviour.CorePantingSweatingFirst(), tolerance = 0.005, max_iterations = 1000),
+    minimum_heat_flow = metabolic_heat_flow,
+    insulation = BiophysicalBehaviour.InsulationLimits(;
+        dorsal = BiophysicalBehaviour.SteppedParameter(;
+            current = insulation_pars.dorsal.length * 0.7, reference = insulation_pars.dorsal.depth,
+            max = insulation_pars.dorsal.length * 0.7, step = 0.1),
+        ventral = BiophysicalBehaviour.SteppedParameter(;
+            current = insulation_pars.ventral.length * 0.7, reference = insulation_pars.ventral.depth,
+            max = insulation_pars.ventral.length * 0.7, step = 0.1)),
+    aspect_ratio_factor = BiophysicalBehaviour.SteppedParameter(; current = 1.1, max = 5.0, step = 0.1),
+    flesh_conductivity = BiophysicalBehaviour.SteppedParameter(; current = 0.9u"W/m/K", max = 2.8u"W/m/K", step = 0.1u"W/m/K"),
+    core_temperature = BiophysicalBehaviour.SteppedParameter(; current = core_T_ref, reference = core_T_ref, max = core_T_max, step = 0.1u"K"),
+    panting = BiophysicalBehaviour.PantingLimits(;
+        pant = BiophysicalBehaviour.SteppedParameter(; current = 1.0, max = 15.0, step = 0.01),
+        cost = 0.0u"W", multiplier = 1.0, core_temperature_ref = core_T_ref),
+    skin_wetness = BiophysicalBehaviour.SteppedParameter(; current = evaporation_pars.skin_wetness, max = 0.05, step = 0.0025),
+    core_temperature_penalty = 0.1, panting_penalty = 5.0, skin_wetness_penalty = 0.1, metabolic_heat_penalty = 10.0,
+)
+organism = BiophysicalBehaviour.Organism(geometry,
+    BiophysicalBehaviour.OrganismTraits(BiophysicalBehaviour.Endotherm(), physiology_traits,
+        BiophysicalBehaviour.BehavioralTraits(; thermoregulation = thermo_limits, activity_period = BiophysicalBehaviour.Diurnal())))
+
+env = (; environment_pars = example_environment_pars(),
+         environment_vars = example_environment_vars(;
+             air_temperature = 293.15u"K", relative_humidity = 0.15,
+             wind_speed = 0.1u"m/s", atmospheric_pressure = 101325.0u"Pa",
+             zenith_angle = 20.0u"°", substrate_conductivity = 2.79u"W/m/K",
+             global_radiation = 0.0u"W/m^2", diffuse_fraction = 0, shade = 0))
+
+# Solve once to get a non-degenerate `x*` and λ* close to the optimum
+control = BiophysicalBehaviour.IPOPTControl()
+cache = IPOPTSolverCache(control, organism, env,
+    metabolic_heat_flow, core_T_ref - 3u"K", env.environment_vars.air_temperature)
+BiophysicalBehaviour.thermoregulate(BiophysicalBehaviour.Endotherm(), control, organism, env,
+    metabolic_heat_flow, core_T_ref - 3u"K", env.environment_vars.air_temperature, cache)
+
+x_star    = copy(cache.prev_x)
+lambda    = copy(cache.prev_mult_g)
+opt_pars  = cache.state.opt_pars
+nlp_pars  = cache.state.nlp_pars
+sigma     = 1.0
+
+println("x*       = ", x_star)
+println("lambda   = ", lambda)
+
+# Reach into internal scaffolding for the AD'd primitives
+const _obj_w   = BiophysicalBehaviour._objective_value_weighted
+const _resw!   = BiophysicalBehaviour._heat_balance_residuals_weighted!
+
+# Scalar Lagrangian for AD. Allocates a 4-element Vector{T} for the residuals;
+# under nested AD T becomes a dual type and the buffer mirrors it. Acceptable
+# for a validation harness — we'll optimise on the integration step.
+function lagrangian(x::AbstractVector{T}, p) where T
+    r = Vector{T}(undef, 4)
+    _resw!(r, x, p.nlp_pars)
+    return p.sigma * _obj_w(x, p.opt_pars) +
+           p.lambda[1]*r[1] + p.lambda[2]*r[2] + p.lambda[3]*r[3] + p.lambda[4]*r[4]
+end
+
+p = (; sigma, lambda, opt_pars, nlp_pars)
+
+# ---- Reverse gradient (used by both Hessian methods) ----
+function lag_grad!(g::AbstractVector, x::AbstractVector, p)
+    fill!(g, 0)
+    Enzyme.autodiff(Enzyme.Reverse, lagrangian,
+                    Enzyme.Active,
+                    Enzyme.Duplicated(x, g),
+                    Enzyme.Const(p))
+    return nothing
+end
+
+# Sanity: gradient should be ≈ 0 at the optimum w.r.t. *active* directions
+g_check = zeros(9)
+lag_grad!(g_check, x_star, p)
+println("\n‖∇L(x*, λ*)‖ = ", round(norm(g_check); sigdigits=3), " (small means we're at a KKT point)")
+
+# ---- Hessian via forward-over-reverse Enzyme ----
+# Column j of H is the directional derivative of ∇L in direction e_j.
+function hess_column_enzyme!(col, x, j, p)
+    n = length(x)
+    seed = zeros(n); seed[j] = 1.0
+    g  = zeros(n)
+    dg = zeros(n)   # this is what Forward fills with H·e_j
+    Enzyme.autodiff(Enzyme.Forward, lag_grad!,
+                    Enzyme.Duplicated(g, dg),
+                    Enzyme.Duplicated(x, seed),
+                    Enzyme.Const(p))
+    col .= dg
+    return nothing
+end
+
+H_enz = zeros(9, 9)
+col   = zeros(9)
+for j in 1:9
+    hess_column_enzyme!(col, x_star, j, p)
+    H_enz[:, j] .= col
+end
+
+# ---- Hessian via central finite differences on the gradient ----
+function hess_column_fd!(col, x, j, p; h=1e-5)
+    g_plus  = zeros(length(x))
+    g_minus = zeros(length(x))
+    x_pert = copy(x)
+    x_pert[j] += h
+    lag_grad!(g_plus, x_pert, p)
+    x_pert[j] -= 2h
+    lag_grad!(g_minus, x_pert, p)
+    col .= (g_plus .- g_minus) ./ (2h)
+    return nothing
+end
+
+H_fd = zeros(9, 9)
+for j in 1:9
+    hess_column_fd!(col, x_star, j, p; h = max(1e-5, 1e-5 * abs(x_star[j])))
+    H_fd[:, j] .= col
+end
+
+# ---- Compare ----
+println("\n‖H_enzyme - H_fd‖_∞       = ", round(maximum(abs.(H_enz .- H_fd)); sigdigits=3))
+println("‖(H_enz - H_fd) ./ |H_fd|‖_∞ (rel, ignoring tiny FD entries):")
+mask = abs.(H_fd) .> 1e-6
+rel_err = maximum(abs.((H_enz .- H_fd)[mask]) ./ abs.(H_fd[mask]))
+println("                            = ", round(rel_err; sigdigits=3))
+
+# ---- Show the matrices side-by-side for the most-nonzero rows ----
+println("\nrow-norm rankings (Enzyme):")
+for i in 1:9
+    println("  row $i: ‖H[i,:]‖ = ", round(norm(H_enz[i,:]); sigdigits=3))
+end
+
+# ---- Symmetric? ----
+asym = maximum(abs.(H_enz .- H_enz'))
+println("\nsymmetry residual ‖H - H'‖_∞ = ", round(asym; sigdigits=3))
