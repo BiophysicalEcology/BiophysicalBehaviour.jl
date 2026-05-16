@@ -209,7 +209,7 @@ for shape_number in 1:4
                     step=endo_input.PZFUR,
                 ),
             ),
-            aspect_ratio_factor=SteppedParameter(;
+            axis_ratio_factor=SteppedParameter(;
                 current=endo_input.SHAPE_B,
                 max=endo_input.SHAPE_B_MAX,
                 step=endo_input.UNCURL,

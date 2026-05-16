@@ -234,9 +234,9 @@ function example_thermoregulation_limits(;
     insulation_depth_ventral_ref=2e-03u"m",
     insulation_step=0.0,
     # Shape (uncurl)
-    aspect_ratio_factor=1.1,
-    aspect_ratio_step=0.1,
-    aspect_ratio_max=5.0,
+    axis_ratio_factor=1.1,
+    axis_ratio_step=0.1,
+    axis_ratio_max=5.0,
     # Tissue conductivity (vasodilation)
     flesh_conductivity=0.9u"W/m/K",
     flesh_conductivity_step=0.1u"W/m/K",
@@ -277,10 +277,10 @@ function example_thermoregulation_limits(;
         ),
     )
 
-    aspect_ratio_param = SteppedParameter(;
-        current=aspect_ratio_factor,
-        max=aspect_ratio_max,
-        step=aspect_ratio_step,
+    axis_ratio_param = SteppedParameter(;
+        current=axis_ratio_factor,
+        max=axis_ratio_max,
+        step=axis_ratio_step,
     )
 
     flesh_conductivity_param = SteppedParameter(;
@@ -317,7 +317,7 @@ function example_thermoregulation_limits(;
         control,
         minimum_heat_flow,
         insulation,
-        aspect_ratio_factor=aspect_ratio_param,
+        axis_ratio_factor=axis_ratio_param,
         flesh_conductivity=flesh_conductivity_param,
         core_temperature=core_temperature_param,
         panting,
