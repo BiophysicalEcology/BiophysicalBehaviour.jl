@@ -119,9 +119,7 @@ metabolic_heat_flow = 0.0u"W"
 endotherm_out = thermoregulate(
     organism,
     environment,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
+    (; metabolic_heat_flow, skin_temperature, insulation_temperature),
 )
 thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology

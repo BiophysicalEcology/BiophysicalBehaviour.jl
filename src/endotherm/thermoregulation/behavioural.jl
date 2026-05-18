@@ -218,10 +218,7 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
     e   = (environment_pars=env_pars, environment_vars=env_vars)
 
     init = initial_physiological_state(organism, env_vars)
-    endotherm_out = thermoregulate(organism, e,
-                                   init.metabolic_heat_flow,
-                                   init.skin_temperature,
-                                   init.insulation_temperature)
+    endotherm_out = thermoregulate(organism, e, init)
 
     return (;
         Te,

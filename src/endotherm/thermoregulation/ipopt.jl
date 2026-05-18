@@ -16,14 +16,12 @@
 # possible.
 #
 # Two execution paths:
-#   1. `thermoregulate(::Endotherm, ::IPOPTControl, organism, environment,
-#      metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)`
+#   1. `thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, init)`
 #      — fresh per-call: allocates a single-use cache, runs one cold solve,
 #      throws everything away. Use when each call has a structurally
 #      different problem (different shape, different environment_vars layout).
-#   2. `IPOPTSolverCache(control, organism, environment,
-#      metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)`
-#      then `thermoregulate(..., cache)` — warm-started: callback closures and
+#   2. `IPOPTSolverCache(control, organism, environment, init)`
+#      then `thermoregulate(...; cache)` — warm-started: callback closures and
 #      scratch buffers are reused, and primal+dual from the previous solve
 #      are restored into the next `IpoptProblem` before `IpoptSolve` runs
 #      with `warm_start_init_point = "yes"`. Use across a sweep where only
@@ -60,11 +58,17 @@
 # =============================================================================
 
 function _objective_value(::HeatExchange.WeightedMeanNLPPacked, effectors, opt)
-    opt.core_temperature_penalty * ((effectors[1] - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
-    opt.metabolic_heat_penalty   * ((exp(effectors[4]) - opt.heat_flow_min_W)   / opt.heat_flow_range)^2        +
-    opt.gradient_penalty         * ((effectors[1] - effectors[2] - opt.target_gradient) / opt.gradient_range)^2 +
-    opt.panting_penalty          * ((effectors[6] - 1.0) / opt.panting_rate_range)^2                            +
-    opt.skin_wetness_penalty     * ((effectors[7] - opt.skin_wetness_min) / opt.skin_wetness_range)^2
+    core_temperature    = effectors[1]
+    skin_temperature    = effectors[2]
+    metabolic_heat_flow = exp(effectors[4])
+    panting_rate        = effectors[6]
+    skin_wetness        = effectors[7]
+
+    return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
+           opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.heat_flow_min_W) / opt.heat_flow_range)^2 +
+           opt.gradient_penalty         * ((core_temperature - skin_temperature - opt.target_gradient) / opt.gradient_range)^2 +
+           opt.panting_penalty          * ((panting_rate - 1.0) / opt.panting_rate_range)^2 +
+           opt.skin_wetness_penalty     * ((skin_wetness - opt.skin_wetness_min) / opt.skin_wetness_range)^2
 end
 
 # Float64 effectors in → Unitful physics (via HeatExchange.nlp_residuals) → Float64 residuals out.
@@ -111,17 +115,26 @@ end
 # =============================================================================
 
 function _objective_value(::HeatExchange.MultiSidedNLPPacked, effectors, opt)
-    skin_temp_mean = (effectors[2] + effectors[4]) / 2
-    opt.core_temperature_penalty * ((effectors[1] - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
-    opt.metabolic_heat_penalty   * ((exp(effectors[6]) - opt.heat_flow_min_W)   / opt.heat_flow_range)^2        +
-    opt.gradient_penalty         * ((effectors[1] - skin_temp_mean - opt.target_gradient) / opt.gradient_range)^2 +
-    opt.panting_penalty          * ((effectors[8] - 1.0) / opt.panting_rate_range)^2                            +
-    opt.skin_wetness_penalty     * ((effectors[9] - opt.skin_wetness_min) / opt.skin_wetness_range)^2
+    core_temperature         = effectors[1]
+    dorsal_skin_temperature  = effectors[2]
+    ventral_skin_temperature = effectors[4]
+    metabolic_heat_flow      = exp(effectors[6])
+    panting_rate             = effectors[8]
+    skin_wetness             = effectors[9]
+
+    skin_temperature_mean = (dorsal_skin_temperature + ventral_skin_temperature) / 2
+
+    return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
+           opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.heat_flow_min_W) / opt.heat_flow_range)^2 +
+           opt.gradient_penalty         * ((core_temperature - skin_temperature_mean - opt.target_gradient) / opt.gradient_range)^2 +
+           opt.panting_penalty          * ((panting_rate - 1.0) / opt.panting_rate_range)^2 +
+           opt.skin_wetness_penalty     * ((skin_wetness - opt.skin_wetness_min) / opt.skin_wetness_range)^2
 end
 
 # residuals[1:5] == 0 (dorsal surface, dorsal skin, ventral surface, ventral skin, whole-organism).
 # residuals[6]  >= 0 (Q10: metabolic_heat_flow >= minimum_heat_flow · q10^((T_core − T_setpoint)/10)).
 function _heat_balance_residuals!(nlp_packed::HeatExchange.MultiSidedNLPPacked, residuals, effectors, p)
+    # TODO automate this variable mapping
     core_temperature              = effectors[1]  * u"K"
     dorsal_skin_temperature       = effectors[2]  * u"K"
     dorsal_insulation_temperature = effectors[3]  * u"K"
@@ -163,20 +176,20 @@ end
 # them through.
 #
 # `p` is a NamedTuple with fields `sigma::Float64`, `lambda::Vector{Float64}`,
-# `state::_IPOPTState`. The state reference lets the Lagrangian see the
-# *current* `objective_parameters` / `nlp_parameters` set by `_inputs!` — no per-call
-# bookkeeping inside the Hessian callback.
+# `ipopt_parameters::IPOPTParameters`. The mutable reference lets the Lagrangian
+# see the *current* `objective_parameters` / `nlp_parameters` set by `_inputs!`
+# — no per-call bookkeeping inside the Hessian callback.
 # =============================================================================
 
 function _lagrangian(nlp_packed::HeatExchange.WeightedMeanNLPPacked, x, residual_buffer, p)
-    _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.state.nlp_parameters)
-    return p.sigma * _objective_value(nlp_packed, x, p.state.objective_parameters) +
+    _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.ipopt_parameters.nlp_parameters)
+    return p.sigma * _objective_value(nlp_packed, x, p.ipopt_parameters.objective_parameters) +
            p.lambda[1]*residual_buffer[1] + p.lambda[2]*residual_buffer[2] +
            p.lambda[3]*residual_buffer[3] + p.lambda[4]*residual_buffer[4]
 end
 function _lagrangian(nlp_packed::HeatExchange.MultiSidedNLPPacked, x, residual_buffer, p)
-    _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.state.nlp_parameters)
-    return p.sigma * _objective_value(nlp_packed, x, p.state.objective_parameters) +
+    _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.ipopt_parameters.nlp_parameters)
+    return p.sigma * _objective_value(nlp_packed, x, p.ipopt_parameters.objective_parameters) +
            p.lambda[1]*residual_buffer[1] + p.lambda[2]*residual_buffer[2] + p.lambda[3]*residual_buffer[3] +
            p.lambda[4]*residual_buffer[4] + p.lambda[5]*residual_buffer[5] + p.lambda[6]*residual_buffer[6]
 end
@@ -184,17 +197,20 @@ end
 # =============================================================================
 # Per-call inputs (bounds, initial_values, objective_parameters, nlp_parameters)
 #
-# These helpers populate the mutable state container and bound/initial_values vectors that
-# the cache reuses. They are also called from the fresh-per-call path with
-# disposable buffers, so the bounds/initial_values computation lives in exactly one place.
-# Each writes Float64 fields only — the NamedTuple field types are stable
-# across calls, so mutable-state field assignment never reboxes.
+# These helpers populate the mutable `IPOPTParameters` container and the
+# bound/initial_values vectors that the cache reuses. They are also called from
+# the fresh-per-call path with disposable buffers, so the bounds/initial_values
+# computation lives in exactly one place. Each writes Float64 fields only — the
+# NamedTuple field types are stable across calls, so assignment never reboxes.
 # =============================================================================
 
-function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed::HeatExchange.WeightedMeanNLPPacked,
-                   organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-                   metabolic_heat_flow_init, skin_temperature_init,
-                   insulation_temperature_init)
+function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
+                   organism, environment, init::NamedTuple)
+    limits                         = thermoregulation(organism)
+    metabolism_parameters          = metabolism_pars(organism)
+    internal_conduction_parameters = conduction_pars_internal(organism)
+    evaporation_parameters         = evaporation_pars(organism)
+
     air_temperature_K      = ustrip(u"K", environment.environment_vars.air_temperature)
     setpoint_temperature_K = ustrip(u"K", metabolism_parameters.core_temperature)
     core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
@@ -212,24 +228,24 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed::HeatEx
     insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
     aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
     aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
+    heat_flow_init         = max(ustrip(u"W", init.metabolic_heat_flow), heat_flow_min_W)
+    flesh_conductivity     = ustrip(u"W/m/K", internal_conduction_parameters.flesh_conductivity)
+    skin_wetness           = Float64(evaporation_parameters.skin_wetness)
 
-    lower_bounds[1] = core_temperature_min;    lower_bounds[2] = skin_temperature_min;  lower_bounds[3] = skin_temperature_min
-    lower_bounds[4] = log(heat_flow_min_W);    lower_bounds[5] = flesh_conductivity_min; lower_bounds[6] = 1.0
-    lower_bounds[7] = skin_wetness_min;        lower_bounds[8] = insulation_depth_min;  lower_bounds[9] = aspect_ratio_min
-    upper_bounds[1] = core_temperature_max;    upper_bounds[2] = skin_temperature_max;  upper_bounds[3] = skin_temperature_max
-    upper_bounds[4] = log(heat_flow_max_W);    upper_bounds[5] = flesh_conductivity_max; upper_bounds[6] = panting_rate_max
-    upper_bounds[7] = skin_wetness_max;        upper_bounds[8] = insulation_depth_max;  upper_bounds[9] = aspect_ratio_max
+    scalars = (;
+        core_temperature_min, core_temperature_max,
+        skin_temperature_min, skin_temperature_max,
+        heat_flow_min_W, heat_flow_max_W,
+        flesh_conductivity_min, flesh_conductivity_max,
+        panting_rate_max,
+        skin_wetness_min, skin_wetness_max,
+        insulation_depth_min, insulation_depth_max,
+        aspect_ratio_min, aspect_ratio_max,
+        setpoint_temperature_K, heat_flow_init,
+        flesh_conductivity, skin_wetness,
+    )
 
-    heat_flow_init = max(ustrip(u"W", metabolic_heat_flow_init), heat_flow_min_W)
-    initial_values[1] = clamp(setpoint_temperature_K,                    lower_bounds[1], upper_bounds[1])
-    initial_values[2] = clamp(ustrip(u"K", skin_temperature_init),       lower_bounds[2], upper_bounds[2])
-    initial_values[3] = clamp(ustrip(u"K", insulation_temperature_init), lower_bounds[3], upper_bounds[3])
-    initial_values[4] = clamp(log(heat_flow_init),                       lower_bounds[4], upper_bounds[4])
-    initial_values[5] = clamp(ustrip(u"W/m/K", internal_conduction_parameters.flesh_conductivity), lower_bounds[5], upper_bounds[5])
-    initial_values[6] = clamp(1.0,                                       lower_bounds[6], upper_bounds[6])
-    initial_values[7] = clamp(Float64(evaporation_parameters.skin_wetness),           lower_bounds[7], upper_bounds[7])
-    initial_values[8] = clamp(insulation_depth_max,                      lower_bounds[8], upper_bounds[8])   # start with erected insulation
-    initial_values[9] = clamp(aspect_ratio_min,                          lower_bounds[9], upper_bounds[9])   # start curled
+    _write_layout!(lower_bounds, upper_bounds, initial_values, nlp_packed, init, scalars)
 
     core_temperature_range = max(core_temperature_max - setpoint_temperature_K, 1e-6)
     objective_parameters = (;
@@ -256,90 +272,70 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed::HeatEx
     )
     return objective_parameters, nlp_parameters
 end
-function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed::HeatExchange.MultiSidedNLPPacked,
-                   organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-                   metabolic_heat_flow_init, _, _)
-    air_temperature_K      = ustrip(u"K", environment.environment_vars.air_temperature)
-    setpoint_temperature_K = ustrip(u"K", metabolism_parameters.core_temperature)
-    core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
-    core_temperature_max   = ustrip(u"K", limits.core_temperature.max)
-    skin_temperature_min   = air_temperature_K - 5.0
-    skin_temperature_max   = core_temperature_max + 5.0
-    heat_flow_min_W        = ustrip(u"W", limits.minimum_heat_flow)
-    heat_flow_max_W        = heat_flow_min_W * 20.0
-    flesh_conductivity_min = ustrip(u"W/m/K", limits.flesh_conductivity.reference)
-    flesh_conductivity_max = ustrip(u"W/m/K", limits.flesh_conductivity.max)
-    panting_rate_max       = Float64(limits.panting.pant.max)
-    skin_wetness_min       = Float64(limits.skin_wetness.reference)
-    skin_wetness_max       = Float64(limits.skin_wetness.max)
-    insulation_depth_min   = ustrip(u"m", limits.insulation.dorsal.reference)
-    insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
-    aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
-    aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
 
-    # 11-variable layout: see header table at top of MultiSidedNLP block.
-    lower_bounds[1]  = core_temperature_min
-    lower_bounds[2]  = skin_temperature_min; lower_bounds[3]  = skin_temperature_min   # dorsal skin, ins
-    lower_bounds[4]  = skin_temperature_min; lower_bounds[5]  = skin_temperature_min   # ventral skin, ins
-    lower_bounds[6]  = log(heat_flow_min_W); lower_bounds[7]  = flesh_conductivity_min
-    lower_bounds[8]  = 1.0;                  lower_bounds[9]  = skin_wetness_min
-    lower_bounds[10] = insulation_depth_min; lower_bounds[11] = aspect_ratio_min
-    upper_bounds[1]  = core_temperature_max
-    upper_bounds[2]  = skin_temperature_max; upper_bounds[3]  = skin_temperature_max
-    upper_bounds[4]  = skin_temperature_max; upper_bounds[5]  = skin_temperature_max
-    upper_bounds[6]  = log(heat_flow_max_W); upper_bounds[7]  = flesh_conductivity_max
-    upper_bounds[8]  = panting_rate_max;     upper_bounds[9]  = skin_wetness_max
-    upper_bounds[10] = insulation_depth_max; upper_bounds[11] = aspect_ratio_max
+# Strategy-specific variable-index layout. The two formulations differ only in
+# which decision variables exist and at what positions; everything else lives
+# in `_inputs!`. `s` is the NamedTuple of pre-computed scalars assembled there.
+function _write_layout!(lower_bounds, upper_bounds, initial_values,
+                         ::HeatExchange.WeightedMeanNLPPacked, init, s)
+    lower_bounds[1] = s.core_temperature_min;   lower_bounds[2] = s.skin_temperature_min;   lower_bounds[3] = s.skin_temperature_min
+    lower_bounds[4] = log(s.heat_flow_min_W);   lower_bounds[5] = s.flesh_conductivity_min; lower_bounds[6] = 1.0
+    lower_bounds[7] = s.skin_wetness_min;       lower_bounds[8] = s.insulation_depth_min;   lower_bounds[9] = s.aspect_ratio_min
+    upper_bounds[1] = s.core_temperature_max;   upper_bounds[2] = s.skin_temperature_max;   upper_bounds[3] = s.skin_temperature_max
+    upper_bounds[4] = log(s.heat_flow_max_W);   upper_bounds[5] = s.flesh_conductivity_max; upper_bounds[6] = s.panting_rate_max
+    upper_bounds[7] = s.skin_wetness_max;       upper_bounds[8] = s.insulation_depth_max;   upper_bounds[9] = s.aspect_ratio_max
 
-    packed_parameters = nlp_packed.p
-    heat_flow_init = max(ustrip(u"W", metabolic_heat_flow_init), heat_flow_min_W)
-    initial_values[1]  = clamp(setpoint_temperature_K,                                       lower_bounds[1],  upper_bounds[1])
-    initial_values[2]  = clamp(ustrip(u"K", packed_parameters.initial_dorsal_skin_temperature),             lower_bounds[2],  upper_bounds[2])
-    initial_values[3]  = clamp(ustrip(u"K", packed_parameters.initial_dorsal_insulation_temperature),       lower_bounds[3],  upper_bounds[3])
-    initial_values[4]  = clamp(ustrip(u"K", packed_parameters.initial_ventral_skin_temperature),            lower_bounds[4],  upper_bounds[4])
-    initial_values[5]  = clamp(ustrip(u"K", packed_parameters.initial_ventral_insulation_temperature),      lower_bounds[5],  upper_bounds[5])
-    initial_values[6]  = clamp(log(heat_flow_init),                                          lower_bounds[6],  upper_bounds[6])
-    initial_values[7]  = clamp(ustrip(u"W/m/K", internal_conduction_parameters.flesh_conductivity),                lower_bounds[7],  upper_bounds[7])
-    initial_values[8]  = clamp(1.0,                                                          lower_bounds[8],  upper_bounds[8])
-    initial_values[9]  = clamp(Float64(evaporation_parameters.skin_wetness),                              lower_bounds[9],  upper_bounds[9])
-    initial_values[10] = clamp(insulation_depth_max,                                         lower_bounds[10], upper_bounds[10])
-    initial_values[11] = clamp(aspect_ratio_min,                                             lower_bounds[11], upper_bounds[11])
+    initial_values[1] = clamp(s.setpoint_temperature_K,                    lower_bounds[1], upper_bounds[1])
+    initial_values[2] = clamp(ustrip(u"K", init.skin_temperature),         lower_bounds[2], upper_bounds[2])
+    initial_values[3] = clamp(ustrip(u"K", init.insulation_temperature),   lower_bounds[3], upper_bounds[3])
+    initial_values[4] = clamp(log(s.heat_flow_init),                       lower_bounds[4], upper_bounds[4])
+    initial_values[5] = clamp(s.flesh_conductivity,                        lower_bounds[5], upper_bounds[5])
+    initial_values[6] = clamp(1.0,                                         lower_bounds[6], upper_bounds[6])
+    initial_values[7] = clamp(s.skin_wetness,                              lower_bounds[7], upper_bounds[7])
+    initial_values[8] = clamp(s.insulation_depth_max,                      lower_bounds[8], upper_bounds[8])  # start with erected insulation
+    initial_values[9] = clamp(s.aspect_ratio_min,                          lower_bounds[9], upper_bounds[9])  # start curled
+    return nothing
+end
+function _write_layout!(lower_bounds, upper_bounds, initial_values,
+                         nlp_packed::HeatExchange.MultiSidedNLPPacked, init, s)
+    packed = nlp_packed.p
 
-    core_temperature_range = max(core_temperature_max - setpoint_temperature_K, 1e-6)
-    objective_parameters = (;
-        setpoint_temperature_K   = Float64(setpoint_temperature_K),
-        heat_flow_min_W          = Float64(heat_flow_min_W),
-        core_temperature_penalty = Float64(limits.core_temperature_penalty),
-        metabolic_heat_penalty   = Float64(limits.metabolic_heat_penalty),
-        panting_penalty          = Float64(limits.panting_penalty),
-        skin_wetness_penalty     = Float64(limits.skin_wetness_penalty),
-        gradient_penalty         = Float64(limits.gradient_penalty),
-        target_gradient          = Float64(limits.target_core_skin_gradient),
-        core_temperature_range   = Float64(core_temperature_range),
-        gradient_range           = Float64(core_temperature_range),
-        panting_rate_range       = max(panting_rate_max - 1.0, 1e-6),
-        skin_wetness_min         = Float64(skin_wetness_min),
-        skin_wetness_range       = max(skin_wetness_max - skin_wetness_min, 1e-6),
-        heat_flow_range          = max(heat_flow_max_W - heat_flow_min_W, 1.0),
-    )
-    nlp_parameters = (;
-        nlp_packed,
-        minimum_heat_flow    = Float64(heat_flow_min_W),
-        q10                  = Float64(metabolism_parameters.q10),
-        setpoint_temperature = Float64(setpoint_temperature_K),
-    )
-    return objective_parameters, nlp_parameters
+    lower_bounds[1]  = s.core_temperature_min
+    lower_bounds[2]  = s.skin_temperature_min;  lower_bounds[3]  = s.skin_temperature_min    # dorsal skin, ins
+    lower_bounds[4]  = s.skin_temperature_min;  lower_bounds[5]  = s.skin_temperature_min    # ventral skin, ins
+    lower_bounds[6]  = log(s.heat_flow_min_W);  lower_bounds[7]  = s.flesh_conductivity_min
+    lower_bounds[8]  = 1.0;                     lower_bounds[9]  = s.skin_wetness_min
+    lower_bounds[10] = s.insulation_depth_min;  lower_bounds[11] = s.aspect_ratio_min
+    upper_bounds[1]  = s.core_temperature_max
+    upper_bounds[2]  = s.skin_temperature_max;  upper_bounds[3]  = s.skin_temperature_max
+    upper_bounds[4]  = s.skin_temperature_max;  upper_bounds[5]  = s.skin_temperature_max
+    upper_bounds[6]  = log(s.heat_flow_max_W);  upper_bounds[7]  = s.flesh_conductivity_max
+    upper_bounds[8]  = s.panting_rate_max;      upper_bounds[9]  = s.skin_wetness_max
+    upper_bounds[10] = s.insulation_depth_max;  upper_bounds[11] = s.aspect_ratio_max
+
+    initial_values[1]  = clamp(s.setpoint_temperature_K,                                       lower_bounds[1],  upper_bounds[1])
+    initial_values[2]  = clamp(ustrip(u"K", packed.initial_dorsal_skin_temperature),           lower_bounds[2],  upper_bounds[2])
+    initial_values[3]  = clamp(ustrip(u"K", packed.initial_dorsal_insulation_temperature),     lower_bounds[3],  upper_bounds[3])
+    initial_values[4]  = clamp(ustrip(u"K", packed.initial_ventral_skin_temperature),          lower_bounds[4],  upper_bounds[4])
+    initial_values[5]  = clamp(ustrip(u"K", packed.initial_ventral_insulation_temperature),    lower_bounds[5],  upper_bounds[5])
+    initial_values[6]  = clamp(log(s.heat_flow_init),                                          lower_bounds[6],  upper_bounds[6])
+    initial_values[7]  = clamp(s.flesh_conductivity,                                           lower_bounds[7],  upper_bounds[7])
+    initial_values[8]  = clamp(1.0,                                                            lower_bounds[8],  upper_bounds[8])
+    initial_values[9]  = clamp(s.skin_wetness,                                                 lower_bounds[9],  upper_bounds[9])
+    initial_values[10] = clamp(s.insulation_depth_max,                                         lower_bounds[10], upper_bounds[10])
+    initial_values[11] = clamp(s.aspect_ratio_min,                                             lower_bounds[11], upper_bounds[11])
+    return nothing
 end
 
 # =============================================================================
 # Warm-start cache
 #
-# `_IPOPTState` is a mutable struct that carries the two NamedTuples the
+# `IPOPTParameters` is a mutable struct that carries the two NamedTuples the
 # Enzyme-AD callbacks consume (objective penalties + NLP physics parameters).
-# The Ipopt callbacks hold a reference to this state and read the fields on
-# every invocation. To set up a new solve we just write fresh NamedTuples
-# into the two fields — same concrete types, no reboxing — and the callbacks
-# pick them up automatically without rebuilding.
+# The Ipopt callbacks hold a reference to this container and read its fields on
+# every invocation. To set up a new solve we just write fresh NamedTuples into
+# the two fields — same concrete types, no reboxing — and the callbacks pick
+# them up automatically without rebuilding.
 #
 # Both fields are parametrically typed so accesses stay type-stable: as long
 # as the per-call `objective_parameters` and `nlp_parameters` NamedTuples have the same key/type
@@ -348,7 +344,7 @@ end
 # environment is fed in (e.g. a different body shape), construct a new cache.
 # =============================================================================
 
-mutable struct _IPOPTState{ObjectiveParametersType,NlpParametersType}
+mutable struct IPOPTParameters{ObjectiveParametersType,NlpParametersType}
     objective_parameters::ObjectiveParametersType
     nlp_parameters::NlpParametersType
 end
@@ -362,7 +358,7 @@ end
 #   jacobian_x_derivative          length n_variables, gradient output → one Jacobian row
 #
 # Hessian section (used by `evaluate_hessian`, forward-over-reverse):
-#   hessian_gradient          length n_variables, inner-Reverse gradient
+#   hessian_gradient         length n_variables, inner-Reverse gradient
 #   hessian_gradient_tangent         length n_variables, outer-Forward dual → one Hessian column
 #   hessian_seed       length n_variables, outer-Forward seed (unit vector for column j)
 #   hessian_multipliers     length n_constraints, current IPOPT λ_g (copied per `evaluate_hessian` call)
@@ -395,17 +391,20 @@ end
 """
     IPOPTSolverCache
 
-Reusable solver state for the IPOPT thermoregulation path. Holds the
-Ipopt-callback closures, the per-call bound and `initial_values` buffers, the
-reverse-mode Jacobian scratch vectors, the Julia-side primal+dual
-warm-start vectors, and a mutable `_IPOPTState` whose fields the callbacks
-read on every solve.
+    IPOPTSolverCache(control, organism, environment, init)
+
+Reusable solver cache for the IPOPT thermoregulation path. Holds the
+Ipopt callback functors, the per-call bound and `initial_values` buffers, the
+reverse-mode Jacobian scratch vectors, the Julia-side primal+dual warm-start
+vectors, and a mutable `IPOPTParameters` whose fields the functors read on
+every solve.
 
 Construct once per organism + smoothing + NLP-strategy combination:
 
-    cache = IPOPTSolverCache(control, organism, environment,
-                              metabolic_heat_flow_init, skin_temperature_init,
-                              insulation_temperature_init)
+    cache = IPOPTSolverCache(control, organism, environment, init)
+
+where `init` is a NamedTuple of initial guesses (`metabolic_heat_flow`,
+`skin_temperature`, `insulation_temperature`).
 
 Then pass the cache as the trailing argument of `thermoregulate` to skip
 the closure / scratch-buffer rebuilding and to enable primal+dual warm-
@@ -423,8 +422,7 @@ The cache warm-starts **both** primal and dual:
 
 - *Primal*: the previous solve's effector vector (clamped into the new
   per-call bounds) is fed in as the next solve's initial `x`. The fresh
-  path seeds only `metabolic_heat_flow_init`, `skin_temperature_init`, and
-  `insulation_temperature_init` from user-passed values; the
+  path seeds only the three `init` fields from user-passed values; the
   cache seeds all 9 (11 for MultiSided), a strictly better starting point
   in smooth regimes.
 - *Dual*: the Lagrange multipliers from the previous solve (`mult_g` on
@@ -441,20 +439,21 @@ call with the tight per-call bounds; that allocation is small and Julia-
 side state (`previous_primal`, `prev_mult_*`) carries the warm-start info across
 rebuilds.
 """
-struct IPOPTSolverCache{StateType<:_IPOPTState, ObjectiveCallback, ConstraintsCallback, ObjectiveGradientCallback, ConstraintJacobianCallback, HessianCallback}
-    state::StateType
-    # Cached callback closures. These read `state.objective_parameters` / `state.nlp_parameters`
-    # at solve time, so updating the state retargets every callback without
-    # rebuilding the closures. Stored on the cache so the same Function objects
-    # are passed to every CreateIpoptProblem call — that way Julia compiles a
-    # single specialised IpoptProblem type once and reuses it.
+struct IPOPTSolverCache{ParametersType<:IPOPTParameters, ObjectiveCallback, ConstraintsCallback, ObjectiveGradientCallback, ConstraintJacobianCallback, HessianCallback}
+    ipopt_parameters::ParametersType
+    # Cached callback functors. These read `ipopt_parameters.objective_parameters`
+    # and `ipopt_parameters.nlp_parameters` at solve time, so updating those
+    # NamedTuples retargets every callback without rebuilding the functors.
+    # Stored on the cache so the same callable objects are passed to every
+    # CreateIpoptProblem call — that way Julia compiles a single specialised
+    # IpoptProblem type once and reuses it.
     evaluate_objective::ObjectiveCallback
     evaluate_constraints::ConstraintsCallback
     evaluate_objective_gradient::ObjectiveGradientCallback
     evaluate_constraint_jacobian::ConstraintJacobianCallback
     evaluate_hessian::HessianCallback
     # Per-call tight bounds — written by `_inputs!` each solve to match the
-    # fresh `thermoregulate(..., organism, env, M, sT, iT)` path. Ipopt bakes
+    # fresh `thermoregulate(..., organism, env, init)` path. Ipopt bakes
     # bounds into the C-side problem at CreateIpoptProblem time, so we rebuild
     # the C handle every solve (cheap — a single malloc + struct init) rather
     # than loosening the bounds to keep one handle alive.
@@ -488,114 +487,191 @@ struct IPOPTSolverCache{StateType<:_IPOPTState, ObjectiveCallback, ConstraintsCa
     x_scaling::Vector{Float64}
     g_scaling::Vector{Float64}
 end
+function IPOPTSolverCache(control::IPOPTControl, organism::Organism, environment::NamedTuple, init::NamedTuple)
+    nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
+                                       init.skin_temperature, init.insulation_temperature;
+                                       smoothing = control.smoothing)
+    return IPOPTSolverCache(nlp_packed, organism, environment, init)
+end
+function IPOPTSolverCache(nlp_packed, organism::Organism, environment::NamedTuple, init::NamedTuple)
+    n_variables, n_constraints = _problem_size(nlp_packed)
+    lower_bounds   = zeros(n_variables)
+    upper_bounds   = zeros(n_variables)
+    initial_values = zeros(n_variables)
+    objective_parameters, nlp_parameters = _inputs!(lower_bounds, upper_bounds, initial_values,
+        nlp_packed, organism, environment, init)
+    ipopt_parameters = IPOPTParameters(objective_parameters, nlp_parameters)
+    buffers = IpoptCallbackBuffers(n_variables, n_constraints)
+    evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian =
+        _build_ipopt_callbacks(ipopt_parameters, n_variables, n_constraints, buffers)
+    constraint_lower_bounds, constraint_upper_bounds = _constraint_bounds(n_constraints)
+    return IPOPTSolverCache(ipopt_parameters,
+        evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian,
+        lower_bounds, upper_bounds, initial_values,
+        constraint_lower_bounds, constraint_upper_bounds,
+        n_variables, n_constraints, buffers,
+        zeros(n_variables), zeros(n_constraints), zeros(n_variables), zeros(n_variables), Ref(false),
+        _scaling(nlp_packed), ones(n_constraints))
+end
 
 # Direct-Ipopt callbacks. Strategy-specific behaviour comes from method
-# dispatch on `state.nlp_parameters.nlp_packed` — passed as `Const` first arg to
-# every Enzyme.autodiff call so Julia picks the correct `_objective_value`,
-# `_heat_balance_residuals!`, `_lagrangian` method per `WeightedMeanNLPPacked`
-# / `MultiSidedNLPPacked`. The rest of the wiring (Enzyme plumbing, sparsity,
-# lower-triangle indexing) is shared.
+# dispatch on `ipopt_parameters.nlp_parameters.nlp_packed` — passed as `Const`
+# first arg to every Enzyme.autodiff call so Julia picks the correct
+# `_objective_value`, `_heat_balance_residuals!`, `_lagrangian` method per
+# `WeightedMeanNLPPacked` / `MultiSidedNLPPacked`. The rest of the wiring
+# (Enzyme plumbing, sparsity, lower-triangle indexing) is shared.
 #
-# Closures read `state.objective_parameters` / `state.nlp_parameters` at solve time so
-# refreshing the state retargets every callback without rebuilding them.
+# Functors read `ipopt_parameters.objective_parameters` /
+# `ipopt_parameters.nlp_parameters` at solve time, so refreshing the parameters
+# container retargets every callback without rebuilding them.
 #
 # Jacobian is treated as fully dense — for n_variables=9/11 sparse bookkeeping costs
 # more than the saved entries. Sparsity convention: row-major dense, 1-based,
 # entry k = (i-1)*n_variables + j ↔ (rows[k], cols[k]) = (i, j).
 #
-# Hessian uses forward-over-reverse Enzyme: the inner Reverse closure
-# `lagrangian_gradient!` computes ∇ₓL into `buffers.hessian_gradient`, the outer Forward seeds e_j and
-# pulls back column j of H into `buffers.hessian_gradient_tangent`. Sparsity is dense lower
-# triangle (i ≥ j), entry k = i(i-1)/2 + j ↔ (i, j).
-function _build_ipopt_callbacks(state::_IPOPTState, n_variables::Int, n_constraints::Int,
+# Hessian uses forward-over-reverse Enzyme: the inner Reverse functor
+# `LagrangianGradient` computes ∇ₓL into `buffers.hessian_gradient`, the outer
+# Forward seeds e_j and pulls back column j of H into
+# `buffers.hessian_gradient_tangent`. Sparsity is dense lower triangle
+# (i ≥ j), entry k = i(i-1)/2 + j ↔ (i, j).
+# --- Functor types for the five Ipopt callbacks ------------------------------
+#
+# Each callback is a `struct` with a call method. The struct fields stand in
+# for what closures would capture (`ipopt_parameters`, `buffers`, problem dimensions).
+# Two practical benefits over anonymous closures:
+#   - the callable's type is named — easier to read in stack traces / `@code_*`.
+#   - the captured fields are first-class struct fields with explicit types,
+#     so type-stability is obvious by inspection rather than implied by capture.
+# `LagrangianGradient` is the inner reverse-mode pass that `EvaluateHessian`
+# differentiates forward over; it's its own functor for the same reasons.
+
+struct EvaluateObjective{P<:IPOPTParameters} <: Function
+    ipopt_parameters::P
+end
+(f::EvaluateObjective)(x) =
+    _objective_value(f.ipopt_parameters.nlp_parameters.nlp_packed, x, f.ipopt_parameters.objective_parameters)
+
+struct EvaluateConstraints{P<:IPOPTParameters} <: Function
+    ipopt_parameters::P
+end
+(f::EvaluateConstraints)(x, g) =
+    _heat_balance_residuals!(f.ipopt_parameters.nlp_parameters.nlp_packed, g, x, f.ipopt_parameters.nlp_parameters)
+
+struct EvaluateObjectiveGradient{P<:IPOPTParameters} <: Function
+    ipopt_parameters::P
+end
+function (f::EvaluateObjectiveGradient)(x, grad_f)
+    fill!(grad_f, 0)
+    Enzyme.autodiff(Enzyme.Reverse, _objective_value,
+                    Enzyme.Active,
+                    Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+                    Enzyme.Duplicated(x, grad_f),
+                    Enzyme.Const(f.ipopt_parameters.objective_parameters))
+    return nothing
+end
+
+struct EvaluateConstraintJacobian{P<:IPOPTParameters} <: Function
+    ipopt_parameters::P
+    buffers::IpoptCallbackBuffers
+    n_variables::Int
+    n_constraints::Int
+end
+function (f::EvaluateConstraintJacobian)(x, rows, cols, values)
+    if values === nothing
+        k = 1
+        @inbounds for i in 1:f.n_constraints, j in 1:f.n_variables
+            rows[k] = i; cols[k] = j; k += 1
+        end
+    else
+        b = f.buffers
+        @inbounds for i in 1:f.n_constraints
+            fill!(b.jacobian_residual, 0); fill!(b.jacobian_residual_seed, 0); fill!(b.jacobian_x_derivative, 0); b.jacobian_residual_seed[i] = 1.0
+            Enzyme.autodiff(Enzyme.Reverse, _heat_balance_residuals!,
+                            Enzyme.Const,
+                            Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+                            Enzyme.Duplicated(b.jacobian_residual, b.jacobian_residual_seed),
+                            Enzyme.Duplicated(x, b.jacobian_x_derivative),
+                            Enzyme.Const(f.ipopt_parameters.nlp_parameters))
+            for j in 1:f.n_variables
+                values[(i-1)*f.n_variables + j] = b.jacobian_x_derivative[j]
+            end
+        end
+    end
+    return nothing
+end
+
+# Inner reverse-mode pass: Enzyme.Reverse on `_lagrangian`. `x` and the
+# residual buffer are both Duplicated so Enzyme writes adjoints into the
+# supplied buffers rather than allocating shadows. Dispatched to the right
+# `_lagrangian` method via the concrete packed type held on `ipopt_parameters`.
+struct LagrangianGradient{P<:IPOPTParameters} <: Function
+    ipopt_parameters::P
+end
+function (f::LagrangianGradient)(g, x, residual_buffer, residual_adjoint, p)
+    fill!(g, 0)
+    fill!(residual_adjoint, 0)
+    Enzyme.autodiff(Enzyme.Reverse, _lagrangian,
+                    Enzyme.Active,
+                    Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+                    Enzyme.Duplicated(x, g),
+                    Enzyme.Duplicated(residual_buffer, residual_adjoint),
+                    Enzyme.Const(p))
+    return nothing
+end
+
+struct EvaluateHessian{P<:IPOPTParameters, LG<:LagrangianGradient} <: Function
+    ipopt_parameters::P
+    buffers::IpoptCallbackBuffers
+    n_variables::Int
+    lagrangian_gradient::LG
+end
+function (f::EvaluateHessian)(x, rows, cols, sigma, lambda, values)
+    if values === nothing
+        k = 1
+        @inbounds for i in 1:f.n_variables, j in 1:i
+            rows[k] = i; cols[k] = j; k += 1
+        end
+    else
+        b = f.buffers
+        # IPOPT passes the current objective factor (sigma) and constraint
+        # multipliers; copy lambda into the cache so the Lagrangian functor
+        # (via `p.sigma` / `p.lambda`) sees them under nested AD.
+        copyto!(b.hessian_multipliers, lambda)
+        p = (; sigma, lambda = b.hessian_multipliers, ipopt_parameters = f.ipopt_parameters)
+        @inbounds for j in 1:f.n_variables
+            fill!(b.hessian_seed, 0); b.hessian_seed[j] = 1.0
+            fill!(b.hessian_gradient,    0); fill!(b.hessian_gradient_tangent,     0)
+            fill!(b.hessian_residual,    0); fill!(b.hessian_residual_tangent,  0)
+            fill!(b.hessian_residual_adjoint,   0); fill!(b.hessian_residual_adjoint_tangent, 0)
+            # Outer Forward propagates tangents through everything
+            # `lagrangian_gradient` reads/writes — including `residual_buffer`
+            # and `residual_adjoint` — so every mutable buffer needs its
+            # forward dual here.
+            Enzyme.autodiff(Enzyme.Forward, f.lagrangian_gradient,
+                            Enzyme.Const,
+                            Enzyme.Duplicated(b.hessian_gradient, b.hessian_gradient_tangent),
+                            Enzyme.Duplicated(x, b.hessian_seed),
+                            Enzyme.Duplicated(b.hessian_residual,  b.hessian_residual_tangent),
+                            Enzyme.Duplicated(b.hessian_residual_adjoint, b.hessian_residual_adjoint_tangent),
+                            Enzyme.Const(p))
+            for i in j:f.n_variables
+                k = (i * (i - 1)) ÷ 2 + j
+                values[k] = b.hessian_gradient_tangent[i]
+            end
+        end
+    end
+    return nothing
+end
+
+function _build_ipopt_callbacks(ipopt_parameters::IPOPTParameters, n_variables::Int, n_constraints::Int,
                                  buffers::IpoptCallbackBuffers)
-    evaluate_objective(x)    = _objective_value(state.nlp_parameters.nlp_packed, x, state.objective_parameters)
-    evaluate_constraints(x, g) = _heat_balance_residuals!(state.nlp_parameters.nlp_packed, g, x, state.nlp_parameters)
-    function evaluate_objective_gradient(x, grad_f)
-        fill!(grad_f, 0)
-        Enzyme.autodiff(Enzyme.Reverse, _objective_value,
-                        Enzyme.Active,
-                        Enzyme.Const(state.nlp_parameters.nlp_packed),
-                        Enzyme.Duplicated(x, grad_f),
-                        Enzyme.Const(state.objective_parameters))
-        return nothing
-    end
-    function evaluate_constraint_jacobian(x, rows, cols, values)
-        if values === nothing
-            k = 1
-            @inbounds for i in 1:n_constraints, j in 1:n_variables
-                rows[k] = i; cols[k] = j; k += 1
-            end
-        else
-            @inbounds for i in 1:n_constraints
-                fill!(buffers.jacobian_residual, 0); fill!(buffers.jacobian_residual_seed, 0); fill!(buffers.jacobian_x_derivative, 0); buffers.jacobian_residual_seed[i] = 1.0
-                Enzyme.autodiff(Enzyme.Reverse, _heat_balance_residuals!,
-                                Enzyme.Const,
-                                Enzyme.Const(state.nlp_parameters.nlp_packed),
-                                Enzyme.Duplicated(buffers.jacobian_residual, buffers.jacobian_residual_seed),
-                                Enzyme.Duplicated(x, buffers.jacobian_x_derivative),
-                                Enzyme.Const(state.nlp_parameters))
-                for j in 1:n_variables
-                    values[(i-1)*n_variables + j] = buffers.jacobian_x_derivative[j]
-                end
-            end
-        end
-        return nothing
-    end
-    # Inner reverse-gradient closure runs Enzyme.Reverse on `_lagrangian`,
-    # marking both `x` and `residual_buffer` as Duplicated so Enzyme writes
-    # adjoints into preallocated buffers instead of allocating fresh shadows.
-    # The first positional arg is `state.nlp_parameters.nlp_packed` (Const) —
-    # Julia dispatches to the correct `_lagrangian` method via its concrete
-    # packed type.
-    function lagrangian_gradient!(g, x, residual_buffer, residual_adjoint, p)
-        fill!(g, 0)
-        fill!(residual_adjoint, 0)
-        Enzyme.autodiff(Enzyme.Reverse, _lagrangian,
-                        Enzyme.Active,
-                        Enzyme.Const(state.nlp_parameters.nlp_packed),
-                        Enzyme.Duplicated(x, g),
-                        Enzyme.Duplicated(residual_buffer, residual_adjoint),
-                        Enzyme.Const(p))
-        return nothing
-    end
-    function evaluate_hessian(x, rows, cols, sigma, lambda, values)
-        if values === nothing
-            k = 1
-            @inbounds for i in 1:n_variables, j in 1:i
-                rows[k] = i; cols[k] = j; k += 1
-            end
-        else
-            # IPOPT passes the current objective factor (sigma) and constraint
-            # multipliers; copy lambda into the cache so the Lagrangian closure
-            # (via `p.sigma` / `p.lambda`) sees them under nested AD.
-            copyto!(buffers.hessian_multipliers, lambda)
-            p = (; sigma, lambda = buffers.hessian_multipliers, state)
-            @inbounds for j in 1:n_variables
-                fill!(buffers.hessian_seed, 0); buffers.hessian_seed[j] = 1.0
-                fill!(buffers.hessian_gradient,    0); fill!(buffers.hessian_gradient_tangent,     0)
-                fill!(buffers.hessian_residual,    0); fill!(buffers.hessian_residual_tangent,  0)
-                fill!(buffers.hessian_residual_adjoint,   0); fill!(buffers.hessian_residual_adjoint_tangent, 0)
-                # Outer Forward propagates tangents through everything
-                # `lagrangian_gradient!` reads/writes — including `residual_buffer`
-                # and `residual_adjoint` — so every mutable buffer needs its
-                # forward dual here.
-                Enzyme.autodiff(Enzyme.Forward, lagrangian_gradient!,
-                                Enzyme.Const,
-                                Enzyme.Duplicated(buffers.hessian_gradient, buffers.hessian_gradient_tangent),
-                                Enzyme.Duplicated(x, buffers.hessian_seed),
-                                Enzyme.Duplicated(buffers.hessian_residual,  buffers.hessian_residual_tangent),
-                                Enzyme.Duplicated(buffers.hessian_residual_adjoint, buffers.hessian_residual_adjoint_tangent),
-                                Enzyme.Const(p))
-                for i in j:n_variables
-                    k = (i * (i - 1)) ÷ 2 + j
-                    values[k] = buffers.hessian_gradient_tangent[i]
-                end
-            end
-        end
-        return nothing
-    end
-    return evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian
+    return (
+        EvaluateObjective(ipopt_parameters),
+        EvaluateConstraints(ipopt_parameters),
+        EvaluateObjectiveGradient(ipopt_parameters),
+        EvaluateConstraintJacobian(ipopt_parameters, buffers, n_variables, n_constraints),
+        EvaluateHessian(ipopt_parameters, buffers, n_variables, LagrangianGradient(ipopt_parameters)),
+    )
 end
 
 # Apply the project-wide Ipopt options to a fresh problem. Called once per
@@ -677,69 +753,26 @@ function _scaling(::HeatExchange.MultiSidedNLPPacked)
     return x_scaling
 end
 
-# Construct the cache for a given strategy. The first solve still primes type
-# inference, but every subsequent solve reuses every long-lived allocation.
-function IPOPTSolverCache(control::IPOPTControl, organism::Organism, environment::NamedTuple,
-                          metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    metabolism_parameters = metabolism_pars(organism)
-    limits     = thermoregulation(organism)
-    internal_conduction_parameters   = conduction_pars_internal(organism)
-    evaporation_parameters  = evaporation_pars(organism)
+# Decision-variable / constraint counts per NLP strategy. The only
+# strategy-dependent dimensions; everything downstream (buffer sizes,
+# sparsity, warm-start vectors) is allocated from these.
+_problem_size(::HeatExchange.WeightedMeanNLPPacked) = (9, 4)
+_problem_size(::HeatExchange.MultiSidedNLPPacked)   = (11, 6)
 
-    nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
-                                       skin_temperature_init, insulation_temperature_init;
-                                       smoothing = control.smoothing)
-
-    return _build_cache(nlp_packed, organism, environment,
-                        limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-                        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-end
-
-function _build_cache(nlp_packed::HeatExchange.WeightedMeanNLPPacked,
-                      organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-                      metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    n_variables, n_constraints = 9, 4
-    lower_bounds = zeros(n_variables); upper_bounds = zeros(n_variables); initial_values = zeros(n_variables)
-    objective_parameters, nlp_parameters = _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
-        organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    state    = _IPOPTState(objective_parameters, nlp_parameters)
-    buffers  = IpoptCallbackBuffers(n_variables, n_constraints)
-    evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian =
-        _build_ipopt_callbacks(state, n_variables, n_constraints, buffers)
-    return IPOPTSolverCache(state,
-        evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian,
-        lower_bounds, upper_bounds, initial_values, [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, Inf],
-        n_variables, n_constraints, buffers,
-        zeros(n_variables), zeros(n_constraints), zeros(n_variables), zeros(n_variables), Ref(false),
-        _scaling(nlp_packed), ones(n_constraints))
-end
-function _build_cache(nlp_packed::HeatExchange.MultiSidedNLPPacked,
-                      organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-                      metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    n_variables, n_constraints = 11, 6
-    lower_bounds = zeros(n_variables); upper_bounds = zeros(n_variables); initial_values = zeros(n_variables)
-    objective_parameters, nlp_parameters = _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
-        organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    state    = _IPOPTState(objective_parameters, nlp_parameters)
-    buffers  = IpoptCallbackBuffers(n_variables, n_constraints)
-    evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian =
-        _build_ipopt_callbacks(state, n_variables, n_constraints, buffers)
-    return IPOPTSolverCache(state,
-        evaluate_objective, evaluate_constraints, evaluate_objective_gradient, evaluate_constraint_jacobian, evaluate_hessian,
-        lower_bounds, upper_bounds, initial_values, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, Inf],
-        n_variables, n_constraints, buffers,
-        zeros(n_variables), zeros(n_constraints), zeros(n_variables), zeros(n_variables), Ref(false),
-        _scaling(nlp_packed), ones(n_constraints))
+# Constraint bounds: residuals[1:end-1] == 0 (equalities), residuals[end] >= 0
+# (Q10 inequality). Layout is identical for both NLP strategies.
+function _constraint_bounds(n_constraints::Int)
+    constraint_lower_bounds = zeros(n_constraints)
+    constraint_upper_bounds = zeros(n_constraints)
+    constraint_upper_bounds[end] = Inf
+    return constraint_lower_bounds, constraint_upper_bounds
 end
 
 """
     reset_warm_start!(cache::IPOPTSolverCache)
 
 Discard the previous solution stored in the cache. The next solve will use
-the cold initial guess derived from `metabolic_heat_flow_init`,
-`skin_temperature_init` and `insulation_temperature_init`. Use this when the
+the cold initial guess derived from the `init` NamedTuple. Use this when the
 trajectory takes a large discontinuous step (e.g. switching organism,
 changing q10 regime) where seeding from the last solution would land the
 optimiser in a bad basin.
@@ -747,33 +780,28 @@ optimiser in a bad basin.
 reset_warm_start!(cache::IPOPTSolverCache) = (cache.has_previous_solve[] = false; cache)
 
 # =============================================================================
-# Per-call solve paths.
-# Both paths delegate to `_ipopt_solve!`. The cached path refreshes the
-# mutable `_IPOPTState` and tight-bound buffers in place, then calls into
-# `_ipopt_solve!` which restores the previous primal+dual warm-start state
-# before `IpoptSolve`. The fresh path builds a single-use cache, runs one
-# cold `_ipopt_solve!`, and lets the GC collect the cache.
+# Per-call input refresh.
+# Overwrite the cache's tight-bound buffers and the two NamedTuples on
+# `ipopt_parameters` in place. Dispatch on the packed type happens inside
+# `_inputs!`, so the unused branch is dead-code-eliminated and no Union return
+# appears on the hot path.
 # =============================================================================
 
-# Refresh the cache's state and bounds for a new solve, then run IPOPT.
-# Dispatch on the packed type happens inside `_inputs!`, so the unused branch
-# is dead-code-eliminated and no Union return appears on the hot path.
-function _solve_cached!(cache::IPOPTSolverCache,
-                        nlp_packed, organism, environment, limits, metabolism_parameters,
-                        internal_conduction_parameters, evaporation_parameters, metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init; verbose)
+function _refresh_cache!(cache::IPOPTSolverCache,
+                   nlp_packed, organism, environment, init::NamedTuple)
     objective_parameters, nlp_parameters = _inputs!(cache.lower_bounds, cache.upper_bounds, cache.initial_values, nlp_packed,
-        organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    cache.state.objective_parameters = objective_parameters
-    cache.state.nlp_parameters = nlp_parameters
-    return _ipopt_solve!(cache, verbose)
+        organism, environment, init)
+    cache.ipopt_parameters.objective_parameters = objective_parameters
+    cache.ipopt_parameters.nlp_parameters = nlp_parameters
+    return cache
 end
+_refresh_cache!(cache::Nothing, args...) = IPOPTSolverCache(args...)
 
 # Direct-Ipopt solve with primal+dual warm-start.
 #
 # Each call rebuilds the C-side IpoptProblem so the new tight bounds in
 # `cache.lower_bounds` / `cache.upper_bounds` take effect — same bounds the fresh
-# `thermoregulate(..., organism, env, M, sT, iT)` path uses, so solutions
+# `thermoregulate(..., organism, env, init)` path uses, so solutions
 # stay bit-identical to that path's first iterate. CreateIpoptProblem is a
 # malloc + a few struct inits; well under a percent of an IPOPT iteration's
 # cost.
@@ -827,25 +855,6 @@ function _ipopt_solve!(cache::IPOPTSolverCache, verbose::Bool)
     return prob
 end
 
-# Fresh-per-call entrypoint — uses the same direct-Ipopt machinery as the
-# cache, but allocates a single-use cache, runs one solve, and lets the GC
-# clean up. `has_previous_solve` starts at `false` so `_ipopt_solve!` treats it as a
-# cold start (no warm-start multipliers, default Ipopt heuristic for initial
-# duals). Bounds are the tight per-call values from `_inputs!`, matching
-# the cached path's first iterate bit-for-bit.
-function _run_ipopt(
-    nlp_packed,
-    organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-    metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
-    verbose,
-)
-    cache = _build_cache(nlp_packed, organism, environment,
-        limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    prob = _ipopt_solve!(cache, verbose)
-    return _assemble(nlp_packed, organism, environment, prob.x)
-end
-
 # Unit reattachment + delegation to HeatExchange's output builder. Kept tiny
 # and shape-agnostic so both fresh and cached paths share the assembly step.
 # Dispatched on the packed type (which is 1:1 with the NLP strategy) so the
@@ -870,15 +879,13 @@ end
 # =============================================================================
 
 """
-    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment,
-                   metabolic_heat_flow_init, skin_temperature_init,
-                   insulation_temperature_init; verbose=false)
-    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment,
-                   metabolic_heat_flow_init, skin_temperature_init,
-                   insulation_temperature_init, cache::IPOPTSolverCache;
-                   verbose=false)
+    thermoregulate(::Endotherm, ::IPOPTControl, organism, environment, init;
+                   cache=nothing, verbose=false)
 
 Solve endotherm heat balance as a nonlinear program via IPOPT.
+
+`init` is a NamedTuple of initial guesses with fields `metabolic_heat_flow`,
+`skin_temperature`, and `insulation_temperature`.
 
 The NLP formulation is selected by `IPOPTControl.nlp_strategy`:
 - `WeightedMeanNLP()` (default): dorsal/ventral weighted-mean single-body formulation.
@@ -901,60 +908,31 @@ Penalty weights in `ThermoregulationLimits`:
 # Arguments
 - `organism`: must have `OrganismTraits` with `ThermoregulationLimits`
 - `environment`: NamedTuple with `environment_pars` and `environment_vars`
-- `metabolic_heat_flow_init`: initial guess for metabolic heat generation (W)
-- `skin_temperature_init`: initial guess for skin temperature (K)
-- `insulation_temperature_init`: initial guess for insulation surface temperature (K)
-- `cache` (optional): an `IPOPTSolverCache` produced by `IPOPTSolverCache(control, …)`.
-  Reuse across calls in a sweep to skip ~190 KiB of per-solve setup. Must match the
-  organism's body-shape type, NLP strategy and smoothing strategy — invalidate the
-  cache and rebuild if any of those change.
+- `init`: NamedTuple of initial guesses — `metabolic_heat_flow` (W),
+  `skin_temperature` (K), `insulation_temperature` (K). Use
+  `initial_physiological_state(organism, environment.environment_vars)` for defaults.
+- `cache` (keyword, optional): an `IPOPTSolverCache` produced by
+  `IPOPTSolverCache(control, …)`. Reuse across calls in a sweep to skip per-solve
+  allocation and enable primal+dual warm-starting. Must match the organism's body-
+  shape type, NLP strategy and smoothing strategy — invalidate the cache and rebuild
+  if any of those change.
 """
 function thermoregulate(
     ::Endotherm,
     control::IPOPTControl,
     organism::Organism,
     environment::NamedTuple,
-    metabolic_heat_flow_init,
-    skin_temperature_init,
-    insulation_temperature_init;
-    verbose = false,
+    init::NamedTuple;
+    cache::Union{Nothing,IPOPTSolverCache} = nothing,
+    verbose::Bool = false,
 )
-    metabolism_parameters = metabolism_pars(organism)
-    limits     = thermoregulation(organism)
-    internal_conduction_parameters   = conduction_pars_internal(organism)
-    evaporation_parameters  = evaporation_pars(organism)
-
-    nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
-                                       skin_temperature_init, insulation_temperature_init;
-                                       smoothing = control.smoothing)
-
-    _run_ipopt(nlp_packed, organism, environment, limits, metabolism_parameters, internal_conduction_parameters, evaporation_parameters,
-               metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
-               verbose)
-end
-function thermoregulate(
-    ::Endotherm,
-    control::IPOPTControl,
-    organism::Organism,
-    environment::NamedTuple,
-    metabolic_heat_flow_init,
-    skin_temperature_init,
-    insulation_temperature_init,
-    cache::IPOPTSolverCache;
-    verbose = false,
-)
-    metabolism_parameters = metabolism_pars(organism)
-    limits     = thermoregulation(organism)
-    internal_conduction_parameters   = conduction_pars_internal(organism)
-    evaporation_parameters  = evaporation_pars(organism)
-
-    nlp_packed = HeatExchange.nlp_pack(control.nlp_strategy, organism, environment,
-                                       skin_temperature_init, insulation_temperature_init;
-                                       smoothing = control.smoothing)
-
-    prob = _solve_cached!(cache, nlp_packed, organism, environment, limits, metabolism_parameters,
-        internal_conduction_parameters, evaporation_parameters, metabolic_heat_flow_init, skin_temperature_init,
-        insulation_temperature_init; verbose)
-
+    nlp_packed = HeatExchange.nlp_pack(
+        control.nlp_strategy, organism, environment, init.skin_temperature, init.insulation_temperature;
+        smoothing = control.smoothing
+    )
+    # Either branch leaves the cache fully populated for `_ipopt_solve!`, 
+    # with `_inputs!` called exactly once.
+    cache = _refresh_cache!(cache, nlp_packed, organism, environment, init)
+    prob = _ipopt_solve!(cache, verbose)
     return _assemble(nlp_packed, organism, environment, prob.x)
 end

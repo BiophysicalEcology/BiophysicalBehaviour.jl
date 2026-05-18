@@ -172,10 +172,14 @@ end
 # ----------------------------------------------------------------------------
 
 """
-    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment,
-                   metabolic_heat_flow, skin_temperature, insulation_temperature)
+    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, init)
 
 Run the endotherm thermoregulation loop using rule-based sequential control.
+
+`init` is a NamedTuple of initial guesses (`metabolic_heat_flow`,
+`skin_temperature`, `insulation_temperature`). Only `skin_temperature` and
+`insulation_temperature` seed the first `solve_metabolic_rate` call;
+`metabolic_heat_flow` is computed from scratch on every iteration.
 
 Applies thermoregulation behaviors in order:
 1. Reduce insulation (piloerection)
@@ -192,10 +196,10 @@ function thermoregulate(
     ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
+    init::NamedTuple,
 )
+    (; skin_temperature, insulation_temperature) = init
+
     limits = thermoregulation(organism)
     endotherm_out = nothing
 

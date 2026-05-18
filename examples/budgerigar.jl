@@ -177,9 +177,7 @@ environment = (; environment_pars, environment_vars)
 endotherm_out = thermoregulate(
     organism,
     environment,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
+    (; metabolic_heat_flow, skin_temperature, insulation_temperature),
 )
 thermoreg_out = endotherm_out.thermoregulation
 morphology = endotherm_out.morphology
@@ -226,18 +224,14 @@ results = NamedTuple[]
                                     evaporation_pars, respiration_pars, metabolism_pars_loop, geometry)
 
     #--- Initial conditions (reset every run!) ---
-    skin_temperature_loop = metabolism_pars_loop.core_temperature - 3.0u"K"
-    insulation_temperature_loop = environment_vars_loop.air_temperature
-    metabolic_heat_flow_loop = 0.0u"W"
+    init_loop = (;
+        metabolic_heat_flow    = 0.0u"W",
+        skin_temperature       = metabolism_pars_loop.core_temperature - 3.0u"K",
+        insulation_temperature = environment_vars_loop.air_temperature,
+    )
 
     # --- Thermoregulation ---
-    local endotherm_out = thermoregulate(
-        organism_loop,
-        environment_loop,
-        metabolic_heat_flow_loop,
-        skin_temperature_loop,
-        insulation_temperature_loop,
-    )
+    local endotherm_out = thermoregulate(organism_loop, environment_loop, init_loop)
 
     tr = endotherm_out.thermoregulation
     ef = endotherm_out.energy_flows
@@ -544,7 +538,11 @@ insulation_temperature_ipopt    = air_temperatures[1]
 
     out = thermoregulate(
         Endotherm(), IPOPTControl(), organism_loop, environment_loop,
-        metabolic_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt,
+        (;
+            metabolic_heat_flow    = metabolic_heat_flow_ipopt,
+            skin_temperature       = skin_temperature_ipopt,
+            insulation_temperature = insulation_temperature_ipopt,
+        ),
     )
 
     global metabolic_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow

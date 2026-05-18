@@ -21,8 +21,11 @@ biophysical models from `HeatExchange.jl`.
 The entry point is:
 
 ```julia
-thermoregulate(Endotherm(), IPOPTControl(), organism, environment, generated_heat_flow_init, skin_temperature_init, insulation_temperature_init)
+thermoregulate(Endotherm(), IPOPTControl(), organism, environment, init)
 ```
+
+where `init` is a NamedTuple with fields `metabolic_heat_flow`, `skin_temperature`, and
+`insulation_temperature` (see `initial_physiological_state` for the standard defaults).
 
 ---
 
@@ -223,24 +226,27 @@ rule-based solver and is the natural choice for a sequence that changes smoothly
 environmental conditions:
 
 ```julia
-generated_heat_flow_ipopt    = minimum_heat_flow                          # start at minimum metabolic rate
-skin_temperature_ipopt       = core_temperature - 3.0u"K"
-insulation_temperature_ipopt = air_temperatures[1]
+init = (;
+    metabolic_heat_flow    = minimum_heat_flow,                # start at minimum metabolic rate
+    skin_temperature       = core_temperature - 3.0u"K",
+    insulation_temperature = air_temperatures[1],
+)
 
 for (air_temperature, ...) in zip(air_temperatures, ...)
     # ... build organism and environment ...
-    out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
-                         generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
+    out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment, init)
 
-    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
-    skin_temperature_ipopt       = out.thermoregulation.skin_temperature
-    insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
+    init = (;
+        metabolic_heat_flow    = out.energy_flows.metabolic_heat_flow,
+        skin_temperature       = out.thermoregulation.skin_temperature,
+        insulation_temperature = out.thermoregulation.insulation_temperature,
+    )
 end
 ```
 
 For a single solve (e.g., during testing), any physiologically plausible initial point works —
-for example `generated_heat_flow_init = 0.0u"W"` (clamped to `heat_flow_min` inside the solver),
-`skin_temperature_init` near `setpoint_temperature - 3 K`, and `insulation_temperature_init` near ambient temperature.
+for example `metabolic_heat_flow = 0.0u"W"` (clamped to `heat_flow_min` inside the solver),
+`skin_temperature` near `setpoint_temperature - 3 K`, and `insulation_temperature` near ambient temperature.
 
 ---
 
@@ -297,21 +303,25 @@ as input to the other.
 ```julia
 # Rule-based pass
 for (air_temperature, rh, q10) in zip(air_temperatures, ...)
-    out = thermoregulate(organism, environment, 0.0u"W", skin_temperature, insulation_temperature)
+    init = (; metabolic_heat_flow = 0.0u"W", skin_temperature, insulation_temperature)
+    out = thermoregulate(organism, environment, init)
     push!(results, ...)
 end
 
 # IPOPT pass (carry-forward initialisation)
-generated_heat_flow_ipopt    = minimum_heat_flow
-skin_temperature_ipopt       = core_temperature - 3.0u"K"
-insulation_temperature_ipopt = air_temperatures[1]
+init = (;
+    metabolic_heat_flow    = minimum_heat_flow,
+    skin_temperature       = core_temperature - 3.0u"K",
+    insulation_temperature = air_temperatures[1],
+)
 
 for (air_temperature, rh, q10) in zip(air_temperatures, ...)
-    out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment,
-                         generated_heat_flow_ipopt, skin_temperature_ipopt, insulation_temperature_ipopt)
-    generated_heat_flow_ipopt    = out.energy_flows.metabolic_heat_flow
-    skin_temperature_ipopt       = out.thermoregulation.skin_temperature
-    insulation_temperature_ipopt = out.thermoregulation.insulation_temperature
+    out = thermoregulate(Endotherm(), IPOPTControl(), organism, environment, init)
+    init = (;
+        metabolic_heat_flow    = out.energy_flows.metabolic_heat_flow,
+        skin_temperature       = out.thermoregulation.skin_temperature,
+        insulation_temperature = out.thermoregulation.insulation_temperature,
+    )
     push!(ipopt_results, ...)
 end
 ```
