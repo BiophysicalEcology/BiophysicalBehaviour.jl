@@ -57,7 +57,7 @@
 # Constraints (4): residuals[1:3] == 0, residuals[4] >= 0 (Q10)
 # =============================================================================
 
-function _objective_value_weighted(effectors, opt)
+function _objective_value(::HeatExchange.WeightedMeanNLPPacked, effectors, opt)
     opt.core_temperature_penalty * ((effectors[1] - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
     opt.metabolic_heat_penalty   * ((exp(effectors[4]) - opt.heat_flow_min_W)   / opt.heat_flow_range)^2        +
     opt.gradient_penalty         * ((effectors[1] - effectors[2] - opt.target_gradient) / opt.gradient_range)^2 +
@@ -68,7 +68,7 @@ end
 # Float64 effectors in → Unitful physics (via HeatExchange.nlp_residuals) → Float64 residuals out.
 # residuals[1:3] == 0 (energy balance, internal conduction, skin temp).
 # residuals[4]  >= 0 (Q10: metabolic_heat_flow >= minimum_heat_flow · q10^((T_core − T_setpoint)/10)).
-function _heat_balance_residuals_weighted!(residuals, effectors, p)
+function _heat_balance_residuals!(nlp_packed::HeatExchange.WeightedMeanNLPPacked, residuals, effectors, p)
     core_temperature       = effectors[1] * u"K"
     skin_temperature       = effectors[2] * u"K"
     insulation_temperature = effectors[3] * u"K"
@@ -79,7 +79,7 @@ function _heat_balance_residuals_weighted!(residuals, effectors, p)
     insulation_depth       = effectors[8] * u"m"
     axis_ratio_b           = effectors[9]
 
-    r = HeatExchange.nlp_residuals(p.nlp_packed, core_temperature, skin_temperature,
+    r = HeatExchange.nlp_residuals(nlp_packed, core_temperature, skin_temperature,
         insulation_temperature, metabolic_heat_flow, flesh_conductivity,
         panting_rate, skin_wetness, insulation_depth, axis_ratio_b)
     residuals[1] = ustrip(u"W", r.residuals[1])   # energy_balance
@@ -108,7 +108,7 @@ end
 # Constraints (6): residuals[1:5] == 0, residuals[6] >= 0 (Q10)
 # =============================================================================
 
-function _objective_value_multisided(effectors, opt)
+function _objective_value(::HeatExchange.MultiSidedNLPPacked, effectors, opt)
     skin_temp_mean = (effectors[2] + effectors[4]) / 2
     opt.core_temperature_penalty * ((effectors[1] - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
     opt.metabolic_heat_penalty   * ((exp(effectors[6]) - opt.heat_flow_min_W)   / opt.heat_flow_range)^2        +
@@ -119,7 +119,7 @@ end
 
 # residuals[1:5] == 0 (dorsal surface, dorsal skin, ventral surface, ventral skin, whole-organism).
 # residuals[6]  >= 0 (Q10: metabolic_heat_flow >= minimum_heat_flow · q10^((T_core − T_setpoint)/10)).
-function _heat_balance_residuals_multisided!(residuals, effectors, p)
+function _heat_balance_residuals!(nlp_packed::HeatExchange.MultiSidedNLPPacked, residuals, effectors, p)
     core_temperature              = effectors[1]  * u"K"
     dorsal_skin_temperature       = effectors[2]  * u"K"
     dorsal_insulation_temperature = effectors[3]  * u"K"
@@ -132,7 +132,7 @@ function _heat_balance_residuals_multisided!(residuals, effectors, p)
     insulation_depth              = effectors[10] * u"m"
     axis_ratio_b                  = effectors[11]
 
-    r = HeatExchange.nlp_residuals(p.nlp_packed, core_temperature,
+    r = HeatExchange.nlp_residuals(nlp_packed, core_temperature,
         dorsal_skin_temperature, dorsal_insulation_temperature,
         ventral_skin_temperature, ventral_insulation_temperature,
         metabolic_heat_flow, flesh_conductivity, panting_rate, skin_wetness,
@@ -166,16 +166,15 @@ end
 # bookkeeping inside the Hessian callback.
 # =============================================================================
 
-function _lagrangian_weighted(x, r_buf, p)
-    _heat_balance_residuals_weighted!(r_buf, x, p.state.nlp_pars)
-    return p.sigma * _objective_value_weighted(x, p.state.opt_pars) +
+function _lagrangian(nlp_packed::HeatExchange.WeightedMeanNLPPacked, x, r_buf, p)
+    _heat_balance_residuals!(nlp_packed, r_buf, x, p.state.nlp_pars)
+    return p.sigma * _objective_value(nlp_packed, x, p.state.opt_pars) +
            p.lambda[1]*r_buf[1] + p.lambda[2]*r_buf[2] +
            p.lambda[3]*r_buf[3] + p.lambda[4]*r_buf[4]
 end
-
-function _lagrangian_multisided(x, r_buf, p)
-    _heat_balance_residuals_multisided!(r_buf, x, p.state.nlp_pars)
-    return p.sigma * _objective_value_multisided(x, p.state.opt_pars) +
+function _lagrangian(nlp_packed::HeatExchange.MultiSidedNLPPacked, x, r_buf, p)
+    _heat_balance_residuals!(nlp_packed, r_buf, x, p.state.nlp_pars)
+    return p.sigma * _objective_value(nlp_packed, x, p.state.opt_pars) +
            p.lambda[1]*r_buf[1] + p.lambda[2]*r_buf[2] + p.lambda[3]*r_buf[3] +
            p.lambda[4]*r_buf[4] + p.lambda[5]*r_buf[5] + p.lambda[6]*r_buf[6]
 end
@@ -190,10 +189,10 @@ end
 # across calls, so mutable-state field assignment never reboxes.
 # =============================================================================
 
-function _weighted_inputs!(lb, ub, u0, nlp_packed::HeatExchange.WeightedMeanNLPPacked,
-                            organism, environment, limits, metab_pars, int_cond, evap_pars,
-                            metabolic_heat_flow_init, skin_temperature_init,
-                            insulation_temperature_init)
+function _inputs!(lb, ub, u0, nlp_packed::HeatExchange.WeightedMeanNLPPacked,
+                   organism, environment, limits, metab_pars, int_cond, evap_pars,
+                   metabolic_heat_flow_init, skin_temperature_init,
+                   insulation_temperature_init)
     air_temperature_K      = ustrip(u"K", environment.environment_vars.air_temperature)
     setpoint_temperature_K = ustrip(u"K", metab_pars.core_temperature)
     core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
@@ -255,10 +254,9 @@ function _weighted_inputs!(lb, ub, u0, nlp_packed::HeatExchange.WeightedMeanNLPP
     )
     return opt_pars, nlp_pars
 end
-
-function _multisided_inputs!(lb, ub, u0, nlp_packed::HeatExchange.MultiSidedNLPPacked,
-                              organism, environment, limits, metab_pars, int_cond, evap_pars,
-                              metabolic_heat_flow_init, _, _)
+function _inputs!(lb, ub, u0, nlp_packed::HeatExchange.MultiSidedNLPPacked,
+                   organism, environment, limits, metab_pars, int_cond, evap_pars,
+                   metabolic_heat_flow_init, _, _)
     air_temperature_K      = ustrip(u"K", environment.environment_vars.air_temperature)
     setpoint_temperature_K = ustrip(u"K", metab_pars.core_temperature)
     core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
@@ -480,7 +478,7 @@ mutable struct IPOPTSolverCache{S<:HeatExchange.NLPStrategy, ST<:_IPOPTState,
     prev_mult_x_U::Vector{Float64}
     has_prev::Bool
     # User-provided variable scaling (one entry per decision variable). See
-    # `_scaling_weighted` / `_scaling_multisided` for the values. Passed to
+    # the `_scaling` methods for the values. Passed to
     # Ipopt via `SetIpoptProblemScaling` together with `obj_scaling = 1.0`
     # and an all-ones `g_scaling`, after `CreateIpoptProblem` but before
     # `IpoptSolve`. Allocated once at cache construction and reused for
@@ -489,10 +487,12 @@ mutable struct IPOPTSolverCache{S<:HeatExchange.NLPStrategy, ST<:_IPOPTState,
     g_scaling::Vector{Float64}
 end
 
-# Direct-Ipopt callbacks. Strategy-specific behaviour comes from the three
-# top-level physics functions passed in (`obj_fn`, `res_fn!`, `lag_fn`) —
-# the rest of the wiring (Enzyme calls, sparsity, lower-triangle indexing)
-# is shared between WeightedMeanNLP and MultiSidedNLP.
+# Direct-Ipopt callbacks. Strategy-specific behaviour comes from method
+# dispatch on `state.nlp_pars.nlp_packed` — passed as `Const` first arg to
+# every Enzyme.autodiff call so Julia picks the correct `_objective_value`,
+# `_heat_balance_residuals!`, `_lagrangian` method per `WeightedMeanNLPPacked`
+# / `MultiSidedNLPPacked`. The rest of the wiring (Enzyme plumbing, sparsity,
+# lower-triangle indexing) is shared.
 #
 # Closures read `state.opt_pars` / `state.nlp_pars` at solve time so
 # refreshing the state retargets every callback without rebuilding them.
@@ -505,15 +505,15 @@ end
 # `lag_grad!` computes ∇ₓL into `b.hess_g`, the outer Forward seeds e_j and
 # pulls back column j of H into `b.hess_dg`. Sparsity is dense lower
 # triangle (i ≥ j), entry k = i(i-1)/2 + j ↔ (i, j).
-function _build_ipopt_callbacks(obj_fn::F1, res_fn!::F2, lag_fn::F3,
-                                 state::_IPOPTState, n::Int, m::Int,
-                                 b::IpoptCallbackBuffers) where {F1, F2, F3}
-    eval_f(x)    = obj_fn(x, state.opt_pars)
-    eval_g(x, g) = res_fn!(g, x, state.nlp_pars)
+function _build_ipopt_callbacks(state::_IPOPTState, n::Int, m::Int,
+                                 b::IpoptCallbackBuffers)
+    eval_f(x)    = _objective_value(state.nlp_pars.nlp_packed, x, state.opt_pars)
+    eval_g(x, g) = _heat_balance_residuals!(state.nlp_pars.nlp_packed, g, x, state.nlp_pars)
     function eval_grad_f(x, grad_f)
         fill!(grad_f, 0)
-        Enzyme.autodiff(Enzyme.Reverse, obj_fn,
+        Enzyme.autodiff(Enzyme.Reverse, _objective_value,
                         Enzyme.Active,
+                        Enzyme.Const(state.nlp_pars.nlp_packed),
                         Enzyme.Duplicated(x, grad_f),
                         Enzyme.Const(state.opt_pars))
         return nothing
@@ -527,8 +527,9 @@ function _build_ipopt_callbacks(obj_fn::F1, res_fn!::F2, lag_fn::F3,
         else
             @inbounds for i in 1:m
                 fill!(b.jac_r, 0); fill!(b.jac_dr, 0); fill!(b.jac_dx, 0); b.jac_dr[i] = 1.0
-                Enzyme.autodiff(Enzyme.Reverse, res_fn!,
+                Enzyme.autodiff(Enzyme.Reverse, _heat_balance_residuals!,
                                 Enzyme.Const,
+                                Enzyme.Const(state.nlp_pars.nlp_packed),
                                 Enzyme.Duplicated(b.jac_r, b.jac_dr),
                                 Enzyme.Duplicated(x, b.jac_dx),
                                 Enzyme.Const(state.nlp_pars))
@@ -539,14 +540,17 @@ function _build_ipopt_callbacks(obj_fn::F1, res_fn!::F2, lag_fn::F3,
         end
         return nothing
     end
-    # Inner reverse-gradient closure runs Enzyme.Reverse on `lag_fn(x, r, p)`,
+    # Inner reverse-gradient closure runs Enzyme.Reverse on `_lagrangian`,
     # marking both `x` and `r` as Duplicated so Enzyme writes adjoints into
-    # preallocated buffers instead of allocating fresh shadows.
+    # preallocated buffers instead of allocating fresh shadows. The first
+    # positional arg is `state.nlp_pars.nlp_packed` (Const) — Julia dispatches
+    # to the correct `_lagrangian` method via its concrete packed type.
     function lag_grad!(g, x, r_buf, r_adj, p)
         fill!(g, 0)
         fill!(r_adj, 0)
-        Enzyme.autodiff(Enzyme.Reverse, lag_fn,
+        Enzyme.autodiff(Enzyme.Reverse, _lagrangian,
                         Enzyme.Active,
+                        Enzyme.Const(state.nlp_pars.nlp_packed),
                         Enzyme.Duplicated(x, g),
                         Enzyme.Duplicated(r_buf, r_adj),
                         Enzyme.Const(p))
@@ -612,8 +616,8 @@ function _apply_ipopt_options!(prob::Ipopt.IpoptProblem, verbose::Bool, warm_sta
     # once the optimiser is in the right basin.
     Ipopt.AddIpoptStrOption(prob, "mu_strategy",           "adaptive")
     # User-provided variable scaling — set the actual factors via
-    # `SetIpoptProblemScaling` after CreateIpoptProblem (see
-    # `_scaling_weighted` / `_scaling_multisided` for values). Telling Ipopt
+    # `SetIpoptProblemScaling` after CreateIpoptProblem (see the `_scaling`
+    # methods for values). Telling Ipopt
     # we'll supply our own scales skips its `gradient-based` heuristic pass
     # (an extra Jacobian eval at the initial point) and gives the solver a
     # well-conditioned internal problem from iteration zero.
@@ -624,25 +628,24 @@ end
 # ──────────────────────────────────────────────────────────────────────────
 # TEMPORARY: variable scaling by raw index position.
 #
-# These two functions hard-code Ipopt's per-variable scale factors keyed by
-# integer index. The variable layout (`x[1] = core_T`, …) only exists as
-# comments in the residual function headers — there is no shared schema
-# between (a) `_*_inputs!` (which writes bounds and `u0`), (b)
-# `_objective_value_*` / `_heat_balance_residuals_*` (which decode `x[i]`),
-# and (c) these scaling functions. Reordering / inserting / renaming a
-# variable in any one of those three places without touching the other two
-# silently mis-scales the problem.
+# These methods hard-code Ipopt's per-variable scale factors keyed by integer
+# index. The variable layout (`x[1] = core_T`, …) only exists as comments in
+# the residual function headers — there is no shared schema between (a)
+# `_inputs!` (which writes bounds and `u0`), (b) `_objective_value` /
+# `_heat_balance_residuals!` (which decode `x[i]`), and (c) `_scaling`.
+# Reordering / inserting / renaming a variable in any one of those three
+# places without touching the other two silently mis-scales the problem.
 #
 # Proper fix: extend the ModelParameters.jl `Param` wrappers that already
 # carry `bounds` / `units` / `val` (see `HeatExchange/src/traits.jl`) with a
 # `scaling` field. Each decision variable's source `Param` then owns its
-# scale alongside its bounds, and `_*_inputs!` reads scale and bounds from
+# scale alongside its bounds, and `_inputs!` reads scale and bounds from
 # the same place — no positional duplication. Requires adding `scaling` to
 # the relevant traits (`ThermoregulationLimits`, etc.) and threading it
-# through `_*_inputs!` to fill `cache.x_scaling`. Worth doing the next time
+# through `_inputs!` to fill `cache.x_scaling`. Worth doing the next time
 # we touch the trait schema.
 # ──────────────────────────────────────────────────────────────────────────
-function _scaling_weighted()
+function _scaling(::HeatExchange.WeightedMeanNLP)
     x_scaling = zeros(9)
     x_scaling[1] = 1/300.0     # core_T ~ 300 K
     x_scaling[2] = 1/300.0     # skin_T ~ 300 K
@@ -655,8 +658,7 @@ function _scaling_weighted()
     x_scaling[9] = 1.0         # axis_ratio ~ 1
     return x_scaling
 end
-
-function _scaling_multisided()
+function _scaling(::HeatExchange.MultiSidedNLP)
     x_scaling = zeros(11)
     x_scaling[1] = 1/300.0     # core
     for i in 2:5
@@ -695,46 +697,39 @@ function _build_cache(strategy::HeatExchange.WeightedMeanNLP,
                       M_init, sT_init, iT_init)
     n, m = 9, 4
     lb = zeros(n); ub = zeros(n); u0 = zeros(n)
-    opt_pars, nlp_pars = _weighted_inputs!(lb, ub, u0, nlp_packed,
+    opt_pars, nlp_pars = _inputs!(lb, ub, u0, nlp_packed,
         organism, environment, limits, metab_pars, int_cond, evap_pars,
         M_init, sT_init, iT_init)
     state    = _IPOPTState(opt_pars, nlp_pars)
     buffers  = IpoptCallbackBuffers(n, m)
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h =
-        _build_ipopt_callbacks(_objective_value_weighted,
-                                _heat_balance_residuals_weighted!,
-                                _lagrangian_weighted,
-                                state, n, m, buffers)
+        _build_ipopt_callbacks(state, n, m, buffers)
     return IPOPTSolverCache(strategy, state,
         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h,
         lb, ub, u0, [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, Inf],
         n, m, buffers,
         zeros(n), zeros(m), zeros(n), zeros(n), false,
-        _scaling_weighted(), ones(m))
+        _scaling(strategy), ones(m))
 end
-
 function _build_cache(strategy::HeatExchange.MultiSidedNLP,
                       nlp_packed::HeatExchange.MultiSidedNLPPacked,
                       organism, environment, limits, metab_pars, int_cond, evap_pars,
                       M_init, sT_init, iT_init)
     n, m = 11, 6
     lb = zeros(n); ub = zeros(n); u0 = zeros(n)
-    opt_pars, nlp_pars = _multisided_inputs!(lb, ub, u0, nlp_packed,
+    opt_pars, nlp_pars = _inputs!(lb, ub, u0, nlp_packed,
         organism, environment, limits, metab_pars, int_cond, evap_pars,
         M_init, sT_init, iT_init)
     state    = _IPOPTState(opt_pars, nlp_pars)
     buffers  = IpoptCallbackBuffers(n, m)
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h =
-        _build_ipopt_callbacks(_objective_value_multisided,
-                                _heat_balance_residuals_multisided!,
-                                _lagrangian_multisided,
-                                state, n, m, buffers)
+        _build_ipopt_callbacks(state, n, m, buffers)
     return IPOPTSolverCache(strategy, state,
         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h,
         lb, ub, u0, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, Inf],
         n, m, buffers,
         zeros(n), zeros(m), zeros(n), zeros(n), false,
-        _scaling_multisided(), ones(m))
+        _scaling(strategy), ones(m))
 end
 
 """
@@ -759,24 +754,12 @@ reset_warm_start!(cache::IPOPTSolverCache) = (cache.has_prev = false; cache)
 # =============================================================================
 
 # Refresh the cache's state and bounds for a new solve, then run IPOPT.
-# Splits inputs computation by strategy via dispatch on cache.nlp_strategy so
-# the unused branch is dead-code-eliminated and no Union return appears on the
-# hot path.
-function _solve_cached!(cache::IPOPTSolverCache{<:HeatExchange.WeightedMeanNLP},
+# Dispatch on the packed type happens inside `_inputs!`, so the unused branch
+# is dead-code-eliminated and no Union return appears on the hot path.
+function _solve_cached!(cache::IPOPTSolverCache,
                         nlp_packed, organism, environment, limits, metab_pars,
                         int_cond, evap_pars, M_init, sT_init, iT_init; verbose)
-    opt_pars, nlp_pars = _weighted_inputs!(cache.lb, cache.ub, cache.u0, nlp_packed,
-        organism, environment, limits, metab_pars, int_cond, evap_pars,
-        M_init, sT_init, iT_init)
-    cache.state.opt_pars = opt_pars
-    cache.state.nlp_pars = nlp_pars
-    return _ipopt_solve!(cache, verbose)
-end
-
-function _solve_cached!(cache::IPOPTSolverCache{<:HeatExchange.MultiSidedNLP},
-                        nlp_packed, organism, environment, limits, metab_pars,
-                        int_cond, evap_pars, M_init, sT_init, iT_init; verbose)
-    opt_pars, nlp_pars = _multisided_inputs!(cache.lb, cache.ub, cache.u0, nlp_packed,
+    opt_pars, nlp_pars = _inputs!(cache.lb, cache.ub, cache.u0, nlp_packed,
         organism, environment, limits, metab_pars, int_cond, evap_pars,
         M_init, sT_init, iT_init)
     cache.state.opt_pars = opt_pars
@@ -858,9 +841,8 @@ function _run_ipopt(
         limits, metab_pars, int_cond, evap_pars,
         metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
     prob = _ipopt_solve!(cache, verbose)
-    return _assemble_weighted(nlp_packed, organism, environment, prob.x)
+    return _assemble(nlp_packed, organism, environment, prob.x)
 end
-
 function _run_ipopt(
     nlp_packed::HeatExchange.MultiSidedNLPPacked,
     organism, environment, limits, metab_pars, int_cond, evap_pars,
@@ -871,18 +853,19 @@ function _run_ipopt(
         limits, metab_pars, int_cond, evap_pars,
         metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
     prob = _ipopt_solve!(cache, verbose)
-    return _assemble_multisided(nlp_packed, organism, environment, prob.x)
+    return _assemble(nlp_packed, organism, environment, prob.x)
 end
 
 # Unit reattachment + delegation to HeatExchange's output builder. Kept tiny
 # and shape-agnostic so both fresh and cached paths share the assembly step.
-function _assemble_weighted(nlp_packed, organism, environment, x_sol)
+# Dispatched on the packed type (which is 1:1 with the NLP strategy) so the
+# variable layout per strategy stays adjacent to its decoding.
+function _assemble(nlp_packed::HeatExchange.WeightedMeanNLPPacked, organism, environment, x_sol)
     return HeatExchange.nlp_assemble_output(nlp_packed, organism, environment,
         x_sol[1] * u"K", x_sol[2] * u"K", x_sol[3] * u"K", exp(x_sol[4]) * u"W",
         x_sol[5] * u"W/m/K", x_sol[6], x_sol[7], x_sol[8] * u"m", x_sol[9])
 end
-
-function _assemble_multisided(nlp_packed, organism, environment, x_sol)
+function _assemble(nlp_packed::HeatExchange.MultiSidedNLPPacked, organism, environment, x_sol)
     return HeatExchange.nlp_assemble_output(nlp_packed, organism, environment,
         x_sol[1]  * u"K",
         x_sol[2]  * u"K", x_sol[3]  * u"K",
@@ -959,7 +942,6 @@ function thermoregulate(
                metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
                verbose)
 end
-
 function thermoregulate(
     ::Endotherm,
     control::IPOPTControl,
@@ -984,7 +966,5 @@ function thermoregulate(
         int_cond, evap_pars, metabolic_heat_flow_init, skin_temperature_init,
         insulation_temperature_init; verbose)
 
-    return cache.nlp_strategy isa HeatExchange.WeightedMeanNLP ?
-        _assemble_weighted(nlp_packed, organism, environment, prob.x) :
-        _assemble_multisided(nlp_packed, organism, environment, prob.x)
+    return _assemble(nlp_packed, organism, environment, prob.x)
 end
