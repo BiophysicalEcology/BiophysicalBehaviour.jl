@@ -437,9 +437,7 @@ call with the tight per-call bounds; that allocation is small and Julia-
 side state (`prev_x`, `prev_mult_*`) carries the warm-start info across
 rebuilds.
 """
-mutable struct IPOPTSolverCache{S<:HeatExchange.NLPStrategy, ST<:_IPOPTState,
-                                  EF, EG, EGF, EJG, EH}
-    nlp_strategy::S
+mutable struct IPOPTSolverCache{ST<:_IPOPTState, EF, EG, EGF, EJG, EH}
     state::ST
     # Cached callback closures. These read `state.opt_pars` / `state.nlp_pars`
     # at solve time, so updating the state retargets every callback without
@@ -645,7 +643,7 @@ end
 # through `_inputs!` to fill `cache.x_scaling`. Worth doing the next time
 # we touch the trait schema.
 # ──────────────────────────────────────────────────────────────────────────
-function _scaling(::HeatExchange.WeightedMeanNLP)
+function _scaling(::HeatExchange.WeightedMeanNLPPacked)
     x_scaling = zeros(9)
     x_scaling[1] = 1/300.0     # core_T ~ 300 K
     x_scaling[2] = 1/300.0     # skin_T ~ 300 K
@@ -658,7 +656,7 @@ function _scaling(::HeatExchange.WeightedMeanNLP)
     x_scaling[9] = 1.0         # axis_ratio ~ 1
     return x_scaling
 end
-function _scaling(::HeatExchange.MultiSidedNLP)
+function _scaling(::HeatExchange.MultiSidedNLPPacked)
     x_scaling = zeros(11)
     x_scaling[1] = 1/300.0     # core
     for i in 2:5
@@ -686,13 +684,12 @@ function IPOPTSolverCache(control::IPOPTControl, organism::Organism, environment
                                        skin_temperature_init, insulation_temperature_init;
                                        smoothing = control.smoothing)
 
-    return _build_cache(control.nlp_strategy, nlp_packed, organism, environment,
+    return _build_cache(nlp_packed, organism, environment,
                         limits, metab_pars, int_cond, evap_pars,
                         metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
 end
 
-function _build_cache(strategy::HeatExchange.WeightedMeanNLP,
-                      nlp_packed::HeatExchange.WeightedMeanNLPPacked,
+function _build_cache(nlp_packed::HeatExchange.WeightedMeanNLPPacked,
                       organism, environment, limits, metab_pars, int_cond, evap_pars,
                       M_init, sT_init, iT_init)
     n, m = 9, 4
@@ -704,15 +701,14 @@ function _build_cache(strategy::HeatExchange.WeightedMeanNLP,
     buffers  = IpoptCallbackBuffers(n, m)
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h =
         _build_ipopt_callbacks(state, n, m, buffers)
-    return IPOPTSolverCache(strategy, state,
+    return IPOPTSolverCache(state,
         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h,
         lb, ub, u0, [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, Inf],
         n, m, buffers,
         zeros(n), zeros(m), zeros(n), zeros(n), false,
-        _scaling(strategy), ones(m))
+        _scaling(nlp_packed), ones(m))
 end
-function _build_cache(strategy::HeatExchange.MultiSidedNLP,
-                      nlp_packed::HeatExchange.MultiSidedNLPPacked,
+function _build_cache(nlp_packed::HeatExchange.MultiSidedNLPPacked,
                       organism, environment, limits, metab_pars, int_cond, evap_pars,
                       M_init, sT_init, iT_init)
     n, m = 11, 6
@@ -724,12 +720,12 @@ function _build_cache(strategy::HeatExchange.MultiSidedNLP,
     buffers  = IpoptCallbackBuffers(n, m)
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h =
         _build_ipopt_callbacks(state, n, m, buffers)
-    return IPOPTSolverCache(strategy, state,
+    return IPOPTSolverCache(state,
         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h,
         lb, ub, u0, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, Inf],
         n, m, buffers,
         zeros(n), zeros(m), zeros(n), zeros(n), false,
-        _scaling(strategy), ones(m))
+        _scaling(nlp_packed), ones(m))
 end
 
 """
@@ -832,24 +828,12 @@ end
 # duals). Bounds are the tight per-call values from `_*_inputs!`, matching
 # the cached path's first iterate bit-for-bit.
 function _run_ipopt(
-    nlp_packed::HeatExchange.WeightedMeanNLPPacked,
+    nlp_packed,
     organism, environment, limits, metab_pars, int_cond, evap_pars,
     metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
     verbose,
 )
-    cache = _build_cache(HeatExchange.WeightedMeanNLP(), nlp_packed, organism, environment,
-        limits, metab_pars, int_cond, evap_pars,
-        metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
-    prob = _ipopt_solve!(cache, verbose)
-    return _assemble(nlp_packed, organism, environment, prob.x)
-end
-function _run_ipopt(
-    nlp_packed::HeatExchange.MultiSidedNLPPacked,
-    organism, environment, limits, metab_pars, int_cond, evap_pars,
-    metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init;
-    verbose,
-)
-    cache = _build_cache(HeatExchange.MultiSidedNLP(), nlp_packed, organism, environment,
+    cache = _build_cache(nlp_packed, organism, environment,
         limits, metab_pars, int_cond, evap_pars,
         metabolic_heat_flow_init, skin_temperature_init, insulation_temperature_init)
     prob = _ipopt_solve!(cache, verbose)
