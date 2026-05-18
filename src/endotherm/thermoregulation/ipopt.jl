@@ -96,15 +96,15 @@ function _run_ipopt(
     skin_wetness_max       = Float64(limits.skin_wetness.max)
     insulation_depth_min   = ustrip(u"m", limits.insulation.dorsal.reference)
     insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
-    aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
-    aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
+    axis_ratio_min         = Float64(limits.axis_ratio_factor.reference)
+    axis_ratio_max         = organism.body.shape isa Sphere ? axis_ratio_min : Float64(limits.axis_ratio_factor.max)
 
     lower_bounds = [core_temperature_min, skin_temperature_min, skin_temperature_min, log_heat_flow_min,
                     flesh_conductivity_min, panting_rate_min, skin_wetness_min,
-                    insulation_depth_min, aspect_ratio_min]
+                    insulation_depth_min, axis_ratio_min]
     upper_bounds = [core_temperature_max, skin_temperature_max, skin_temperature_max, log_heat_flow_max,
                     flesh_conductivity_max, panting_rate_max, skin_wetness_max,
-                    insulation_depth_max, aspect_ratio_max]
+                    insulation_depth_max, axis_ratio_max]
 
     heat_flow_init = max(ustrip(u"W", metabolic_heat_flow_init), heat_flow_min_W)
     initial_effectors = clamp.(
@@ -116,7 +116,7 @@ function _run_ipopt(
          1.0,
          Float64(evap_pars.skin_wetness),
          insulation_depth_max,   # start with erected insulation
-         aspect_ratio_min],      # start curled
+         axis_ratio_min],      # start curled
         lower_bounds, upper_bounds,
     )
 
@@ -309,21 +309,21 @@ function _run_ipopt(
     skin_wetness_max       = Float64(limits.skin_wetness.max)
     insulation_depth_min   = ustrip(u"m", limits.insulation.dorsal.reference)
     insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
-    aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
-    aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
+    axis_ratio_min         = Float64(limits.axis_ratio_factor.reference)
+    axis_ratio_max         = organism.body.shape isa Sphere ? axis_ratio_min : Float64(limits.axis_ratio_factor.max)
 
     lower_bounds = [core_temperature_min,
                     skin_temperature_min, skin_temperature_min,   # dorsal skin, ins
                     skin_temperature_min, skin_temperature_min,   # ventral skin, ins
                     log_heat_flow_min,
                     flesh_conductivity_min, panting_rate_min, skin_wetness_min,
-                    insulation_depth_min, aspect_ratio_min]
+                    insulation_depth_min, axis_ratio_min]
     upper_bounds = [core_temperature_max,
                     skin_temperature_max, skin_temperature_max,
                     skin_temperature_max, skin_temperature_max,
                     log_heat_flow_max,
                     flesh_conductivity_max, panting_rate_max, skin_wetness_max,
-                    insulation_depth_max, aspect_ratio_max]
+                    insulation_depth_max, axis_ratio_max]
 
     pp = nlp_packed.p
     heat_flow_init = max(ustrip(u"W", metabolic_heat_flow_init), heat_flow_min_W)
@@ -338,7 +338,7 @@ function _run_ipopt(
          1.0,
          Float64(evap_pars.skin_wetness),
          insulation_depth_max,   # start with erected insulation
-         aspect_ratio_min],      # start curled
+         axis_ratio_min],      # start curled
         lower_bounds, upper_bounds,
     )
 

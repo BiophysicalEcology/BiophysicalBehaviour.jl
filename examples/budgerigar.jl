@@ -122,7 +122,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
                 step=0.1,
             ),
         ),
-        aspect_ratio_factor=SteppedParameter(;
+        axis_ratio_factor=SteppedParameter(;
             current=1.1,
             max=5.0,
             step=0.1,
@@ -688,7 +688,7 @@ plot!(pc6, legend = :topleft, legendfontsize = 6)
 pc7 = plot(
     u"°C".(air_temperatures), predicted.axis_ratio_b,
     lw = 2, label = "predicted",
-    xlabel = "air temperature (°C)", ylabel = "aspect ratio (b)",
+    xlabel = "air temperature (°C)", ylabel = "axis ratio (b)",
     title = "body shape",
     xlim = (-5, 50),
 )

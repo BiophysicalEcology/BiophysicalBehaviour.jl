@@ -72,7 +72,7 @@ for shape_number in 1:4
             ground_emissivity=1.0,
             sky_emissivity=1.0,
             elevation=(endo_input.ELEV)u"m",
-            fluid=endo_input.FLTYPE,
+            fluid=(endo_input.FLTYPE == 0 ? Air() : Water()),
             gas_fractions=GasFractions(;
                 nitrogen=endo_input.N2GAS / 100.0,
                 oxygen=endo_input.O2GAS / 100.0,
@@ -209,7 +209,7 @@ for shape_number in 1:4
                     step=endo_input.PZFUR,
                 ),
             ),
-            aspect_ratio_factor=SteppedParameter(;
+            axis_ratio_factor=SteppedParameter(;
                 current=endo_input.SHAPE_B,
                 max=endo_input.SHAPE_B_MAX,
                 step=endo_input.UNCURL,

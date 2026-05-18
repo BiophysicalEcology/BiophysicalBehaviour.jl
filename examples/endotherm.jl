@@ -65,7 +65,7 @@ thermoregulation_limits = ThermoregulationLimits(;
             step=0.0,
         ),
     ),
-    aspect_ratio_factor=SteppedParameter(;
+    axis_ratio_factor=SteppedParameter(;
         current=shape_pars.axis_ratio_b,
         max=5.0,
         step=0.1,

@@ -17,7 +17,7 @@ using OptimizationIpopt
 import SciMLBase
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
 using Setfield: @set
 
 # Organism and traits
