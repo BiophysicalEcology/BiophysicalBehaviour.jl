@@ -58,31 +58,31 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
 end
 
 """
-    uncurl(organism::Organism, aspect_ratio_limits::SteppedParameter)
+    uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
 
-Increase body aspect ratio (uncurl from ball to elongated).
+Increase body axis ratio (uncurl from ball to elongated).
 
 Returns updated `SteppedParameter` and `organism`.
 """
-function uncurl(organism::Organism, aspect_ratio_limits::SteppedParameter)
+function uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
     shape_pars = HeatExchange.shape_pars(organism)
 
     # No meaning to uncurl a sphere
     if shape_pars isa Sphere
-        aspect_ratio_limits = @set aspect_ratio_limits.current = aspect_ratio_limits.max
-        return aspect_ratio_limits, organism
+        axis_ratio_limits = @set axis_ratio_limits.current = axis_ratio_limits.max
+        return axis_ratio_limits, organism
     end
 
-    aspect_ratio_factor = min(aspect_ratio_limits.current + aspect_ratio_limits.step, aspect_ratio_limits.max)
-    aspect_ratio_limits = @set aspect_ratio_limits.current = aspect_ratio_factor
+    axis_ratio_factor = min(axis_ratio_limits.current + axis_ratio_limits.step, axis_ratio_limits.max)
+    axis_ratio_limits = @set axis_ratio_limits.current = axis_ratio_factor
 
-    new_shape_pars = @set shape_pars.axis_ratio_b = aspect_ratio_factor
+    new_shape_pars = @set shape_pars.axis_ratio_b = axis_ratio_factor
     fat = BiophysicalGeometry.inner_insulation(organism.body.insulation)
     fur = BiophysicalGeometry.outer_insulation(organism.body.insulation)
     geometry = rebuild_body(new_shape_pars, fur, fat)
     organism = @set organism.body = geometry
 
-    return aspect_ratio_limits, organism
+    return axis_ratio_limits, organism
 end
 
 """
@@ -202,7 +202,7 @@ function thermoregulate(
     (; mode, tolerance, max_iterations) = limits.control
 
     insulation_limits        = limits.insulation
-    aspect_ratio_limits      = limits.aspect_ratio_factor
+    axis_ratio_limits        = limits.axis_ratio_factor
     flesh_conductivity_limits = limits.flesh_conductivity
     core_temperature_limits  = limits.core_temperature
     panting_limits           = limits.panting
@@ -244,8 +244,8 @@ function thermoregulate(
 
             insulation_limits, organism = piloerect(organism, insulation_limits)
 
-        elseif aspect_ratio_limits.current < aspect_ratio_limits.max
-            aspect_ratio_limits, organism = uncurl(organism, aspect_ratio_limits)
+        elseif axis_ratio_limits.current < axis_ratio_limits.max
+            axis_ratio_limits, organism = uncurl(organism, axis_ratio_limits)
 
         elseif flesh_conductivity_limits.current < flesh_conductivity_limits.max
             flesh_conductivity_limits, organism = vasodilate(organism, flesh_conductivity_limits)

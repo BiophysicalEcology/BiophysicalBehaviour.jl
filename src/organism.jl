@@ -9,10 +9,10 @@ abstract type AbstractBehaviourParameters end
 
 Abstract supertype for thermoregulation modes.
 
-Modes determine which effectors are available during thermoregulation:
-- `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
+Modes determine which effectors are available during thermoregulation and in what sequence.
+- `Core`: fully sequential, piloerection, uncurl, vasodilate, hyperthermia, pant, sweat
 - `CoreAndPantingFirst`: Adds panting during hyperthermia
-- `CorePantingSweatingFirst`: Adds both panting and sweating
+- `CorePantingSweatingFirst`: Adds both panting and sweating during hyperthermia
 """
 abstract type AbstractThermoregulationMode end
 
@@ -89,9 +89,9 @@ pant, skin_wetness) as continuous decision variables.
 - `nlp_strategy`: NLP formulation — `WeightedMeanNLP()` (default, dorsal/ventral
   weighted-mean single body, 9 variables, 4 constraints) or `MultiSidedNLP()`
   (explicit per-side heat balance, 11 variables, 7 constraints).
-- `smoothing`: smoothing policy passed to the heat-balance physics so AD sees
-  differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()` to
-  match the rule-based path's exact `abs`/`max`/`step` behaviour.
+- `smoothing`: smoothing policy passed to the heat-balance physics so autodiff (AD)
+  sees differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()`
+  to match the rule-based path's exact `abs`/`max`/`step` behaviour.
 
 Requires `Optimization.jl` and `OptimizationIpopt.jl`.
 """

@@ -38,7 +38,7 @@ Following standard control theory, the nine NLP decision variables are split int
 | Panting rate | `pant` | Multiplier on baseline ventilation (1 = resting) |
 | Skin wetness | `skin_wetness` | Fractional wetted surface area (sweating/cutaneous evaporation) |
 | Insulation depth | `insulation_depth` | Fur/feather erection depth (piloerection) |
-| Body shape | `aspect_ratio_factor` | Ellipsoid aspect ratio (curling/elongating posture) |
+| Body shape | `axis_ratio_factor` | Ellipsoid axis ratio (curling/elongating posture) |
 
 **State variables (x)** — outcomes determined by the effectors and the heat balance:
 | Variable | Description |
