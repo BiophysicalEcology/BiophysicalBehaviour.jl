@@ -13,6 +13,7 @@ using BiophysicalGeometry: AbstractBody, shape
 
 using Enzyme
 import Ipopt
+using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
 using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0

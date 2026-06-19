@@ -41,18 +41,77 @@
 # =============================================================================
 
 # =============================================================================
-# WeightedMeanNLP residual / objective
+# Decision-variable templates
 #
-# Variables (9):
-#   x[1] = core_temperature (K)
-#   x[2] = skin_temperature (K)
-#   x[3] = insulation_temperature (K)
-#   x[4] = log(metabolic_heat_flow) (log W)
-#   x[5] = flesh_conductivity (W/m/K)
-#   x[6] = panting_rate (dimensionless)
-#   x[7] = skin_wetness (dimensionless)
-#   x[8] = insulation_depth (m)
-#   x[9] = axis_ratio_b (dimensionless)
+# Each entry names one decision variable, in the order it appears in the
+# optimizer x vector. Each `Param`'s `:units` field gives the physical unit
+# (absent → dimensionless). `:transform`, if present, names the forward
+# transform applied between physics and optimizer space (`log` for
+# `metabolic_heat_flow` — the optimizer carries log-W).
+#
+# The template is the single source of truth for the optimizer↔physics
+# mapping. `to_tuple(template, vec)` walks it once, applies the inverse
+# transform and reattaches units, and returns a NamedTuple of typed
+# Quantities ready for the `HeatExchange.nlp_*` calls.
+#
+# TEMPORARY: these consts are a stopgap. The template (variable names, units,
+# bounds, transforms) belongs on the organism / thermoregulation trait so each
+# organism can carry its own decision-variable layout. The functions below
+# should ultimately read it off the passed-in object instead of dispatching to
+# a global.
+# =============================================================================
+
+const WEIGHTED_MEAN_TEMPLATE = (;
+    core_temperature = Param(0.0; units = u"K"),
+    sides = (
+        (skin_temperature       = Param(0.0; units = u"K"),
+         insulation_temperature = Param(0.0; units = u"K")),
+    ),
+    metabolic_heat_flow = Param(0.0; units = u"W", transform = log),
+    flesh_conductivity  = Param(0.0; units = u"W/m/K"),
+    panting_rate        = Param(0.0),
+    skin_wetness        = Param(0.0),
+    insulation_depth    = Param(0.0; units = u"m"),
+    axis_ratio_b        = Param(0.0),
+)
+
+const MULTI_SIDED_TEMPLATE = (;
+    core_temperature = Param(0.0; units = u"K"),
+    sides = (
+        (skin_temperature       = Param(0.0; units = u"K"),
+         insulation_temperature = Param(0.0; units = u"K")),
+        (skin_temperature       = Param(0.0; units = u"K"),
+         insulation_temperature = Param(0.0; units = u"K")),
+    ),
+    metabolic_heat_flow = Param(0.0; units = u"W", transform = log),
+    flesh_conductivity  = Param(0.0; units = u"W/m/K"),
+    panting_rate        = Param(0.0),
+    skin_wetness        = Param(0.0),
+    insulation_depth    = Param(0.0; units = u"m"),
+    axis_ratio_b        = Param(0.0),
+)
+
+_template(::HeatExchange.WeightedMeanNLPPacked) = WEIGHTED_MEAN_TEMPLATE
+_template(::HeatExchange.MultiSidedNLPPacked)   = MULTI_SIDED_TEMPLATE
+
+_inverse_transform(::typeof(log))      = exp
+_inverse_transform(::typeof(identity)) = identity
+
+# Walks any (possibly nested) template via `params(...)`, applying the
+# per-Param inverse transform and re-attaching units. Returns a flat Tuple
+# of typed Quantities in flattening order.
+@inline function to_tuple(template, vec::AbstractVector)
+    ps = params(template)
+    return ntuple(length(ps)) do i
+        p = ps[i]
+        units     = get(p, :units, Unitful.NoUnits)
+        transform = get(p, :transform, identity)
+        _inverse_transform(transform)(vec[i]) * units
+    end
+end
+
+# =============================================================================
+# WeightedMeanNLP residual / objective
 #
 # Constraints (4): residuals[1:3] == 0, residuals[4] >= 0 (Q10)
 # =============================================================================
@@ -67,7 +126,7 @@ function _objective_value(::HeatExchange.WeightedMeanNLPPacked, effectors, opt)
     return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
            opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.heat_flow_min_W) / opt.heat_flow_range)^2 +
            opt.gradient_penalty         * ((core_temperature - skin_temperature - opt.target_gradient) / opt.gradient_range)^2 +
-           opt.panting_penalty          * ((panting_rate - 1.0) / opt.panting_rate_range)^2 +
+           opt.panting_penalty          * ((panting_rate - opt.panting_rate_min) / opt.panting_rate_range)^2 +
            opt.skin_wetness_penalty     * ((skin_wetness - opt.skin_wetness_min) / opt.skin_wetness_range)^2
 end
 
@@ -98,19 +157,6 @@ end
 # =============================================================================
 # MultiSidedNLP residual / objective
 #
-# Variables (11):
-#   x[1]  = core_temperature (K)
-#   x[2]  = dorsal_skin_temperature (K)
-#   x[3]  = dorsal_insulation_temperature (K)
-#   x[4]  = ventral_skin_temperature (K)
-#   x[5]  = ventral_insulation_temperature (K)
-#   x[6]  = log(metabolic_heat_flow) (log W)
-#   x[7]  = flesh_conductivity (W/m/K)
-#   x[8]  = panting_rate (dimensionless)
-#   x[9]  = skin_wetness (dimensionless)
-#   x[10] = insulation_depth (m)
-#   x[11] = axis_ratio_b (dimensionless)
-#
 # Constraints (6): residuals[1:5] == 0, residuals[6] >= 0 (Q10)
 # =============================================================================
 
@@ -127,7 +173,7 @@ function _objective_value(::HeatExchange.MultiSidedNLPPacked, effectors, opt)
     return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
            opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.heat_flow_min_W) / opt.heat_flow_range)^2 +
            opt.gradient_penalty         * ((core_temperature - skin_temperature_mean - opt.target_gradient) / opt.gradient_range)^2 +
-           opt.panting_penalty          * ((panting_rate - 1.0) / opt.panting_rate_range)^2 +
+           opt.panting_penalty          * ((panting_rate - opt.panting_rate_min) / opt.panting_rate_range)^2 +
            opt.skin_wetness_penalty     * ((skin_wetness - opt.skin_wetness_min) / opt.skin_wetness_range)^2
 end
 
@@ -181,17 +227,10 @@ end
 # — no per-call bookkeeping inside the Hessian callback.
 # =============================================================================
 
-function _lagrangian(nlp_packed::HeatExchange.WeightedMeanNLPPacked, x, residual_buffer, p)
+function _lagrangian(nlp_packed, x, residual_buffer, p)
     _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.ipopt_parameters.nlp_parameters)
     return p.sigma * _objective_value(nlp_packed, x, p.ipopt_parameters.objective_parameters) +
-           p.lambda[1]*residual_buffer[1] + p.lambda[2]*residual_buffer[2] +
-           p.lambda[3]*residual_buffer[3] + p.lambda[4]*residual_buffer[4]
-end
-function _lagrangian(nlp_packed::HeatExchange.MultiSidedNLPPacked, x, residual_buffer, p)
-    _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.ipopt_parameters.nlp_parameters)
-    return p.sigma * _objective_value(nlp_packed, x, p.ipopt_parameters.objective_parameters) +
-           p.lambda[1]*residual_buffer[1] + p.lambda[2]*residual_buffer[2] + p.lambda[3]*residual_buffer[3] +
-           p.lambda[4]*residual_buffer[4] + p.lambda[5]*residual_buffer[5] + p.lambda[6]*residual_buffer[6]
+           dot(p.lambda, residual_buffer)
 end
 
 # =============================================================================
@@ -221,6 +260,7 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
     heat_flow_max_W        = heat_flow_min_W * 20.0
     flesh_conductivity_min = ustrip(u"W/m/K", limits.flesh_conductivity.reference)
     flesh_conductivity_max = ustrip(u"W/m/K", limits.flesh_conductivity.max)
+    panting_rate_min       = Float64(limits.panting.pant.reference)
     panting_rate_max       = Float64(limits.panting.pant.max)
     skin_wetness_min       = Float64(limits.skin_wetness.reference)
     skin_wetness_max       = Float64(limits.skin_wetness.max)
@@ -237,7 +277,7 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
         skin_temperature_min, skin_temperature_max,
         heat_flow_min_W, heat_flow_max_W,
         flesh_conductivity_min, flesh_conductivity_max,
-        panting_rate_max,
+        panting_rate_min, panting_rate_max,
         skin_wetness_min, skin_wetness_max,
         insulation_depth_min, insulation_depth_max,
         aspect_ratio_min, aspect_ratio_max,
@@ -259,7 +299,8 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
         target_gradient          = Float64(limits.target_core_skin_gradient),
         core_temperature_range   = Float64(core_temperature_range),
         gradient_range           = Float64(core_temperature_range),
-        panting_rate_range       = max(panting_rate_max - 1.0, 1e-6),
+        panting_rate_min         = Float64(panting_rate_min),
+        panting_rate_range       = max(panting_rate_max - panting_rate_min, 1e-6),
         skin_wetness_min         = Float64(skin_wetness_min),
         skin_wetness_range       = max(skin_wetness_max - skin_wetness_min, 1e-6),
         heat_flow_range          = max(heat_flow_max_W - heat_flow_min_W, 1.0),
@@ -279,7 +320,7 @@ end
 function _write_layout!(lower_bounds, upper_bounds, initial_values,
                          ::HeatExchange.WeightedMeanNLPPacked, init, s)
     lower_bounds[1] = s.core_temperature_min;   lower_bounds[2] = s.skin_temperature_min;   lower_bounds[3] = s.skin_temperature_min
-    lower_bounds[4] = log(s.heat_flow_min_W);   lower_bounds[5] = s.flesh_conductivity_min; lower_bounds[6] = 1.0
+    lower_bounds[4] = log(s.heat_flow_min_W);   lower_bounds[5] = s.flesh_conductivity_min; lower_bounds[6] = s.panting_rate_min
     lower_bounds[7] = s.skin_wetness_min;       lower_bounds[8] = s.insulation_depth_min;   lower_bounds[9] = s.aspect_ratio_min
     upper_bounds[1] = s.core_temperature_max;   upper_bounds[2] = s.skin_temperature_max;   upper_bounds[3] = s.skin_temperature_max
     upper_bounds[4] = log(s.heat_flow_max_W);   upper_bounds[5] = s.flesh_conductivity_max; upper_bounds[6] = s.panting_rate_max
@@ -290,7 +331,7 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     initial_values[3] = clamp(ustrip(u"K", init.insulation_temperature),   lower_bounds[3], upper_bounds[3])
     initial_values[4] = clamp(log(s.heat_flow_init),                       lower_bounds[4], upper_bounds[4])
     initial_values[5] = clamp(s.flesh_conductivity,                        lower_bounds[5], upper_bounds[5])
-    initial_values[6] = clamp(1.0,                                         lower_bounds[6], upper_bounds[6])
+    initial_values[6] = clamp(s.panting_rate_min,                          lower_bounds[6], upper_bounds[6])
     initial_values[7] = clamp(s.skin_wetness,                              lower_bounds[7], upper_bounds[7])
     initial_values[8] = clamp(s.insulation_depth_max,                      lower_bounds[8], upper_bounds[8])  # start with erected insulation
     initial_values[9] = clamp(s.aspect_ratio_min,                          lower_bounds[9], upper_bounds[9])  # start curled
@@ -304,7 +345,7 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     lower_bounds[2]  = s.skin_temperature_min;  lower_bounds[3]  = s.skin_temperature_min    # dorsal skin, ins
     lower_bounds[4]  = s.skin_temperature_min;  lower_bounds[5]  = s.skin_temperature_min    # ventral skin, ins
     lower_bounds[6]  = log(s.heat_flow_min_W);  lower_bounds[7]  = s.flesh_conductivity_min
-    lower_bounds[8]  = 1.0;                     lower_bounds[9]  = s.skin_wetness_min
+    lower_bounds[8]  = s.panting_rate_min;      lower_bounds[9]  = s.skin_wetness_min
     lower_bounds[10] = s.insulation_depth_min;  lower_bounds[11] = s.aspect_ratio_min
     upper_bounds[1]  = s.core_temperature_max
     upper_bounds[2]  = s.skin_temperature_max;  upper_bounds[3]  = s.skin_temperature_max
@@ -320,7 +361,7 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     initial_values[5]  = clamp(ustrip(u"K", packed.initial_ventral_insulation_temperature),    lower_bounds[5],  upper_bounds[5])
     initial_values[6]  = clamp(log(s.heat_flow_init),                                          lower_bounds[6],  upper_bounds[6])
     initial_values[7]  = clamp(s.flesh_conductivity,                                           lower_bounds[7],  upper_bounds[7])
-    initial_values[8]  = clamp(1.0,                                                            lower_bounds[8],  upper_bounds[8])
+    initial_values[8]  = clamp(s.panting_rate_min,                                             lower_bounds[8],  upper_bounds[8])
     initial_values[9]  = clamp(s.skin_wetness,                                                 lower_bounds[9],  upper_bounds[9])
     initial_values[10] = clamp(s.insulation_depth_max,                                         lower_bounds[10], upper_bounds[10])
     initial_values[11] = clamp(s.aspect_ratio_min,                                             lower_bounds[11], upper_bounds[11])
@@ -562,11 +603,13 @@ struct EvaluateObjectiveGradient{P<:IPOPTParameters} <: Function
 end
 function (f::EvaluateObjectiveGradient)(x, grad_f)
     fill!(grad_f, 0)
-    Enzyme.autodiff(Enzyme.Reverse, _objective_value,
-                    Enzyme.Active,
-                    Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
-                    Enzyme.Duplicated(x, grad_f),
-                    Enzyme.Const(f.ipopt_parameters.objective_parameters))
+    Enzyme.autodiff(
+        Enzyme.Reverse, _objective_value,
+        Enzyme.Active,
+        Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+        Enzyme.Duplicated(x, grad_f),
+        Enzyme.Const(f.ipopt_parameters.objective_parameters)
+    )
     return nothing
 end
 
@@ -586,12 +629,14 @@ function (f::EvaluateConstraintJacobian)(x, rows, cols, values)
         b = f.buffers
         @inbounds for i in 1:f.n_constraints
             fill!(b.jacobian_residual, 0); fill!(b.jacobian_residual_seed, 0); fill!(b.jacobian_x_derivative, 0); b.jacobian_residual_seed[i] = 1.0
-            Enzyme.autodiff(Enzyme.Reverse, _heat_balance_residuals!,
-                            Enzyme.Const,
-                            Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
-                            Enzyme.Duplicated(b.jacobian_residual, b.jacobian_residual_seed),
-                            Enzyme.Duplicated(x, b.jacobian_x_derivative),
-                            Enzyme.Const(f.ipopt_parameters.nlp_parameters))
+            Enzyme.autodiff(
+                Enzyme.Reverse, _heat_balance_residuals!,
+                Enzyme.Const,
+                Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+                Enzyme.Duplicated(b.jacobian_residual, b.jacobian_residual_seed),
+                Enzyme.Duplicated(x, b.jacobian_x_derivative),
+                Enzyme.Const(f.ipopt_parameters.nlp_parameters)
+            )
             for j in 1:f.n_variables
                 values[(i-1)*f.n_variables + j] = b.jacobian_x_derivative[j]
             end
@@ -610,12 +655,14 @@ end
 function (f::LagrangianGradient)(g, x, residual_buffer, residual_adjoint, p)
     fill!(g, 0)
     fill!(residual_adjoint, 0)
-    Enzyme.autodiff(Enzyme.Reverse, _lagrangian,
-                    Enzyme.Active,
-                    Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
-                    Enzyme.Duplicated(x, g),
-                    Enzyme.Duplicated(residual_buffer, residual_adjoint),
-                    Enzyme.Const(p))
+    Enzyme.autodiff(
+        Enzyme.Reverse, _lagrangian,
+        Enzyme.Active,
+        Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
+        Enzyme.Duplicated(x, g),
+        Enzyme.Duplicated(residual_buffer, residual_adjoint),
+        Enzyme.Const(p)
+    )
     return nothing
 end
 
@@ -647,13 +694,15 @@ function (f::EvaluateHessian)(x, rows, cols, sigma, lambda, values)
             # `lagrangian_gradient` reads/writes — including `residual_buffer`
             # and `residual_adjoint` — so every mutable buffer needs its
             # forward dual here.
-            Enzyme.autodiff(Enzyme.Forward, f.lagrangian_gradient,
-                            Enzyme.Const,
-                            Enzyme.Duplicated(b.hessian_gradient, b.hessian_gradient_tangent),
-                            Enzyme.Duplicated(x, b.hessian_seed),
-                            Enzyme.Duplicated(b.hessian_residual,  b.hessian_residual_tangent),
-                            Enzyme.Duplicated(b.hessian_residual_adjoint, b.hessian_residual_adjoint_tangent),
-                            Enzyme.Const(p))
+            Enzyme.autodiff(
+                Enzyme.Forward, f.lagrangian_gradient,
+                Enzyme.Const,
+                Enzyme.Duplicated(b.hessian_gradient, b.hessian_gradient_tangent),
+                Enzyme.Duplicated(x, b.hessian_seed),
+                Enzyme.Duplicated(b.hessian_residual,  b.hessian_residual_tangent),
+                Enzyme.Duplicated(b.hessian_residual_adjoint, b.hessian_residual_adjoint_tangent),
+                Enzyme.Const(p)
+            )
             for i in j:f.n_variables
                 k = (i * (i - 1)) ÷ 2 + j
                 values[k] = b.hessian_gradient_tangent[i]
@@ -725,6 +774,7 @@ end
 # through `_inputs!` to fill `cache.x_scaling`. Worth doing the next time
 # we touch the trait schema.
 # ──────────────────────────────────────────────────────────────────────────
+# TODO: call this preconditioning
 function _scaling(::HeatExchange.WeightedMeanNLPPacked)
     x_scaling = zeros(9)
     x_scaling[1] = 1/300.0     # core_T ~ 300 K
@@ -859,19 +909,9 @@ end
 # and shape-agnostic so both fresh and cached paths share the assembly step.
 # Dispatched on the packed type (which is 1:1 with the NLP strategy) so the
 # variable layout per strategy stays adjacent to its decoding.
-function _assemble(nlp_packed::HeatExchange.WeightedMeanNLPPacked, organism, environment, x_sol)
-    return HeatExchange.nlp_assemble_output(nlp_packed, organism, environment,
-        x_sol[1] * u"K", x_sol[2] * u"K", x_sol[3] * u"K", exp(x_sol[4]) * u"W",
-        x_sol[5] * u"W/m/K", x_sol[6], x_sol[7], x_sol[8] * u"m", x_sol[9])
-end
-function _assemble(nlp_packed::HeatExchange.MultiSidedNLPPacked, organism, environment, x_sol)
-    return HeatExchange.nlp_assemble_output(nlp_packed, organism, environment,
-        x_sol[1]  * u"K",
-        x_sol[2]  * u"K", x_sol[3]  * u"K",
-        x_sol[4]  * u"K", x_sol[5]  * u"K",
-        exp(x_sol[6]) * u"W",
-        x_sol[7]  * u"W/m/K", x_sol[8], x_sol[9],
-        x_sol[10] * u"m", x_sol[11])
+function _assemble(nlp_packed, organism, environment, x_sol)
+    s = to_tuple(_template(nlp_packed), x_sol)
+    return HeatExchange.nlp_assemble_output(nlp_packed, organism, environment, s...)
 end
 
 # =============================================================================
