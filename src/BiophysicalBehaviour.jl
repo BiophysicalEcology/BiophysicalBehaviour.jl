@@ -12,9 +12,8 @@ using UnitfulMoles
 using BiophysicalGeometry: AbstractBody, shape
 
 using Enzyme
-using Optimization
-using OptimizationIpopt
-import SciMLBase
+import Ipopt
+using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
 using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
@@ -50,7 +49,8 @@ export AbstractThermalStrategy,
 # Control strategies
 export AbstractControlStrategy,
     RuleBasedSequentialControl,
-    IPOPTControl
+    IPOPTControl,
+    IPOPTSolverCache
 
 # NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy)
 export NLPStrategy, WeightedMeanNLP, MultiSidedNLP

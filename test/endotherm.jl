@@ -255,9 +255,7 @@ for shape_number in 1:4
         endotherm_out = thermoregulate(
             organism,
             environment,
-            metabolic_heat_flow,
-            skin_temperature,
-            insulation_temperature,
+            (; metabolic_heat_flow, skin_temperature, insulation_temperature),
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology
@@ -304,21 +302,21 @@ for shape_number in 1:4
             @test morph_output_vec.CHAR_DIM ≈ ustrip(u"m", morphology.characteristic_dimension) rtol = rtol
             @test morph_output_vec.MASS_FAT ≈ ustrip(u"kg", morphology.fat_mass) rtol = rtol
             if organism.body.shape isa Cylinder
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fibrous) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
             end
             if organism.body.shape isa Sphere
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
             end
             if organism.body.shape isa Plate
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.width_fur) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fibrous) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.width_fibrous) rtol = rtol
             end
             if organism.body.shape isa Ellipsoid
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.a_semi_major_fur * 2) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.b_semi_minor_fur * 2) rtol = rtol
-                @test morph_output_vec.HEIGHT ≈ ustrip(u"m", morphology.c_semi_minor_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.a_semi_major_fibrous * 2) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.b_semi_minor_fibrous * 2) rtol = rtol
+                @test morph_output_vec.HEIGHT ≈ ustrip(u"m", morphology.c_semi_minor_fibrous * 2) rtol = rtol
             end
             @test morph_output_vec.FAT_THICK ≈ ustrip(u"m", fat) rtol = rtol
         end

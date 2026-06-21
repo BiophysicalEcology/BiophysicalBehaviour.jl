@@ -93,7 +93,7 @@ pant, skin_wetness) as continuous decision variables.
   sees differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()`
   to match the rule-based path's exact `abs`/`max`/`step` behaviour.
 
-Requires `Optimization.jl` and `OptimizationIpopt.jl`.
+Requires `Ipopt.jl`.
 """
 Base.@kwdef struct IPOPTControl{S<:HeatExchange.SmoothingStrategy} <: AbstractControlStrategy
     nlp_strategy::HeatExchange.NLPStrategy = HeatExchange.WeightedMeanNLP()

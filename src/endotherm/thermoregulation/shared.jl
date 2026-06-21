@@ -34,61 +34,24 @@ simultaneous_sweat(::CorePantingSweatingFirst) = true
 # ----------------------------------------------------------------------------
 
 """
-    thermoregulate(organism, environment, metabolic_heat_flow, skin_temperature,
-                   insulation_temperature)
+    thermoregulate(organism, environment, init)
 
 Run the thermoregulation loop to find heat balance.
+
+`init` is a NamedTuple of initial guesses with fields `metabolic_heat_flow`,
+`skin_temperature`, and `insulation_temperature` — typically produced by
+`initial_physiological_state(organism, environment_vars)`.
 
 Dispatches on the organism's thermal strategy (`Endotherm`, `Ectotherm`,
 `Heterotherm`). For endotherms, further dispatches on the control strategy
 (`RuleBasedSequentialControl`, `IPOPTControl`).
 """
-function thermoregulate(
-    organism::Organism,
-    environment::NamedTuple,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
-)
-    thermoregulate(
-        thermal_strategy(organism),
-        organism,
-        environment,
-        metabolic_heat_flow,
-        skin_temperature,
-        insulation_temperature,
-    )
-end
-
-function thermoregulate(
-    ::Endotherm,
-    organism::Organism,
-    environment::NamedTuple,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
-)
-    thermoregulate(
-        Endotherm(),
-        control_strategy(organism),
-        organism,
-        environment,
-        metabolic_heat_flow,
-        skin_temperature,
-        insulation_temperature,
-    )
-end
-
-function thermoregulate(
-    ::Heterotherm,
-    organism::Organism,
-    environment::NamedTuple,
-    metabolic_heat_flow,
-    skin_temperature,
-    insulation_temperature,
-)
+thermoregulate(organism::Organism, environment::NamedTuple, init::NamedTuple) =
+    thermoregulate(thermal_strategy(organism), organism, environment, init)
+thermoregulate(strategy::Endotherm, organism::Organism, environment::NamedTuple, init::NamedTuple) =
+    thermoregulate(strategy, control_strategy(organism), organism, environment, init)
+thermoregulate(::Heterotherm, organism::Organism, environment::NamedTuple, init::NamedTuple) =
     error("Heterotherm thermoregulation not yet implemented")
-end
 
 # ----------------------------------------------------------------------------
 # Q10 metabolic scaling
