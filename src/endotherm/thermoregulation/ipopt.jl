@@ -266,8 +266,8 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
     skin_wetness_max       = Float64(limits.skin_wetness.max)
     insulation_depth_min   = ustrip(u"m", limits.insulation.dorsal.reference)
     insulation_depth_max   = ustrip(u"m", limits.insulation.dorsal.max)
-    aspect_ratio_min       = Float64(limits.aspect_ratio_factor.reference)
-    aspect_ratio_max       = organism.body.shape isa Sphere ? aspect_ratio_min : Float64(limits.aspect_ratio_factor.max)
+    axis_ratio_min         = Float64(limits.axis_ratio_factor.reference)
+    axis_ratio_max         = organism.body.shape isa Sphere ? axis_ratio_min : Float64(limits.axis_ratio_factor.max)
     heat_flow_init         = max(ustrip(u"W", init.metabolic_heat_flow), heat_flow_min_W)
     flesh_conductivity     = ustrip(u"W/m/K", internal_conduction_parameters.flesh_conductivity)
     skin_wetness           = Float64(evaporation_parameters.skin_wetness)
@@ -280,7 +280,7 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, nlp_packed,
         panting_rate_min, panting_rate_max,
         skin_wetness_min, skin_wetness_max,
         insulation_depth_min, insulation_depth_max,
-        aspect_ratio_min, aspect_ratio_max,
+        axis_ratio_min, axis_ratio_max,
         setpoint_temperature_K, heat_flow_init,
         flesh_conductivity, skin_wetness,
     )
@@ -321,10 +321,10 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
                          ::HeatExchange.WeightedMeanNLPPacked, init, s)
     lower_bounds[1] = s.core_temperature_min;   lower_bounds[2] = s.skin_temperature_min;   lower_bounds[3] = s.skin_temperature_min
     lower_bounds[4] = log(s.heat_flow_min_W);   lower_bounds[5] = s.flesh_conductivity_min; lower_bounds[6] = s.panting_rate_min
-    lower_bounds[7] = s.skin_wetness_min;       lower_bounds[8] = s.insulation_depth_min;   lower_bounds[9] = s.aspect_ratio_min
+    lower_bounds[7] = s.skin_wetness_min;       lower_bounds[8] = s.insulation_depth_min;   lower_bounds[9] = s.axis_ratio_min
     upper_bounds[1] = s.core_temperature_max;   upper_bounds[2] = s.skin_temperature_max;   upper_bounds[3] = s.skin_temperature_max
     upper_bounds[4] = log(s.heat_flow_max_W);   upper_bounds[5] = s.flesh_conductivity_max; upper_bounds[6] = s.panting_rate_max
-    upper_bounds[7] = s.skin_wetness_max;       upper_bounds[8] = s.insulation_depth_max;   upper_bounds[9] = s.aspect_ratio_max
+    upper_bounds[7] = s.skin_wetness_max;       upper_bounds[8] = s.insulation_depth_max;   upper_bounds[9] = s.axis_ratio_max
 
     initial_values[1] = clamp(s.setpoint_temperature_K,                    lower_bounds[1], upper_bounds[1])
     initial_values[2] = clamp(ustrip(u"K", init.skin_temperature),         lower_bounds[2], upper_bounds[2])
@@ -334,7 +334,7 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     initial_values[6] = clamp(s.panting_rate_min,                          lower_bounds[6], upper_bounds[6])
     initial_values[7] = clamp(s.skin_wetness,                              lower_bounds[7], upper_bounds[7])
     initial_values[8] = clamp(s.insulation_depth_max,                      lower_bounds[8], upper_bounds[8])  # start with erected insulation
-    initial_values[9] = clamp(s.aspect_ratio_min,                          lower_bounds[9], upper_bounds[9])  # start curled
+    initial_values[9] = clamp(s.axis_ratio_min,                          lower_bounds[9], upper_bounds[9])  # start curled
     return nothing
 end
 function _write_layout!(lower_bounds, upper_bounds, initial_values,
@@ -346,13 +346,13 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     lower_bounds[4]  = s.skin_temperature_min;  lower_bounds[5]  = s.skin_temperature_min    # ventral skin, ins
     lower_bounds[6]  = log(s.heat_flow_min_W);  lower_bounds[7]  = s.flesh_conductivity_min
     lower_bounds[8]  = s.panting_rate_min;      lower_bounds[9]  = s.skin_wetness_min
-    lower_bounds[10] = s.insulation_depth_min;  lower_bounds[11] = s.aspect_ratio_min
+    lower_bounds[10] = s.insulation_depth_min;  lower_bounds[11] = s.axis_ratio_min
     upper_bounds[1]  = s.core_temperature_max
     upper_bounds[2]  = s.skin_temperature_max;  upper_bounds[3]  = s.skin_temperature_max
     upper_bounds[4]  = s.skin_temperature_max;  upper_bounds[5]  = s.skin_temperature_max
     upper_bounds[6]  = log(s.heat_flow_max_W);  upper_bounds[7]  = s.flesh_conductivity_max
     upper_bounds[8]  = s.panting_rate_max;      upper_bounds[9]  = s.skin_wetness_max
-    upper_bounds[10] = s.insulation_depth_max;  upper_bounds[11] = s.aspect_ratio_max
+    upper_bounds[10] = s.insulation_depth_max;  upper_bounds[11] = s.axis_ratio_max
 
     initial_values[1]  = clamp(s.setpoint_temperature_K,                                       lower_bounds[1],  upper_bounds[1])
     initial_values[2]  = clamp(ustrip(u"K", packed.initial_dorsal_skin_temperature),           lower_bounds[2],  upper_bounds[2])
@@ -364,7 +364,7 @@ function _write_layout!(lower_bounds, upper_bounds, initial_values,
     initial_values[8]  = clamp(s.panting_rate_min,                                             lower_bounds[8],  upper_bounds[8])
     initial_values[9]  = clamp(s.skin_wetness,                                                 lower_bounds[9],  upper_bounds[9])
     initial_values[10] = clamp(s.insulation_depth_max,                                         lower_bounds[10], upper_bounds[10])
-    initial_values[11] = clamp(s.aspect_ratio_min,                                             lower_bounds[11], upper_bounds[11])
+    initial_values[11] = clamp(s.axis_ratio_min,                                             lower_bounds[11], upper_bounds[11])
     return nothing
 end
 

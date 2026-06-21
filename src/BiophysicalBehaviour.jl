@@ -16,7 +16,7 @@ import Ipopt
 using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
 using Setfield: @set
 
 # Organism and traits
@@ -106,37 +106,15 @@ export is_active,
     press_to_ground,
     increment_target_temperature
 
-# Example constructors – endotherm
-export example_environment_vars,
-    example_environment_pars,
-    example_ellipsoid_shape_pars,
-    example_shape_pars,
-    example_insulation_pars,
-    example_conduction_pars_external,
-    example_conduction_pars_internal,
-    example_radiation_pars,
-    example_evaporation_pars,
-    example_hydraulic_pars,
-    example_respiration_pars,
-    example_metabolism_pars,
-    example_metabolic_rate_options,
-    example_thermoregulation_limits,
+# Example constructors – endotherm (heat exchange examples now in HeatExchange.jl)
+export example_thermoregulation_limits,
     example_behavioral_traits,
-    example_organism_traits,
-    example_heat_exchange_traits
+    example_organism_traits
 
 # Example constructors – ectotherm
 export example_ectotherm_behavioral_limits,
     example_ectotherm_behavioral_traits,
-    example_ectotherm_organism_traits,
-    example_ectotherm_conduction_pars_external,
-    example_ectotherm_conduction_pars_internal,
-    example_ectotherm_radiation_pars,
-    example_ectotherm_evaporation_pars,
-    example_ectotherm_respiration_pars,
-    example_ectotherm_hydraulic_pars,
-    example_ectotherm_metabolism_pars,
-    example_ectotherm_heat_exchange_traits
+    example_ectotherm_organism_traits
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
