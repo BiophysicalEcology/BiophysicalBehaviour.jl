@@ -149,36 +149,36 @@ available_environments = AvailableEnvironments(
 
 # ── Organism ──────────────────────────────────────────────────────────────
 # 40 g desert iguana (Dipsosaurus dorsalis) — parameters from Porter et al. (1973)
-#   alpha_max = 0.80 (maximum absorption at Tb < T_active_min, p. 10)
-#   alpha_min = 0.60 (minimum absorption at Tb > T_active_max, p. 10)
-#   T_active_min = 38°C (minimum activity temperature, p. 20)
-#   T_active_max = 43°C (maximum voluntary Tb, p. 20)
-#   T_target     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
+#   alpha_max = 0.80 (maximum absorption at Tb < active_temperature_min, p. 10)
+#   alpha_min = 0.60 (minimum absorption at Tb > active_temperature_max, p. 10)
+#   active_temperature_min = 38°C (minimum activity temperature, p. 20)
+#   active_temperature_max = 43°C (maximum voluntary Tb, p. 20)
+#   target_temperature     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
 #   can_climb = true (paper explicitly models climbing into creosote bushes to 200 cm)
 body            = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism_traits = example_ectotherm_organism_traits(
     activity_period         = CombinedActivity(Diurnal(), Crepuscular()), #Diurnal(),
-    T_target                = u"K"(38.5u"°C"),
-    T_active_min            = u"K"(38.0u"°C"),
-    T_active_max            = u"K"(43.0u"°C"),
-    T_bask                  = u"K"(34.0u"°C"),
-    T_emerge                = u"K"(15.0u"°C"),
-    T_critical_min          = u"K"(3.0u"°C"),
-    T_critical_max          = u"K"(44.0u"°C"),    
+    target_temperature       = u"K"(38.5u"°C"),
+    active_temperature_min   = u"K"(38.0u"°C"),
+    active_temperature_max   = u"K"(43.0u"°C"),
+    basking_temperature_min  = u"K"(34.0u"°C"),
+    emerge_temperature_min   = u"K"(15.0u"°C"),
+    critical_temperature_min = u"K"(3.0u"°C"),
+    critical_temperature_max = u"K"(44.0u"°C"),
     can_climb               = true,
     can_retreat_underground = true,
     depth_min_underground   = 3,
     burrow_shade_mode       = MinShadeOnly(),
-    Δsoil_signal            = 0.0u"K/hr",
+    emerge_signal       = 0.0u"K/hr",
     can_seek_shade          = false,
     shade_min               = minimum_shade,
     shade_max               = maximum_shade,
     can_solar_orient        = true,
-    can_press_to_ground     = false,    
+    can_press_to_ground     = false,
     can_change_absorptivity = true,
-    alpha_min               = 0.6,
-    alpha_max               = 0.8,
-    alpha_step              = 0.003,    
+    absorptivity_min        = 0.6,
+    absorptivity_max        = 0.8,
+    absorptivity_step       = 0.003,
     can_pant                = false,
     pant_max                = 3.0,
     heat_exchange = example_ectotherm_heat_exchange_traits(;
@@ -219,14 +219,14 @@ for step in 1:nsteps
 end
 
 # ── Extract outputs ───────────────────────────────────────────────────────
-T_body     = [r.T_core         for r in results]
+core_temperature = [r.core_temperature for r in results]
 shade      = [r.shade          for r in results]
 height     = [r.height         for r in results]
 depth_node = [r.depth_node     for r in results]
 absorptivity = [r.absorptivity for r in results]
 sun_orientation = [r.sun_orientation for r in results]
 state      = [r.state          for r in results]
-T_air      = low_shade_result.profile.air_temperature[:, 1]
+air_temperature = low_shade_result.profile.air_temperature[:, 1]
 
 # Combined position: climbing = +cm, active at surface = 0, underground = −cm.
 # heights[1] is the ground node (1 cm); treat it as 0 so only genuine climbing
@@ -237,25 +237,22 @@ pos_cm = [depth_node[i] > 1 ?
     (h = ustrip(u"cm", height[i]); h > _ground_ht ? h : 0.0)
     for i in 1:nsteps]
 
-T_body_C = ustrip.(u"°C", T_body)
-act      = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
+act = [s isa Active ? 2 : s isa Basking ? 1 : 0 for s in state]
 
 println("\n── Annual activity summary ──")
 println("  Resting=$(sum(act.==0)), Basking=$(sum(act.==1)), Active=$(sum(act.==2))")
 
 # ── Split outputs by month ────────────────────────────────────────────────
 month_ranges = [(m-1)*24+1 : m*24 for m in 1:ndays]
-month_Tb     = [T_body_C[r]              for r in month_ranges]
+month_Tb     = [ustrip.(u"°C", core_temperature[r]) for r in month_ranges]
 month_act    = [act[r]                    for r in month_ranges]
 month_sh     = [shade[r] .* 100          for r in month_ranges]
 month_ht     = [ustrip.(u"m", height[r]) for r in month_ranges]
 month_pos    = [pos_cm[r]               for r in month_ranges]
-month_Ta     = [ustrip.(u"°C", T_air[r]) for r in month_ranges]
+month_Ta     = [ustrip.(u"°C", air_temperature[r]) for r in month_ranges]
 
-T_target_min = ustrip(u"°C", limits.T_active_min)
-T_target_max = ustrip(u"°C", limits.T_active_max)
-T_emerge_C   = ustrip(u"°C", limits.T_emerge)
-T_bask_C     = ustrip(u"°C", limits.T_bask)
+active_temperature_min_C = ustrip(u"°C", limits.active_temperature_min)
+active_temperature_max_C = ustrip(u"°C", limits.active_temperature_max)
 
 # ── Fig. 1 – Body temperature for all 12 months (4×3 grid) ───────────────
 # Porter (1973) Tb overlay shown only for March (month 3) and July (month 7)
@@ -265,7 +262,7 @@ panels_Tb = map(1:ndays) do m
         title = months[m] * " (day $(days[m]))",
         ylabel = "°C", ylim = (0, 55), titlefontsize = 9)
     plot!(p, hours, month_Ta[m]; lw = 1, color = :steelblue, linestyle = :dash, label = "")
-    hline!(p, [T_target_min, T_target_max]; color = :orange, linestyle = :dash, lw = 1, label = "")
+    hline!(p, [active_temperature_min_C, active_temperature_max_C]; color = :orange, linestyle = :dash, lw = 1, label = "")
     p
 end
 
@@ -286,7 +283,7 @@ for m in 1:ndays
     act_matrix[:, m] = month_act[m]
     sh_matrix[:, m]  = month_sh[m]
     pos_matrix[:, m] = month_pos[m]
-    tb_matrix[:, m]  = month_Tb[m]
+    tb_matrix[:, m]  = month_Tb[m]   # already °C from month_Tb computation
 end
 
 p_tb_hm = heatmap(months, hours, tb_matrix;

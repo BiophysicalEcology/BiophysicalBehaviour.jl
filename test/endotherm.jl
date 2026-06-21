@@ -42,11 +42,11 @@ for shape_number in 1:4
                 (endo_input.SHAPE_B), (endo_input.SHAPE_C))
         end
 
-        fat = Fat(endo_input.FATPCT / 100.0, (endo_input.FATDEN)u"kg/m^3")
+        fat = FatLayer(endo_input.FATPCT / 100.0, (endo_input.FATDEN)u"kg/m^3")
         mean_insulation_depth = (endo_input.ZFURD * (1 - endo_input.PVEN) + endo_input.ZFURV * endo_input.PVEN)u"m"
         mean_fibre_diameter = (endo_input.DHAIRD * (1 - endo_input.PVEN) + endo_input.DHAIRV * endo_input.PVEN)u"m"
         mean_fibre_density = (endo_input.RHOD * (1 - endo_input.PVEN) + endo_input.RHOV * endo_input.PVEN)u"1/m^2"
-        fur = Fur(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
+        fur = FibrousLayer(mean_insulation_depth, mean_fibre_diameter, mean_fibre_density)
         geometry = Body(shape_pars, CompositeInsulation(fur, fat))
 
         environment_vars = EnvironmentalVars(;
@@ -72,7 +72,7 @@ for shape_number in 1:4
             ground_emissivity=1.0,
             sky_emissivity=1.0,
             elevation=(endo_input.ELEV)u"m",
-            fluid=endo_input.FLTYPE,
+            fluid=(endo_input.FLTYPE == 0 ? Air() : Water()),
             gas_fractions=GasFractions(;
                 nitrogen=endo_input.N2GAS / 100.0,
                 oxygen=endo_input.O2GAS / 100.0,
@@ -179,11 +179,11 @@ for shape_number in 1:4
         )
 
         # initial conditions
-        T_skin = u"K"((endo_input.TS)u"°C")
-        T_insulation = u"K"((endo_input.TFA)u"°C")
-        Q_minimum_ref = (endo_input.QBASAL)u"W"
-        Q_gen = 0.0u"W"
-        T_core_ref = metabolism_pars.core_temperature
+        skin_temperature = u"K"((endo_input.TS)u"°C")
+        insulation_temperature = u"K"((endo_input.TFA)u"°C")
+        minimum_heat_flow = (endo_input.QBASAL)u"W"
+        metabolic_heat_flow = 0.0u"W"
+        core_temperature_ref = metabolism_pars.core_temperature
 
         treg_mode = endo_input.TREGMODE == 1 ? CoreFirst() :
                     endo_input.TREGMODE == 2 ? CoreAndPantingFirst() :
@@ -194,7 +194,7 @@ for shape_number in 1:4
                 tolerance=0.005,
                 max_iterations=1000,
             ),
-            Q_minimum_ref,
+            minimum_heat_flow,
             insulation=InsulationLimits(;
                 dorsal=SteppedParameter(;
                     current=insulation_pars.dorsal.depth,
@@ -209,19 +209,19 @@ for shape_number in 1:4
                     step=endo_input.PZFUR,
                 ),
             ),
-            shape_b=SteppedParameter(;
+            axis_ratio_factor=SteppedParameter(;
                 current=endo_input.SHAPE_B,
                 max=endo_input.SHAPE_B_MAX,
                 step=endo_input.UNCURL,
             ),
-            k_flesh=SteppedParameter(;
+            flesh_conductivity=SteppedParameter(;
                 current=(endo_input.AK1)u"W/m/K",
                 max=(endo_input.AK1_MAX)u"W/m/K",
                 step=(endo_input.AK1_INC)u"W/m/K",
             ),
-            T_core=SteppedParameter(;
-                current=T_core_ref,
-                reference=T_core_ref,
+            core_temperature=SteppedParameter(;
+                current=core_temperature_ref,
+                reference=core_temperature_ref,
                 max=u"K"((endo_input.TC_MAX)u"°C"),
                 step=(endo_input.TC_INC)u"K",
             ),
@@ -233,7 +233,7 @@ for shape_number in 1:4
                 ),
                 cost=0.0u"W",
                 multiplier=endo_input.PANT_MULT,
-                T_core_ref=T_core_ref,
+                core_temperature_ref=core_temperature_ref,
             ),
             skin_wetness=SteppedParameter(;
                 current=evaporation_pars.skin_wetness,
@@ -255,9 +255,7 @@ for shape_number in 1:4
         endotherm_out = thermoregulate(
             organism,
             environment,
-            Q_gen,
-            T_skin,
-            T_insulation,
+            (; metabolic_heat_flow, skin_temperature, insulation_temperature),
         )
         thermoregulation = endotherm_out.thermoregulation
         morphology = endotherm_out.morphology
@@ -273,13 +271,13 @@ for shape_number in 1:4
         @testset "endotherm thermoregulation comparisons" begin
             @test treg_output_vec.TC ≈ ustrip(u"°C", thermoregulation.core_temperature) rtol = rtol
             @test treg_output_vec.TLUNG ≈ ustrip(u"°C", thermoregulation.lung_temperature) rtol = rtol
-            @test treg_output_vec.TSKIN_D ≈ ustrip(u"°C", thermoregulation.skin_temperature_dorsal) rtol = rtol
-            @test treg_output_vec.TSKIN_V ≈ ustrip(u"°C", thermoregulation.skin_temperature_ventral) rtol = rtol
-            @test treg_output_vec.TFA_D ≈ ustrip(u"°C", thermoregulation.insulation_temperature_dorsal) rtol = rtol
-            @test treg_output_vec.TFA_V ≈ ustrip(u"°C", thermoregulation.insulation_temperature_ventral) rtol = rtol
+            @test treg_output_vec.TSKIN_D ≈ ustrip(u"°C", thermoregulation.dorsal.skin_temperature) rtol = rtol
+            @test treg_output_vec.TSKIN_V ≈ ustrip(u"°C", thermoregulation.ventral.skin_temperature) rtol = rtol
+            @test treg_output_vec.TFA_D ≈ ustrip(u"°C", thermoregulation.dorsal.insulation_temperature) rtol = rtol
+            @test treg_output_vec.TFA_V ≈ ustrip(u"°C", thermoregulation.ventral.insulation_temperature) rtol = rtol
             if insulation_test > 0.0u"m"
-                @test treg_output_vec.K_FUR_D ≈ ustrip(u"W/m/K", thermoregulation.insulation_conductivity_dorsal) rtol = rtol
-                @test treg_output_vec.K_FUR_V ≈ ustrip(u"W/m/K", thermoregulation.insulation_conductivity_ventral) rtol = rtol
+                @test treg_output_vec.K_FUR_D ≈ ustrip(u"W/m/K", thermoregulation.dorsal.insulation_conductivity) rtol = rtol
+                @test treg_output_vec.K_FUR_V ≈ ustrip(u"W/m/K", thermoregulation.ventral.insulation_conductivity) rtol = rtol
             end
             if isnothing(insulation_conductivity)
                 @test treg_output_vec.K_FUR_EFF ≈ ustrip(u"W/m/K", thermoregulation.insulation_conductivity_effective) rtol = rtol
@@ -304,21 +302,21 @@ for shape_number in 1:4
             @test morph_output_vec.CHAR_DIM ≈ ustrip(u"m", morphology.characteristic_dimension) rtol = rtol
             @test morph_output_vec.MASS_FAT ≈ ustrip(u"kg", morphology.fat_mass) rtol = rtol
             if organism.body.shape isa Cylinder
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fibrous) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
             end
             if organism.body.shape isa Sphere
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.radius_fibrous * 2) rtol = rtol
             end
             if organism.body.shape isa Plate
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fur) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.width_fur) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.length_fibrous) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.width_fibrous) rtol = rtol
             end
             if organism.body.shape isa Ellipsoid
-                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.a_semi_major_fur * 2) rtol = rtol
-                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.b_semi_minor_fur * 2) rtol = rtol
-                @test morph_output_vec.HEIGHT ≈ ustrip(u"m", morphology.c_semi_minor_fur * 2) rtol = rtol
+                @test morph_output_vec.LENGTH ≈ ustrip(u"m", morphology.a_semi_major_fibrous * 2) rtol = rtol
+                @test morph_output_vec.WIDTH ≈ ustrip(u"m", morphology.b_semi_minor_fibrous * 2) rtol = rtol
+                @test morph_output_vec.HEIGHT ≈ ustrip(u"m", morphology.c_semi_minor_fibrous * 2) rtol = rtol
             end
             @test morph_output_vec.FAT_THICK ≈ ustrip(u"m", fat) rtol = rtol
         end
@@ -330,7 +328,7 @@ for shape_number in 1:4
         @testset "endotherm energy flux comparisons" begin
             @test enbal_output_vec.QSOL ≈ ustrip(u"W", energy_fluxes.solar_flow) rtol = rtol
             @test enbal_output_vec.QIRIN ≈ ustrip(u"W", energy_fluxes.longwave_flow_in) rtol = rtol
-            @test enbal_output_vec.QGEN ≈ ustrip(u"W", energy_fluxes.generated_heat_flow) rtol = rtol
+            @test enbal_output_vec.QGEN ≈ ustrip(u"W", energy_fluxes.metabolic_heat_flow) rtol = rtol
             @test QEVAP ≈ ustrip(u"W", energy_fluxes.evaporation_heat_flow) rtol = rtol
             @test enbal_output_vec.QIROUT ≈ ustrip(u"W", energy_fluxes.longwave_flow_out) rtol = rtol
             @test enbal_output_vec.QCONV ≈ ustrip(u"W", energy_fluxes.convection_heat_flow) rtol = rtol
@@ -342,7 +340,7 @@ for shape_number in 1:4
             if metabolic_rate_options.respire
                 @test masbal_output_vec.AIR_L ≈ ustrip(u"L/hr", mass_fluxes.air_flow) rtol = rtol
                 @test masbal_output_vec.O2_L ≈ ustrip(u"L/hr", mass_fluxes.oxygen_flow_standard) rtol = rtol
-                @test masbal_output_vec.H2OResp_g ≈ ustrip(u"g/hr", mass_fluxes.respiration_mass) rtol = rtol
+                @test masbal_output_vec.H2OResp_g ≈ ustrip(u"g/hr", mass_fluxes.respiration_mass_flow) rtol = rtol
                 @test masbal_output_vec.H2OCut_g ≈ ustrip(u"g/hr", mass_fluxes.m_sweat) rtol = rtol
                 #@test masbal_output_vec.H2O_mol_in ≈ ustrip(u"mol/hr", mass_fluxes.molar_fluxes_in.water) rtol = rtol
                 #@test masbal_output_vec.H2O_mol_out ≈ ustrip(u"mol/hr", mass_fluxes.molar_fluxes_out.water) rtol = rtol

@@ -1,5 +1,10 @@
 # =============================================================================
-# Endotherm behavioural habitat-selection + physiological thermoregulation
+# Endotherm behavioural habitat-selection layer.
+#
+# Outer loop selects shade, height, depth, posture, and absorptivity to bring
+# operative temperature into the active window before handing off to the
+# inner physiological thermoregulate (rule-based or IPOPT) at the chosen
+# position.
 # =============================================================================
 
 """
@@ -21,10 +26,10 @@ positional options (shade, climbing, retreating underground, posture, absorptivi
 
 Operative temperature `Te` (= `solve_body_temperature`: the equilibrium body
 temperature of a passive body in the current environment) is compared to
-`behavioral_limits.T_active_min/max`:
+`behavioral_limits.active_temperature_min/max`:
 
-- `Te > T_active_max` → environment too hot in the open → seek cool microhabitat
-- `Te < T_active_min` → environment too cold → seek warm microhabitat
+- `Te > active_temperature_max` → environment too hot in the open → seek cool microhabitat
+- `Te < active_temperature_min` → environment too cold → seek warm microhabitat
 
 ## Priority sequences
 
@@ -33,13 +38,13 @@ temperature of a passive body in the current environment) is compared to
 
 *Too cold*:
 `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-`retreat_underground` (only if `Te < T_critical_min`)
+`retreat_underground` (only if `Te < critical_temperature_min`)
 
 ## After the behavioural loop
 
 The full endotherm physiological thermoregulate (piloerection, vasodilation,
-hyperthermia, panting, sweating — `homeothermy.jl`) is run at the chosen
-behavioural position.
+hyperthermia, panting, sweating — `rulebased.jl` or `ipopt.jl`) is run at the
+chosen behavioural position.
 
 ## Returns
 
@@ -63,8 +68,8 @@ function thermoregulate(
     step::Int,
     prev_step_depth::Int = 1,
 )
-    low_shade = available_environments.min_shade_result
-    high_shade = available_environments.max_shade_result
+    min_shade = available_environments.min_shade_result
+    max_shade = available_environments.max_shade_result
     (; tolerance, max_iterations) = behavioral_limits.control
 
     # -------------------------------------------------------------------------
@@ -87,13 +92,13 @@ function thermoregulate(
     # -------------------------------------------------------------------------
     # 2. Determine activity period
     # -------------------------------------------------------------------------
-    zenith    = low_shade.solar_radiation.zenith_angle[step]
-    solar_rad = low_shade.global_radiation[step]
-    active    = is_active(activity_period(organism), zenith, solar_rad)
+    zenith    = min_shade.solar_radiation.zenith_angle[step]
+    sunlight = min_shade.global_radiation[step]
+    active    = is_active(activity_period(organism), zenith, sunlight)
 
-    # Blend factor helper
+    # Underground shade factor helper (binary 0/1, matches _underground_blend_factor logic)
     shade_range = available_environments.max_shade_fraction - available_environments.min_shade_fraction
-    @inline blend_factor_for(shade_chosen) = shade_range > 0 ?
+    @inline underground_shade_factor_for(shade_chosen) = shade_range > 0 ?
         clamp((shade_chosen - available_environments.min_shade_fraction) / shade_range, 0.0, 1.0) :
         0.0
 
@@ -102,9 +107,9 @@ function thermoregulate(
     # -------------------------------------------------------------------------
     if !active
         if behavioral_limits.can_retreat_underground
-            bf                = blend_factor_for(behavioral_limits.shade.current)
-            behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
-                                             behavioral_limits.shade.current, bf)
+            underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.current)
+            behavioral_limits = select_depth(behavioral_limits, min_shade, max_shade, step,
+                                             underground_shade_factor)
         end
         env = interpolate_environment(available_environments, step, behavioral_limits, environmental_params)
         return _build_endotherm_behavioral_output(
@@ -112,16 +117,16 @@ function thermoregulate(
     end
 
     # -------------------------------------------------------------------------
-    # 3b. Active but was underground last step → check T_emerge condition
+    # 3b. Active but was underground last step → check emerge_temperature_min condition
     # -------------------------------------------------------------------------
     if prev_step_depth > behavioral_limits.depth.reference
-        bf          = blend_factor_for(behavioral_limits.shade.reference)
-        T_soil_prev = _blend(
-            low_shade.soil_temperature[step, prev_step_depth],
-            high_shade.soil_temperature[step, prev_step_depth],
-            bf,
+        underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.reference)
+        soil_temperature_prev    = _blend(
+            min_shade.soil_temperature[step, prev_step_depth],
+            max_shade.soil_temperature[step, prev_step_depth],
+            underground_shade_factor,
         )
-        if T_soil_prev < behavioral_limits.T_emerge
+        if soil_temperature_prev < behavioral_limits.emerge_temperature_min
             behavioral_limits = @set behavioral_limits.depth.current = prev_step_depth
             env = interpolate_environment(available_environments, step, behavioral_limits, environmental_params)
             return _build_endotherm_behavioral_output(
@@ -139,7 +144,7 @@ function thermoregulate(
     while iteration < max_iterations
         iteration += 1
 
-        if Te > behavioral_limits.T_active_max * (1 - tolerance)
+        if Te > behavioral_limits.active_temperature_max * (1 - tolerance)
             # Too hot: seek cool microhabitat before panting (water-loss avoidance)
             # lighten → parallel → shade → climb → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -159,15 +164,15 @@ function thermoregulate(
                 behavioral_limits = climb(behavioral_limits)
 
             elseif behavioral_limits.can_retreat_underground
-                bf                = blend_factor_for(behavioral_limits.shade.current)
-                behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
-                                                 behavioral_limits.shade.current, bf)
+                underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.current)
+                behavioral_limits = select_depth(behavioral_limits, min_shade, max_shade, step,
+                                                 underground_shade_factor)
                 break
             else
                 break
             end
 
-        elseif Te < behavioral_limits.T_active_min * (1 + tolerance)
+        elseif Te < behavioral_limits.active_temperature_min * (1 + tolerance)
             # Too cold: seek warm microhabitat
             # darken → perpendicular → press to ground → avoid shade → retreat_underground
             if behavioral_limits.can_change_absorptivity &&
@@ -183,10 +188,10 @@ function thermoregulate(
             elseif behavioral_limits.shade.current > behavioral_limits.shade.reference
                 behavioral_limits = avoid_shade(behavioral_limits)
 
-            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.T_critical_min
-                bf                = blend_factor_for(behavioral_limits.shade.current)
-                behavioral_limits = select_depth(behavioral_limits, low_shade, high_shade, step,
-                                                 behavioral_limits.shade.current, bf)
+            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.critical_temperature_min
+                underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.current)
+                behavioral_limits = select_depth(behavioral_limits, min_shade, max_shade, step,
+                                                 underground_shade_factor)
                 break
             else
                 break
@@ -212,15 +217,8 @@ function _build_endotherm_behavioral_output(organism, env_vars, env_pars, behavi
     Te  = solve_body_temperature(organism, env_vars, env_pars)
     e   = (environment_pars=env_pars, environment_vars=env_vars)
 
-    # Initial conditions for physiological thermoregulate:
-    # Q_gen = 0 (no metabolic heat pre-assumed), T_skin ≈ T_core − 3 K (typical
-    # skin-core gradient), T_insulation ≈ T_air.
-    physio_limits = thermoregulation(organism)
-    Q_gen_init    = zero(physio_limits.Q_minimum_ref)
-    T_skin_init   = HeatExchange.metabolism_pars(organism).core_temperature - 3u"K"
-    T_insul_init  = env_vars.air_temperature
-
-    endotherm_out = thermoregulate(organism, e, Q_gen_init, T_skin_init, T_insul_init)
+    init = initial_physiological_state(organism, env_vars)
+    endotherm_out = thermoregulate(organism, e, init)
 
     return (;
         Te,

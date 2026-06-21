@@ -9,10 +9,10 @@ abstract type AbstractBehaviourParameters end
 
 Abstract supertype for thermoregulation modes.
 
-Modes determine which effectors are available during thermoregulation:
-- `Core`: Basic thermoregulation only (piloerection, uncurl, vasodilate, hyperthermia)
+Modes determine which effectors are available during thermoregulation and in what sequence.
+- `Core`: fully sequential, piloerection, uncurl, vasodilate, hyperthermia, pant, sweat
 - `CoreAndPantingFirst`: Adds panting during hyperthermia
-- `CorePantingSweatingFirst`: Adds both panting and sweating
+- `CorePantingSweatingFirst`: Adds both panting and sweating during hyperthermia
 """
 abstract type AbstractThermoregulationMode end
 
@@ -66,7 +66,7 @@ metabolic cost and effectiveness.
 
 # Fields
 - `mode::M`: Thermoregulation mode (`CoreFirst`, `CoreAndPantingFirst`, or `CorePantingSweatingFirst`).
-- `tolerance::T`: Fraction below Q_minimum allowed
+- `tolerance::T`: Fraction below minimum_heat_flow allowed
 - `max_iterations::I`: Maximum iterations before warning
 """
 Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,I} <: AbstractControlStrategy
@@ -76,19 +76,28 @@ Base.@kwdef struct RuleBasedSequentialControl{M<:AbstractThermoregulationMode,T,
 end
 
 """
-    PDEControl <: AbstractControlStrategy
+    IPOPTControl <: AbstractControlStrategy
 
-Partial differential equation-based control strategy.
+IPOPT-based nonlinear programming control strategy.
 
-Uses a PDE formulation to solve the thermoregulation problem, allowing
-for spatially-resolved temperature distributions and continuous control
-of effectors.
+Solves the thermoregulation problem as a constrained optimisation:
+minimise deviation from the setpoint core temperature subject to heat-balance
+equality constraints, with all physiological effectors (flesh_conductivity,
+pant, skin_wetness) as continuous decision variables.
 
-!!! warning
-    This control strategy is not yet implemented.
+# Fields
+- `nlp_strategy`: NLP formulation — `WeightedMeanNLP()` (default, dorsal/ventral
+  weighted-mean single body, 9 variables, 4 constraints) or `MultiSidedNLP()`
+  (explicit per-side heat balance, 11 variables, 7 constraints).
+- `smoothing`: smoothing policy passed to the heat-balance physics so autodiff (AD)
+  sees differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()`
+  to match the rule-based path's exact `abs`/`max`/`step` behaviour.
+
+Requires `Ipopt.jl`.
 """
-struct PDEControl <: AbstractControlStrategy 
-    # Add any reqired settings here
+Base.@kwdef struct IPOPTControl{S<:HeatExchange.SmoothingStrategy} <: AbstractControlStrategy
+    nlp_strategy::HeatExchange.NLPStrategy = HeatExchange.WeightedMeanNLP()
+    smoothing::S = HeatExchange.SmoothBound(1.0e-5)
 end
 
 # =============================================================================
@@ -147,19 +156,19 @@ Abstract supertype for the instantaneous activity state of an organism.
 
 Concrete subtypes mirror NicheMapR's `ACT` output column:
 - [`Resting`](@ref) — underground or thermally unable to be active (ACT = 0)
-- [`Basking`](@ref) — above ground, warming up; `T_bask ≤ Tb < T_active_min` (ACT = 1)
+- [`Basking`](@ref) — above ground, warming up; `basking_temperature_min ≤ core_temperature < active_temperature_min` (ACT = 1)
 - [`Active`](@ref) — above ground, within activity thermal window;
-  `T_active_min ≤ Tb ≤ T_active_max` (ACT = 2)
+  `active_temperature_min ≤ core_temperature ≤ active_temperature_max` (ACT = 2)
 """
 abstract type OrganismState end
 
 "Resting state: underground or outside the thermal window for surface activity."
 struct Resting <: OrganismState end
 
-"Basking state: above ground but below `T_active_min`; warming toward activity temperature."
+"Basking state: above ground but below `active_temperature_min`; warming toward activity temperature."
 struct Basking <: OrganismState end
 
-"Active state: above ground within the activity thermal window `[T_active_min, T_active_max]`."
+"Active state: above ground within the activity thermal window `[active_temperature_min, active_temperature_max]`."
 struct Active <: OrganismState end
 
 """
