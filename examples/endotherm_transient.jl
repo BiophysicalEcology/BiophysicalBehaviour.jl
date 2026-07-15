@@ -18,7 +18,7 @@ insulation_pars = InsulationParameters(;
 )
 ventral_fraction = 0.5
 internal_conduction = InternalConductionParameters(;
-    fat_fraction=0.05, flesh_conductivity=0.9u"W/m/K", fat_conductivity=0.23u"W/m/K", fat_density=901.0u"kg/m^3",
+    fat_fraction=0.0, flesh_conductivity=0.9u"W/m/K", fat_conductivity=0.23u"W/m/K", fat_density=901.0u"kg/m^3",
 )
 fat = FatLayer(internal_conduction.fat_fraction, internal_conduction.fat_density)
 mean_depth = insulation_pars.dorsal.depth * (1 - ventral_fraction) + insulation_pars.ventral.depth * ventral_fraction
@@ -54,7 +54,7 @@ core_temperature_init = resting.thermoregulation.core_temperature
 println("resting core temperature before takeoff: ", u"°C"(core_temperature_init))
 
 # --- flight: metabolic rate and wind speed both jump at takeoff (t = 0) ---
-flight_metabolic_heat_flow = resting_metabolic_heat_flow * 8.0  # elevated for sustained flight
+flight_metabolic_heat_flow = resting_metabolic_heat_flow * 5.0  # elevated for sustained flight
 times = (0:1.0:180)u"minute" .|> u"s"
 flight_forcing = EnvironmentForcing(
     [first(times), last(times)],
@@ -108,7 +108,9 @@ using DataFrames, CSV
 
 datadir = joinpath(dirname(pathof(BiophysicalBehaviour)), "..", "test", "data", "trans_behav")
 metout = DataFrame(CSV.File(joinpath(datadir, "trans_behav_metout.csv")))
+shadmet = DataFrame(CSV.File(joinpath(datadir, "trans_behav_shadmet.csv")))
 soil = DataFrame(CSV.File(joinpath(datadir, "trans_behav_soil.csv")))
+shadsoil = DataFrame(CSV.File(joinpath(datadir, "trans_behav_shadsoil.csv")))
 params = DataFrame(CSV.File(joinpath(datadir, "trans_behav_params.csv")))[1, :]
 
 diurnal_times = metout.TIME .* u"minute" .|> u"s"
@@ -117,12 +119,12 @@ movement_speed = 9.0u"m/s"  # ~ cruising airspeed of a small parrot
 resting_forcing = EnvironmentForcing(
     diurnal_times,
     HeatExchange.EnvironmentalVarsVec(;
-        air_temperature=u"K".(metout.TALOC .* u"°C"), sky_temperature=u"K".(metout.TSKYC .* u"°C"),
-        ground_temperature=u"K".(soil.D0cm .* u"°C"), substrate_temperature=u"K".(soil.D0cm .* u"°C"),
-        relative_humidity=metout.RHLOC ./ 100, wind_speed=metout.VLOC .* u"m/s",
+        air_temperature=u"K".(shadmet.TALOC .* u"°C"), sky_temperature=u"K".(shadmet.TSKYC .* u"°C"),
+        ground_temperature=u"K".(shadsoil.D0cm .* u"°C"), substrate_temperature=u"K".(shadsoil.D0cm .* u"°C"),
+        relative_humidity=shadmet.RHLOC ./ 100, wind_speed=shadmet.VLOC .* u"m/s",
         atmospheric_pressure=fill(params.press * u"Pa", nrow(metout)), zenith_angle=metout.ZEN .* u"°",
         substrate_conductivity=fill(2.79u"W/m/K", nrow(metout)), global_radiation=metout.SOLR .* u"W/m^2",
-        diffuse_fraction=fill(0.1, nrow(metout)), shade=fill(0.0, nrow(metout)),
+        diffuse_fraction=fill(0.1, nrow(metout)), shade=fill(0.9, nrow(metout)),
     ),
 )
 active_forcing = EnvironmentForcing(
@@ -137,7 +139,12 @@ active_forcing = EnvironmentForcing(
     ),
 )
 
-diurnal_core_temperature_init = u"K"(metout.TALOC[1] * u"°C")  # ~ air temperature at midnight
+# resting core temperature at midnight: steady state at BMR under the night's local conditions
+midnight_resting = solve_metabolic_rate(
+    organism, (; environment_pars, environment_vars=resting_forcing(diurnal_times[1])),
+    u"K"(35.0u"°C"), resting_forcing(diurnal_times[1]).air_temperature,
+)
+diurnal_core_temperature_init = midnight_resting.thermoregulation.core_temperature
 diurnal_result = simulate_endotherm_activity_cycle(
     diurnal_times, diurnal_core_temperature_init, organism, environment_pars, active_forcing, resting_forcing;
     active_metabolic_heat_flow=flight_metabolic_heat_flow,
@@ -163,8 +170,16 @@ println("total flight time: ", round(u"minute", sum(flight_bouts; init=0.0u"s"))
 println("longest bout: ", round(u"minute", maximum(flight_bouts; init=0.0u"s")))
 println("core temperature range over the day: ", extrema(u"°C".(diurnal_result.core_temperature)))
 
+# sunrise/sunset: zenith angle is pinned at exactly 90° overnight, so the first/last hour
+# below 90° bracket the day
+hours = ustrip.(u"hr", diurnal_times)
+daytime = findall(<(90), metout.ZEN)
+sunrise_hr, sunset_hr = hours[first(daytime)], hours[last(daytime)]
+
 # Uncomment to plot the diurnal core temperature trajectory:
 # using Plots
-# plot(uconvert.(u"hr", diurnal_result.t), uconvert.(u"°C", diurnal_result.core_temperature); label="core temperature", color=:red, legend=:topleft)
+# plot(uconvert.(u"hr", diurnal_result.t), uconvert.(u"°C", diurnal_result.core_temperature); label="core temperature", color=:red, legend=:bottomleft)
 # plot!(uconvert.(u"hr", diurnal_times), u"°C".(active_forcing.(diurnal_times) .|> e -> e.air_temperature); label="reference-height air temp", color=:blue, linestyle=:dash)
 # hline!([uconvert(u"°C", critical_temperature)]; label="active_temperature_max", color=:red, linestyle=:dash)
+# vline!([sunrise_hr]; label="sunrise", color=:orange, linestyle=:dot)
+# vline!([sunset_hr]; label="sunset", color=:orange, linestyle=:dot)
