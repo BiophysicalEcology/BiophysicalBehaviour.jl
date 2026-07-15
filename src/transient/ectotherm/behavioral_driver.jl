@@ -123,13 +123,13 @@ end
                                internal_conduction, body_absorptivity, emissivity,
                                sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
                                solver=OrdinaryDiffEqTsit5.Tsit5(),
-                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=50*length(times),
+                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
                                bout_chunk=3600.0)
     simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), body, environment_pars,
                                sun_forcing, shade_forcing, limits; internal_conduction, shell_thickness,
                                body_absorptivity, emissivity, sky_view_factor, ground_view_factor,
                                metabolic_heat_volumetric, solver=OrdinaryDiffEqTsit5.Tsit5(),
-                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=50*length(times),
+                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
                                bout_chunk=3600.0)
 
 Event-driven diurnal behavioral thermoregulation (sleep → bask → forage ⇄ cool → sleep).
@@ -150,7 +150,7 @@ function simulate_diurnal_behavior(
     internal_conduction, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
-    smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=50 * length(times),
+    smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
     bout_chunk=3600.0,
 )
     _simulate_diurnal_behavior(
@@ -167,7 +167,7 @@ function simulate_diurnal_behavior(
     internal_conduction, shell_thickness, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
-    smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=50 * length(times),
+    smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
     bout_chunk=3600.0,
 )
     u0 = Float64[ustrip(u"K", state.core_temperature), ustrip(u"K", state.shell_temperature)]
