@@ -53,7 +53,7 @@ limits = example_ectotherm_behavioral_limits(;
 times = metout.TIME .* u"minute" .|> u"s"
 core_temperature_init = u"K"(day_results.Tb[1] * u"°C")
 
-@time result = simulate_diurnal_behavior(
+result = simulate_diurnal_behavior(
     times, core_temperature_init, body, environment_pars, sun_forcing, shade_forcing, limits;
     internal_conduction, body_absorptivity=params.alpha, emissivity=0.95,
     sky_view_factor=0.4, ground_view_factor=0.4, metabolic_heat_volumetric=params.q * u"W/m^3",
@@ -75,10 +75,10 @@ julia_min_Tb = minimum(ustrip.(u"°C", result.core_temperature))
 end
 
 # Uncomment to plot the Julia trajectory against R's own day_results output:
-using Plots
-plot(uconvert.(u"hr", day_results.time .* u"s"), day_results.Tb .* u"°C"; label="Tb (R)", color=:black)
-plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb (Julia)", color=:orange)
-plot!(uconvert.(u"hr", day_results.time .* u"s"), day_results.Tb_open .* u"°C"; label="Tb_open (R)", color=:grey, linestyle=:dash)
-plot!(uconvert.(u"hr", day_results.time .* u"s"), day_results.T_air_shd .* u"°C"; label="local air temp (shade, R)", color=:blue)
-hline!([params.T_F_max * u"°C"]; label="T_F_max", color=:red, linestyle=:dash)
-hline!([params.T_F_min * u"°C"]; label="T_F_min", color=:lightblue, linestyle=:dash)
+# using Plots
+# plot(uconvert.(u"hr", day_results.time .* u"s"), day_results.Tb .* u"°C"; label="Tb (R)", color=:black)
+# plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb (Julia)", color=:orange)
+# plot!(uconvert.(u"hr", day_results.time .* u"s"), day_results.Tb_open .* u"°C"; label="Tb_open (R)", color=:grey, linestyle=:dash)
+# plot!(uconvert.(u"hr", day_results.time .* u"s"), day_results.T_air_shd .* u"°C"; label="local air temp (shade, R)", color=:blue)
+# hline!([params.T_F_max * u"°C"]; label="T_F_max", color=:red, linestyle=:dash)
+# hline!([params.T_F_min * u"°C"]; label="T_F_min", color=:lightblue, linestyle=:dash)
