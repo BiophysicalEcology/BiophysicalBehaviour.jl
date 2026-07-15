@@ -4,8 +4,10 @@ import ConstructionBase
 import FluidProperties
 
 using BiophysicalGeometry
+using DataInterpolations
 using HeatExchange
 using ModelParameters
+import OrdinaryDiffEqTsit5
 using Unitful
 using UnitfulMoles
 
@@ -116,6 +118,11 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_behavioral_traits,
     example_ectotherm_organism_traits
 
+# Transient (lumped-capacitance) body-temperature simulation
+export EnvironmentForcing, simulate_onelump, simulate_twolump
+export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase
+export simulate_diurnal_behavior
+
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
@@ -127,5 +134,8 @@ include("ectotherm/thermoregulation.jl")
 include("ectotherm/ectothermy.jl")
 include("ectotherm/example_variables_and_parameters.jl")
 include("endotherm/thermoregulation/behavioural.jl")
+include("transient/forcing.jl")
+include("transient/simulate.jl")
+include("transient/ectotherm/behavioral_driver.jl")
 
 end # module BiophysicalBehaviour
