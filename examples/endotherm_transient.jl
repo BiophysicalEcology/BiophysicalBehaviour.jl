@@ -89,7 +89,82 @@ else
 end
 
 # Uncomment to plot the core temperature trajectory during flight:
-using Plots
-plot(uconvert.(u"minute", result.t), uconvert.(u"°C", result.core_temperature); label="core temperature", color=:red, linewidth=2)
-hline!([uconvert(u"°C", critical_temperature)]; label="critical temperature", color=:red, linestyle=:dash)
-hline!([uconvert(u"°C", core_temperature_init)]; label="resting (pre-flight)", color=:grey, linestyle=:dash)
+# using Plots
+# plot(uconvert.(u"minute", result.t), uconvert.(u"°C", result.core_temperature); label="core temperature", color=:red, linewidth=2)
+# hline!([uconvert(u"°C", critical_temperature)]; label="critical temperature", color=:red, linestyle=:dash)
+# hline!([uconvert(u"°C", core_temperature_init)]; label="resting (pre-flight)", color=:grey, linestyle=:dash)
+
+# ============================================================================
+# Diurnal activity/rest cycling with real microclimate forcing and height choice
+# ============================================================================
+# `simulate_endotherm_activity_cycle` repeats the takeoff scenario above over a full day of
+# real NicheMapR forcing (test/R/trans_behav.R's output, already saved for the ectotherm
+# examples). Flying exposes the bird to reference-height conditions (TAREF/VREF); resting
+# uses local-height conditions (TALOC/VLOC) — the "height choice" `active_forcing`/
+# `resting_forcing` are built from independently, matching how the ectotherm behavioral
+# driver's sun/shade forcing pair works. Effective wind speed while flying is
+# `max(movement_speed, reference-height ambient wind)`, not movement speed alone.
+using DataFrames, CSV
+
+datadir = joinpath(dirname(pathof(BiophysicalBehaviour)), "..", "test", "data", "trans_behav")
+metout = DataFrame(CSV.File(joinpath(datadir, "trans_behav_metout.csv")))
+soil = DataFrame(CSV.File(joinpath(datadir, "trans_behav_soil.csv")))
+params = DataFrame(CSV.File(joinpath(datadir, "trans_behav_params.csv")))[1, :]
+
+diurnal_times = metout.TIME .* u"minute" .|> u"s"
+movement_speed = 9.0u"m/s"  # ~ cruising airspeed of a small parrot
+
+resting_forcing = EnvironmentForcing(
+    diurnal_times,
+    HeatExchange.EnvironmentalVarsVec(;
+        air_temperature=u"K".(metout.TALOC .* u"°C"), sky_temperature=u"K".(metout.TSKYC .* u"°C"),
+        ground_temperature=u"K".(soil.D0cm .* u"°C"), substrate_temperature=u"K".(soil.D0cm .* u"°C"),
+        relative_humidity=metout.RHLOC ./ 100, wind_speed=metout.VLOC .* u"m/s",
+        atmospheric_pressure=fill(params.press * u"Pa", nrow(metout)), zenith_angle=metout.ZEN .* u"°",
+        substrate_conductivity=fill(2.79u"W/m/K", nrow(metout)), global_radiation=metout.SOLR .* u"W/m^2",
+        diffuse_fraction=fill(0.1, nrow(metout)), shade=fill(0.0, nrow(metout)),
+    ),
+)
+active_forcing = EnvironmentForcing(
+    diurnal_times,
+    HeatExchange.EnvironmentalVarsVec(;
+        air_temperature=u"K".(metout.TAREF .* u"°C"), sky_temperature=u"K".(metout.TSKYC .* u"°C"),
+        ground_temperature=u"K".(soil.D0cm .* u"°C"), substrate_temperature=u"K".(soil.D0cm .* u"°C"),
+        relative_humidity=metout.RH ./ 100, wind_speed=max.(ustrip.(u"m/s", movement_speed), metout.VREF) .* u"m/s",
+        atmospheric_pressure=fill(params.press * u"Pa", nrow(metout)), zenith_angle=metout.ZEN .* u"°",
+        substrate_conductivity=fill(2.79u"W/m/K", nrow(metout)), global_radiation=metout.SOLR .* u"W/m^2",
+        diffuse_fraction=fill(0.1, nrow(metout)), shade=fill(0.0, nrow(metout)),
+    ),
+)
+
+diurnal_core_temperature_init = u"K"(metout.TALOC[1] * u"°C")  # ~ air temperature at midnight
+diurnal_result = simulate_endotherm_activity_cycle(
+    diurnal_times, diurnal_core_temperature_init, organism, environment_pars, active_forcing, resting_forcing;
+    active_metabolic_heat_flow=flight_metabolic_heat_flow,
+    active_temperature_max=critical_temperature, resume_temperature=u"K"(39.0u"°C"),
+)
+
+function _activity_bouts(t, state)
+    bouts = typeof(1.0u"s")[]
+    bout_start = 0.0u"s"
+    for i in eachindex(state)
+        if state[i] isa Active && (i == 1 || !(state[i - 1] isa Active))
+            bout_start = t[i]
+        elseif state[i] isa Active && (i == lastindex(state) || !(state[i + 1] isa Active))
+            push!(bouts, t[i] - bout_start)
+        end
+    end
+    return bouts
+end
+
+flight_bouts = _activity_bouts(diurnal_result.t, diurnal_result.state)
+println("\nflight bouts over the day: ", length(flight_bouts))
+println("total flight time: ", round(u"minute", sum(flight_bouts; init=0.0u"s")))
+println("longest bout: ", round(u"minute", maximum(flight_bouts; init=0.0u"s")))
+println("core temperature range over the day: ", extrema(u"°C".(diurnal_result.core_temperature)))
+
+# Uncomment to plot the diurnal core temperature trajectory:
+# using Plots
+# plot(uconvert.(u"hr", diurnal_result.t), uconvert.(u"°C", diurnal_result.core_temperature); label="core temperature", color=:red, legend=:topleft)
+# plot!(uconvert.(u"hr", diurnal_times), u"°C".(active_forcing.(diurnal_times) .|> e -> e.air_temperature); label="reference-height air temp", color=:blue, linestyle=:dash)
+# hline!([uconvert(u"°C", critical_temperature)]; label="active_temperature_max", color=:red, linestyle=:dash)

@@ -8,6 +8,7 @@
 - `src/transient/simulate.jl` — `simulate_onelump`/`simulate_twolump`
 - `src/transient/ectotherm/behavioral_driver.jl` — `simulate_diurnal_behavior`
 - `src/transient/endotherm/simulate.jl` — `simulate_endotherm_onelump`
+- `src/transient/endotherm/behavioral_driver.jl` — `simulate_endotherm_activity_cycle`
 
 Ported from NicheMapR's `onelump.R`/`onelump_var.R`/`twolump.R`/`trans_behav.R`. Unlike the
 rest of the package, which solves steady-state heat balance (`HeatExchange.heat_balance`,
@@ -142,14 +143,48 @@ automatic critical-temperature stopping: "how long can this be sustained" is ans
 inspecting the returned trajectory (e.g. `findfirst(>=(critical_temperature),
 core_temperature)`), as in `examples/endotherm_transient.jl`.
 
+### Activity/rest cycling (`simulate_endotherm_activity_cycle`)
+
+Event-driven analogue of `simulate_diurnal_behavior` for endotherms: alternates an
+`EndothermActivePhase` (elevated metabolic rate, e.g. flight or running) and
+`EndothermRestingPhase` (basal rate) purely as a function of core temperature, using
+`ContinuousCallback` the same way. No day/night cycle — this is an activity/rest thermal
+cycle, not a full diel budget (deliberately out of scope; see below). Insulated bodies only,
+since `endotherm_onelump`'s `metabolic_heat_flow` override only exists on that branch.
+
+Two independent `EnvironmentForcing` streams (`active_forcing`/`resting_forcing`) — same
+two-forcing pattern as the ectotherm driver's `sun_forcing`/`shade_forcing` — is what gives
+this "height choice" for free: build `active_forcing` from reference-height microclimate
+columns (e.g. NicheMapR's `TAREF`/`VREF`) for a flying animal and `resting_forcing` from
+local-height columns (`TALOC`/`VLOC`) for a perched/walking one, with no change to the driver
+itself (see `examples/endotherm_transient.jl`, which does exactly this from real
+`test/R/trans_behav.R` output). The example also applies effective wind speed as
+`max(movement_speed, ambient_wind_at_that_height)`, not movement speed alone — NicheMapR's own
+(untested) butterfly/flight model in `ectotherm.R` has the same two levers under different
+names (`flymetab`, `flyspeed`).
+
+Because there's no third phase to disambiguate (unlike the ectotherm driver's `ForagePhase`,
+which had three possible exits), `_next_phase` here is unconditional alternation — the
+floating-point boundary-noise bug fixed in the ectotherm driver doesn't have an analogue to
+fix.
+
 ## Not built here (deferred)
 
 - Unifying this with the existing steady-state `ectothermy.jl` loop via a future
   `BodyTemperatureModel` trait (`SteadyState` vs `LumpedCapacitance`).
-- A JuMP/IPOPT dynamic-optimization layer reusing `onelump`/`twolump` as collocation
-  constraints — the physics/solver split above is what makes this possible later, not
-  something built now.
-- NicheMapR's custom-shape option (`geom=5`) — see the main plan for why.
-- Periodic effector re-solving mid-simulation for endotherms, `endotherm_twolump`,
-  torpor/heterothermy phases, and an endotherm analogue of `simulate_diurnal_behavior`'s
-  event-driven effector switching.
+- A JuMP/IPOPT dynamic-optimization layer reusing `onelump`/`twolump`/`endotherm_onelump` as
+  collocation constraints — the physics/solver split above is what makes this possible later,
+  not something built now. Forward-mode AD (`ForwardDiff.jl`) through a single
+  `simulate_endotherm_onelump` call should already work today (no events, `SmoothBound`
+  smoothing) as a cheap way to validate the chain before investing in this.
+- **Optimal movement height/speed** — `simulate_endotherm_activity_cycle` takes height and
+  movement speed as fixed inputs (baked into `active_forcing`); finding the height/speed that
+  optimizes some objective (e.g. maximise distance covered without exceeding a thermal limit)
+  is a natural follow-on once the AD/optimal-control layer above exists.
+- Periodic effector re-solving mid-simulation, `endotherm_twolump`, torpor/heterothermy
+  phases, and a full diurnal cycle (Sleep at night) for the activity/rest driver — deliberately
+  out of scope for the same "keep effectors fixed, no day/night" reasons as above.
+- An ectotherm analogue of the activity/rest driver (`onelump` + a flight/movement metabolic
+  term + movement-speed wind exposure, mirroring `ectotherm.R`'s `flyer`/`flymetab`/`flyspeed`/
+  `flyhigh`) — the trigger logic in NicheMapR lives in compiled Fortran, not inspectable from
+  the R wrapper, so this needs its own design pass rather than porting undocumented behaviour.
