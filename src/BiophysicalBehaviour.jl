@@ -122,6 +122,7 @@ export example_ectotherm_behavioral_limits,
 export EnvironmentForcing, simulate_onelump, simulate_twolump
 export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase
 export simulate_diurnal_behavior
+export simulate_endotherm_onelump
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
@@ -137,5 +138,6 @@ include("endotherm/thermoregulation/behavioural.jl")
 include("transient/forcing.jl")
 include("transient/simulate.jl")
 include("transient/ectotherm/behavioral_driver.jl")
+include("transient/endotherm/simulate.jl")
 
 end # module BiophysicalBehaviour

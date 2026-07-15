@@ -3,9 +3,11 @@
 **Source files:**
 - `HeatExchange.jl/src/transient_lumped.jl` — `onelump`/`twolump` physics (`dT/dt`)
 - `HeatExchange.jl/src/internal_temperature.jl` — `internal_gradient_shape_factor`
+- `HeatExchange.jl/src/transient_lumped_endotherm.jl` — `endotherm_onelump` physics (`dT_core/dt`)
 - `src/transient/forcing.jl` — `EnvironmentForcing` (time-varying environment)
 - `src/transient/simulate.jl` — `simulate_onelump`/`simulate_twolump`
 - `src/transient/ectotherm/behavioral_driver.jl` — `simulate_diurnal_behavior`
+- `src/transient/endotherm/simulate.jl` — `simulate_endotherm_onelump`
 
 Ported from NicheMapR's `onelump.R`/`onelump_var.R`/`twolump.R`/`trans_behav.R`. Unlike the
 rest of the package, which solves steady-state heat balance (`HeatExchange.heat_balance`,
@@ -94,6 +96,52 @@ needs a `shell_thickness` keyword). Behavioral thresholds always act on core tem
   root-finding noise could otherwise flip to `BaskPhase`, which immediately bounces back to
   `ForagePhase` with zero elapsed time, stalling the simulation until `max_bouts` is exhausted.
 
+## Endotherm transient (fixed effectors, one-lump)
+
+`endotherm_onelump` adds core-temperature thermal mass to the existing steady-state endotherm
+physics, without porting new physics from scratch: `HeatExchange.heat_balance`/`_pack_sides`
+already compute exactly what a transient RHS needs, just framed as residuals driven to zero
+rather than as a rate.
+
+- **`Naked` bodies** reuse `heat_balance(core_temperature, organism, e)` verbatim — its
+  `metabolic_heat_flow` already comes from `organism`'s own `metabolism_pars.model` (a genuine
+  forward model, e.g. `Kleiber`/`McKechnieWolf`/`AndrewsPough2`), so `.energy_balance.heat_balance`
+  (heat in − heat out at the given, possibly off-equilibrium, core temperature) is already the
+  correct ODE numerator.
+- **Insulated bodies** (`FibrousLayer`/`CompositeInsulation`) need `metabolic_heat_flow` as an
+  exogenous keyword (`Quantity` or `Function(core_temperature)`) — `solve_metabolic_rate`
+  zbrent-solves it as an unknown at equilibrium; calling that inside the ODE loop would force
+  instantaneous equilibrium every step, defeating the point of adding thermal mass. Skin/
+  insulation temperature are still solved algebraically each call via `_pack_sides` (not a
+  second ODE state, the same treatment `twolump`'s outer surface temperature gets). The
+  numerator is `metabolic_heat_flow − respiration_heat_flow − net_metabolic_heat_internal`
+  (`HeatExchange.heat_balance`'s `residual_internal_conduction`, matching `respiration()`'s own
+  `.balance` residual — `MetabolicRates.sum` must be `net_metabolic_heat_internal`, not
+  `metabolic_heat_flow`, to match this).
+- **Thermal capacitance**: `flesh_volume(body) * density * flesh_specific_heat` (flesh only,
+  fat/insulation excluded) — mirrors `twolump`'s core/shell split, not `onelump`'s whole-body
+  mass (which never had a fat layer to exclude).
+- **`minimum_metabolic_heat`** defaults to `metabolism_pars(organism).metabolic_heat_flow`
+  (the organism's configured basal rate), matching `solve_metabolic_rate`'s own convention —
+  it's a physiological floor, not zero.
+- **Fixed effectors only**: insulation depth, panting, skin wetness, flesh conductivity are
+  read from `organism`'s traits and held constant for the whole simulation — no periodic
+  re-solving via `RuleBasedSequentialControl`/`IPOPTControl`. Recommended initialization:
+  call `solve_metabolic_rate` once, externally, to seed a physiologically self-consistent
+  `core_temperature_init` before simulating (see `examples/endotherm_transient.jl`).
+- **Validation**: no R reference exists for this (new capability, not a NicheMapR port) — the
+  primary check (`test/endotherm_onelump.jl`) is that feeding `endotherm_onelump` the exact
+  equilibrium `metabolic_heat_flow` `solve_metabolic_rate` independently finds gives
+  `core_temperature_rate ≈ 0`.
+
+`simulate_endotherm_onelump` mirrors `simulate_onelump`'s structure and returns
+`core_temperature`/`core_temperature_rate` (both first-class, not buried in diagnostics) plus
+`skin_temperature` and per-timestep `diagnostics` (energy/mass flows), reconstructed post-hoc
+rather than via a solver callback — same simple approach `twolump` already uses. There's no
+automatic critical-temperature stopping: "how long can this be sustained" is answered by
+inspecting the returned trajectory (e.g. `findfirst(>=(critical_temperature),
+core_temperature)`), as in `examples/endotherm_transient.jl`.
+
 ## Not built here (deferred)
 
 - Unifying this with the existing steady-state `ectothermy.jl` loop via a future
@@ -102,3 +150,6 @@ needs a `shell_thickness` keyword). Behavioral thresholds always act on core tem
   constraints — the physics/solver split above is what makes this possible later, not
   something built now.
 - NicheMapR's custom-shape option (`geom=5`) — see the main plan for why.
+- Periodic effector re-solving mid-simulation for endotherms, `endotherm_twolump`,
+  torpor/heterothermy phases, and an endotherm analogue of `simulate_diurnal_behavior`'s
+  event-driven effector switching.
