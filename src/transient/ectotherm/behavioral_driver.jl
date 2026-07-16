@@ -35,14 +35,16 @@ _basking_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.baski
 _active_min_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.active_temperature_min)
 _active_max_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.active_temperature_max)
 
-function _phase_condition(::SleepPhase, zenith_signal, limits)
+function _phase_condition(::SleepPhase, zenith_signal, limits, active_min_hysteresis)
     (u, t) -> min(-zenith_signal(t), _basking_signal(u, limits))
 end
-function _phase_condition(::BaskPhase, zenith_signal, limits)
-    (u, t) -> max(_active_min_signal(u, limits), zenith_signal(t))
+# Bask/Forage hysteresis: exit thresholds sit `active_min_hysteresis` above/below T_F_min so
+# they never coincide (see docs).
+function _phase_condition(::BaskPhase, zenith_signal, limits, active_min_hysteresis)
+    (u, t) -> max(_active_min_signal(u, limits) - active_min_hysteresis, zenith_signal(t))
 end
-function _phase_condition(::ForagePhase, zenith_signal, limits)
-    (u, t) -> max(_active_max_signal(u, limits), -_active_min_signal(u, limits), zenith_signal(t))
+function _phase_condition(::ForagePhase, zenith_signal, limits, active_min_hysteresis)
+    (u, t) -> max(_active_max_signal(u, limits), -_active_min_signal(u, limits) - active_min_hysteresis, zenith_signal(t))
 end
 # trans_behav.R's `forage` event: resume at T_F_min, or shade air temp + 1K if that's
 # higher (otherwise unreachable in warm shade), falling back to T_F_min if shade is
@@ -124,13 +126,13 @@ end
                                sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
                                solver=OrdinaryDiffEqTsit5.Tsit5(),
                                solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
-                               bout_chunk=3600.0)
+                               bout_chunk=3600.0, active_min_hysteresis=0.15u"K")
     simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), body, environment_pars,
                                sun_forcing, shade_forcing, limits; internal_conduction, shell_thickness,
                                body_absorptivity, emissivity, sky_view_factor, ground_view_factor,
                                metabolic_heat_volumetric, solver=OrdinaryDiffEqTsit5.Tsit5(),
                                solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
-                               bout_chunk=3600.0)
+                               bout_chunk=3600.0, active_min_hysteresis=0.15u"K")
 
 Event-driven diurnal behavioral thermoregulation (sleep → bask → forage ⇄ cool → sleep).
 Dispatches on the initial state: a plain temperature runs the one-lump model
@@ -138,6 +140,10 @@ Dispatches on the initial state: a plain temperature runs the one-lump model
 two-lump model (`HeatExchange.ectotherm_twolump`, needs a `shell_thickness` keyword). Both reuse
 `limits`' `active_temperature_min/max`/`basking_temperature_min` thresholds. Port of
 NicheMapR's `trans_behav.R` (see file banner for what's simplified relative to R).
+
+`active_min_hysteresis` separates Bask's and Forage's exit thresholds around
+`active_temperature_min` (matching `trans_behav.R`'s `T_F_min ± 0.15°C`), preventing an
+indefinite zero-duration oscillation if core temperature settles exactly on that boundary.
 
 # Returns
 NamedTuple with `t` (s), `core_temperature` (K) [, `shell_temperature` (K) for the two-lump
@@ -151,13 +157,14 @@ function simulate_diurnal_behavior(
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
     smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
-    bout_chunk=3600.0,
+    bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
 )
     _simulate_diurnal_behavior(
         times, ustrip(u"K", core_temperature_init), body, environment_pars, sun_forcing, shade_forcing, limits;
         internal_conduction, shell_thickness=nothing, body_absorptivity, emissivity,
         sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
+        active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
     )
 end
 function simulate_diurnal_behavior(
@@ -168,7 +175,7 @@ function simulate_diurnal_behavior(
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
     smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
-    bout_chunk=3600.0,
+    bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
 )
     u0 = Float64[ustrip(u"K", state.core_temperature), ustrip(u"K", state.shell_temperature)]
     _simulate_diurnal_behavior(
@@ -176,6 +183,7 @@ function simulate_diurnal_behavior(
         internal_conduction, shell_thickness, body_absorptivity, emissivity,
         sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
+        active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
     )
 end
 
@@ -185,7 +193,7 @@ function _simulate_diurnal_behavior(
     limits::EctothermBehavioralLimits;
     internal_conduction, shell_thickness, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
-    solver, solver_kwargs, smoothing::SmoothingStrategy, max_bouts, bout_chunk,
+    solver, solver_kwargs, smoothing::SmoothingStrategy, max_bouts, bout_chunk, active_min_hysteresis,
 )
     t0, tend = ustrip(u"s", first(times)), ustrip(u"s", last(times))
     zenith_signal(t) = ustrip(u"°", sun_forcing(t * u"s"; smoothing).zenith_angle - 90.0u"°")
@@ -205,7 +213,7 @@ function _simulate_diurnal_behavior(
         for _ in 1:8
             condition = phase isa CoolPhase ?
                 _phase_condition(phase, zenith_signal, limits, shade_air_temperature) :
-                _phase_condition(phase, zenith_signal, limits)
+                _phase_condition(phase, zenith_signal, limits, active_min_hysteresis)
             condition(u_current, t_current) < 0 && break
             phase = _next_phase(phase, u_current, zenith_signal, t_current, limits, shade_air_temperature)
         end
@@ -219,7 +227,7 @@ function _simulate_diurnal_behavior(
         )
         condition = phase isa CoolPhase ?
             _phase_condition(phase, zenith_signal, limits, shade_air_temperature) :
-            _phase_condition(phase, zenith_signal, limits)
+            _phase_condition(phase, zenith_signal, limits, active_min_hysteresis)
         # affect_neg!=nothing: only the upward crossing ends a phase.
         callback = OrdinaryDiffEqTsit5.ContinuousCallback(
             (u, t, integrator) -> condition(u, t), OrdinaryDiffEqTsit5.terminate!;

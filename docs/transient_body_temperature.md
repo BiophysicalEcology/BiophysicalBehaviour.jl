@@ -96,6 +96,12 @@ needs a `shell_thickness` keyword). Behavioral thresholds always act on core tem
   other rather than each to zero independently — a fast body landing near `active_max` from
   root-finding noise could otherwise flip to `BaskPhase`, which immediately bounces back to
   `ForagePhase` with zero elapsed time, stalling the simulation until `max_bouts` is exhausted.
+- `active_min_hysteresis` (default `0.15u"K"`, matching `trans_behav.R`'s `T_F_min ± 0.15°C`)
+  separates `BaskPhase`'s exit threshold from `ForagePhase`'s cold-exit threshold, both otherwise
+  anchored at the same `active_temperature_min`. Without it, a body settling exactly on that
+  value oscillates `BaskPhase`⇄`ForagePhase` forever at zero elapsed time, exhausting
+  `max_bouts` — unlike the `ForagePhase` fix above, a relative-signal comparison can't fix this
+  since the two thresholds are legitimately the same number.
 
 ## Endotherm transient (fixed effectors, one-lump)
 
