@@ -1,11 +1,11 @@
 # Transient (Lumped-Capacitance) Body Temperature
 
 **Source files:**
-- `HeatExchange.jl/src/transient_lumped.jl` — `onelump`/`twolump` physics (`dT/dt`)
+- `HeatExchange.jl/src/transient.jl` — `ectotherm_onelump`/`ectotherm_twolump` physics
+  (`dT/dt`) and `endotherm_onelump` physics (`dT_core/dt`)
 - `HeatExchange.jl/src/internal_temperature.jl` — `internal_gradient_shape_factor`
-- `HeatExchange.jl/src/transient_lumped_endotherm.jl` — `endotherm_onelump` physics (`dT_core/dt`)
 - `src/transient/forcing.jl` — `EnvironmentForcing` (time-varying environment)
-- `src/transient/simulate.jl` — `simulate_onelump`/`simulate_twolump`
+- `src/transient/simulate.jl` — `simulate_ectotherm_onelump`/`simulate_ectotherm_twolump`
 - `src/transient/ectotherm/behavioral_driver.jl` — `simulate_diurnal_behavior`
 - `src/transient/endotherm/simulate.jl` — `simulate_endotherm_onelump`
 - `src/transient/endotherm/behavioral_driver.jl` — `simulate_endotherm_activity_cycle`
@@ -17,13 +17,13 @@ lumped heat-capacitance model, integrated with `OrdinaryDiffEq.jl`.
 
 ## Physics / solver split
 
-`HeatExchange.jl` exposes `onelump`/`twolump` as pure, solver-agnostic functions — no ODE
+`HeatExchange.jl` exposes `ectotherm_onelump`/`ectotherm_twolump` as pure, solver-agnostic functions — no ODE
 type appears in their signature. `BiophysicalBehaviour.jl` is the only place that knows about
 `OrdinaryDiffEqTsit5`, mirroring the existing `nlp_interface.jl` (physics) / `ipopt.jl`
 (solver) split for the steady-state endotherm path. This keeps the derivative reusable later
 as a dynamics constraint in an optimal-control formulation without rewriting it.
 
-`onelump` has two methods on the same name (`core_temperature, t, ...` for the ODE derivative;
+`ectotherm_onelump` has two methods on the same name (`core_temperature, t, ...` for the ODE derivative;
 `t::AbstractVector, core_temperature_init, ...` for the closed-form trajectory under a
 constant environment) rather than a `_rhs`-suffixed sibling — the closed form's
 `final_core_temperature`/`initial_rate` outputs are the cross-check invariants used in
@@ -31,7 +31,7 @@ constant environment) rather than a `_rhs`-suffixed sibling — the closed form'
 
 ## Deliberate deviations from the R reference
 
-- **`twolump`'s outer surface temperature `Ts` is algebraic, not a third ODE state.** The R
+- **`ectotherm_twolump`'s outer surface temperature `Ts` is algebraic, not a third ODE state.** The R
   reference integrates it via a `deSolve` relaxation trick (`dTs = Ts_algebraic - Ts_current`)
   purely so the solver has something to converge — it has no real thermal mass. Here it's
   solved fresh every call from the current shell temperature `Tsk` (linearisation point for
@@ -44,7 +44,7 @@ constant environment) rather than a `_rhs`-suffixed sibling — the closed form'
   quirk. Divergence is only material at extreme (near-horizon) sun angles.
 - **Convection correlations** match the R reference exactly for `Cylinder`, `Ellipsoid`,
   `DesertIguana`; `Plate` and `LeopardFrog` use `HeatExchange`'s existing (differently
-  calibrated, already-tested) correlations rather than R's. `twolump` only supports
+  calibrated, already-tested) correlations rather than R's. `ectotherm_twolump` only supports
   `Cylinder`/`Ellipsoid` anyway, matching the R source.
 
 ## Behavioral driver (`simulate_diurnal_behavior`)
@@ -61,8 +61,8 @@ Reuses existing types rather than inventing parallel ones: `EctothermBehavioralL
 (R's `T_F_min`/`T_F_max`/`T_B_min`), and `NormalToSun`/`Intermediate` are the postures.
 
 `simulate_diurnal_behavior` dispatches on the initial state, matching R's `lump` parameter:
-a plain temperature runs the one-lump model (`HeatExchange.onelump`); a
-`(; core_temperature, shell_temperature)` NamedTuple runs two-lump (`HeatExchange.twolump`,
+a plain temperature runs the one-lump model (`HeatExchange.ectotherm_onelump`); a
+`(; core_temperature, shell_temperature)` NamedTuple runs two-lump (`HeatExchange.ectotherm_twolump`,
 needs a `shell_thickness` keyword). Behavioral thresholds always act on core temperature.
 
 **Simplified relative to `trans_behav.R`:**
@@ -114,13 +114,13 @@ rather than as a rate.
   zbrent-solves it as an unknown at equilibrium; calling that inside the ODE loop would force
   instantaneous equilibrium every step, defeating the point of adding thermal mass. Skin/
   insulation temperature are still solved algebraically each call via `_pack_sides` (not a
-  second ODE state, the same treatment `twolump`'s outer surface temperature gets). The
+  second ODE state, the same treatment `ectotherm_twolump`'s outer surface temperature gets). The
   numerator is `metabolic_heat_flow − respiration_heat_flow − net_metabolic_heat_internal`
   (`HeatExchange.heat_balance`'s `residual_internal_conduction`, matching `respiration()`'s own
   `.balance` residual — `MetabolicRates.sum` must be `net_metabolic_heat_internal`, not
   `metabolic_heat_flow`, to match this).
 - **Thermal capacitance**: `flesh_volume(body) * density * flesh_specific_heat` (flesh only,
-  fat/insulation excluded) — mirrors `twolump`'s core/shell split, not `onelump`'s whole-body
+  fat/insulation excluded) — mirrors `ectotherm_twolump`'s core/shell split, not `ectotherm_onelump`'s whole-body
   mass (which never had a fat layer to exclude).
 - **`minimum_metabolic_heat`** defaults to `metabolism_pars(organism).metabolic_heat_flow`
   (the organism's configured basal rate), matching `solve_metabolic_rate`'s own convention —
@@ -135,10 +135,10 @@ rather than as a rate.
   equilibrium `metabolic_heat_flow` `solve_metabolic_rate` independently finds gives
   `core_temperature_rate ≈ 0`.
 
-`simulate_endotherm_onelump` mirrors `simulate_onelump`'s structure and returns
+`simulate_endotherm_onelump` mirrors `simulate_ectotherm_onelump`'s structure and returns
 `core_temperature`/`core_temperature_rate` (both first-class, not buried in diagnostics) plus
 `skin_temperature` and per-timestep `diagnostics` (energy/mass flows), reconstructed post-hoc
-rather than via a solver callback — same simple approach `twolump` already uses. There's no
+rather than via a solver callback — same simple approach `ectotherm_twolump` already uses. There's no
 automatic critical-temperature stopping: "how long can this be sustained" is answered by
 inspecting the returned trajectory (e.g. `findfirst(>=(critical_temperature),
 core_temperature)`), as in `examples/endotherm_transient.jl`.
@@ -172,7 +172,7 @@ fix.
 
 - Unifying this with the existing steady-state `ectothermy.jl` loop via a future
   `BodyTemperatureModel` trait (`SteadyState` vs `LumpedCapacitance`).
-- A JuMP/IPOPT dynamic-optimization layer reusing `onelump`/`twolump`/`endotherm_onelump` as
+- A JuMP/IPOPT dynamic-optimization layer reusing `ectotherm_onelump`/`ectotherm_twolump`/`endotherm_onelump` as
   collocation constraints — the physics/solver split above is what makes this possible later,
   not something built now. Forward-mode AD (`ForwardDiff.jl`) through a single
   `simulate_endotherm_onelump` call should already work today (no events, `SmoothBound`
@@ -184,7 +184,7 @@ fix.
 - Periodic effector re-solving mid-simulation, `endotherm_twolump`, torpor/heterothermy
   phases, and a full diurnal cycle (Sleep at night) for the activity/rest driver — deliberately
   out of scope for the same "keep effectors fixed, no day/night" reasons as above.
-- An ectotherm analogue of the activity/rest driver (`onelump` + a flight/movement metabolic
+- An ectotherm analogue of the activity/rest driver (`ectotherm_onelump` + a flight/movement metabolic
   term + movement-speed wind exposure, mirroring `ectotherm.R`'s `flyer`/`flymetab`/`flyspeed`/
   `flyhigh`) — the trigger logic in NicheMapR lives in compiled Fortran, not inspectable from
   the R wrapper, so this needs its own design pass rather than porting undocumented behaviour.

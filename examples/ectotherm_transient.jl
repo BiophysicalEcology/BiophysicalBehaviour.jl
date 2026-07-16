@@ -79,7 +79,7 @@ result = simulate_diurnal_behavior(
 )
 
 # non-thermoregulating baseline: stays in the open (full sun) all day
-open_solution = simulate_onelump(
+open_solution = simulate_ectotherm_onelump(
     times, core_temperature_init, body, environment_pars, sun_forcing; posture=Intermediate(), kw...,
 )
 

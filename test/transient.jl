@@ -7,7 +7,7 @@ using Test
 # No R reference data exists yet for onelump_var.R/twolump.R/trans_behav.R under
 # time-varying forcing (see test/R/onelump_var_test.R etc., a manual step). These are
 # smoke/self-consistency checks: sane trajectories under synthetic diurnal forcing, and
-# convergence to HeatExchange.onelump's closed-form steady state under constant forcing.
+# convergence to HeatExchange.ectotherm_onelump's closed-form steady state under constant forcing.
 
 function _diurnal_forcing(times; shade=0.0, wind_speed=1.0u"m/s", radiation_scale=1.0)
     hours = ustrip.(u"hr", times)
@@ -28,11 +28,11 @@ end
 body = Body(Ellipsoid(0.5u"kg", 1000.0u"kg/m^3", 1.1, 1.1), Naked())
 environment_pars = example_environment_pars()
 
-@testset "simulate_onelump: constant forcing matches closed form" begin
+@testset "simulate_ectotherm_onelump: constant forcing matches closed form" begin
     times = (0:60:36000)u"s"
     forcing = _diurnal_forcing(times; radiation_scale=0.0)  # near-constant over a short window
     core_temperature_init = u"K"(20.0u"°C")
-    sol = simulate_onelump(
+    sol = simulate_ectotherm_onelump(
         times, core_temperature_init, body, environment_pars, forcing;
         internal_conduction=example_conduction_pars_internal(),
         posture=Intermediate(), body_absorptivity=0.85, emissivity=0.95,

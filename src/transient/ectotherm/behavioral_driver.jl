@@ -78,15 +78,15 @@ function _next_phase(::CoolPhase, u, zenith_signal, t, limits, shade_air_tempera
     zenith_signal(t) >= 0.0 ? SleepPhase() : ForagePhase()
 end
 
-# RHS dispatch: one-lump (scalar state, HeatExchange.onelump) vs two-lump (2-vector
-# [core, shell], HeatExchange.twolump). Both methods take the same keywords so callers
-# don't need to know which model is in play - `shell_thickness` is simply unused for onelump.
+# RHS dispatch: one-lump (scalar state, HeatExchange.ectotherm_onelump) vs two-lump (2-vector
+# [core, shell], HeatExchange.ectotherm_twolump). Both methods take the same keywords so callers
+# don't need to know which model is in play - `shell_thickness` is simply unused for ectotherm_onelump.
 function _body_temperature_rate(
     u::Real, t, body, environment_pars, environment_vars;
     internal_conduction, shell_thickness=nothing, posture, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
 )
-    ustrip(u"K/s", HeatExchange.onelump(
+    ustrip(u"K/s", HeatExchange.ectotherm_onelump(
         u * u"K", t * u"s", body, environment_pars, environment_vars;
         internal_conduction, posture, body_absorptivity, emissivity,
         sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
@@ -97,7 +97,7 @@ function _body_temperature_rate(
     internal_conduction, shell_thickness, posture, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
 )
-    out = HeatExchange.twolump(
+    out = HeatExchange.ectotherm_twolump(
         (core_temperature=u[1] * u"K", shell_temperature=u[2] * u"K"), t * u"s", body, environment_pars, environment_vars;
         internal_conduction, shell_thickness, posture, body_absorptivity, emissivity,
         sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
@@ -134,8 +134,8 @@ end
 
 Event-driven diurnal behavioral thermoregulation (sleep → bask → forage ⇄ cool → sleep).
 Dispatches on the initial state: a plain temperature runs the one-lump model
-(`HeatExchange.onelump`); a `(; core_temperature, shell_temperature)` NamedTuple runs the
-two-lump model (`HeatExchange.twolump`, needs a `shell_thickness` keyword). Both reuse
+(`HeatExchange.ectotherm_onelump`); a `(; core_temperature, shell_temperature)` NamedTuple runs the
+two-lump model (`HeatExchange.ectotherm_twolump`, needs a `shell_thickness` keyword). Both reuse
 `limits`' `active_temperature_min/max`/`basking_temperature_min` thresholds. Port of
 NicheMapR's `trans_behav.R` (see file banner for what's simplified relative to R).
 
