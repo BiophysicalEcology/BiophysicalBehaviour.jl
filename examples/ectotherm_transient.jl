@@ -68,7 +68,8 @@ limits = example_ectotherm_behavioral_limits(;
 )
 
 times = metout.TIME .* u"minute" .|> u"s"
-core_temperature_init = u"K"(21.8u"°C")  # ~air temperature at midnight
+air_temperature = u"K".(metout.TALOC .* u"°C")
+core_temperature_init = air_temperature[1]  # ~air temperature at midnight
 kw = (;
     internal_conduction, body_absorptivity, emissivity,
     sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
@@ -118,13 +119,13 @@ println("two-lump shell temperature range: ", extrema(u"°C".(result_twolump.she
 
 # Uncomment to reproduce trans_behav.R's plot (Tb_open in grey, air temp in blue,
 # thermoregulating Tb in orange, T_F_min/T_F_max/CT_max threshold lines):
-# using Plots
-# plot(uconvert.(u"hr", open_solution.t), uconvert.(u"°C", open_solution.core_temperature); label="Tb, non-thermoregulating", color=:grey, legend=:topleft)
-# plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", shade_forcing.(result.t) .|> e -> e.air_temperature); label="local air temp (shade)", color=:blue)
-# plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb, thermoregulating", color=:orange, linewidth=2)
-# hline!([uconvert(u"°C", limits.active_temperature_max)]; label="T_F_max", color=:red, linestyle=:dash)
-# hline!([uconvert(u"°C", limits.active_temperature_min)]; label="T_F_min", color=:lightblue, linestyle=:dash)
-# hline!([uconvert(u"°C", limits.critical_temperature_max)]; label="CT_max", color=:red)
+using Plots
+plot(uconvert.(u"hr", open_solution.t), uconvert.(u"°C", open_solution.core_temperature); label="Tb, non-thermoregulating", color=:grey, legend=:topleft, ylim=(15, 50), xlabel="time (hr)", ylabel="temperature (°C)")
+plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", shade_forcing.(result.t) .|> e -> e.air_temperature); label="local air temp (shade)", color=:blue)
+plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb, thermoregulating", color=:orange, linewidth=2)
+hline!([uconvert(u"°C", limits.active_temperature_max)]; label="T_F_max", color=:red, linestyle=:dash)
+hline!([uconvert(u"°C", limits.active_temperature_min)]; label="T_F_min", color=:lightblue, linestyle=:dash)
+hline!([uconvert(u"°C", limits.critical_temperature_max)]; label="CT_max", color=:red)
 
 # Uncomment for the two-lump core-vs-shell trajectory:
 # plot(uconvert.(u"hr", result_twolump.t), uconvert.(u"°C", result_twolump.core_temperature); label="core", color=:orange, legend=:topleft)
