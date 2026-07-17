@@ -37,6 +37,26 @@ _phase_state(::ClimbPhase) = Resting()
 _phase_state(::BurrowPhase) = Resting()
 _phase_state(::RefugePhase) = Resting()
 
+# Keys into the user-supplied `metabolic_multipliers` NamedTuple (e.g. `(; forage=3.0, climb=2.5)`).
+# Phases not present in that NamedTuple default to a multiplier of 1.0 (no scaling).
+_phase_key(::SleepPhase) = :sleep
+_phase_key(::BaskPhase) = :bask
+_phase_key(::ForagePhase) = :forage
+_phase_key(::CoolPhase) = :cool
+_phase_key(::ClimbPhase) = :climb
+_phase_key(::BurrowPhase) = :burrow
+_phase_key(::RefugePhase) = :refuge
+_metabolic_multiplier(multipliers::NamedTuple, phase) = Float64(get(multipliers, _phase_key(phase), 1.0))
+
+# Wraps the organism's metabolic rate model so it scales by `multiplier`, via HeatExchange's
+# existing "any callable works as MetabolismParameters.model" fallback - no change needed there.
+function _scale_metabolism(organism::Organism, multiplier)
+    base_model = HeatExchange.metabolism_pars(organism).model
+    scaled_model(mass, core_temperature) = HeatExchange.metabolic_rate(base_model, mass, core_temperature) * multiplier
+    @set organism.traits.heat_exchange.metabolism_pars.model = scaled_model
+end
+_phase_organism(organism, multiplier) = multiplier == 1.0 ? organism : _scale_metabolism(organism, multiplier)
+
 # State is Float64 (one-lump, K) or Vector{Float64} (two-lump, [core, shell] K) - dispatch
 # picks out the core temperature that drives all behavioral thresholds.
 _core_temperature_of(u::Real) = u
@@ -221,7 +241,8 @@ end
                                bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
                                climb_forcing=nothing, underground_forcing=nothing,
                                sleep_forcing=shade_forcing, initial_phase=nothing,
-                               activity_period=Diurnal(), activity_hysteresis=0.1u"°")
+                               activity_period=Diurnal(), activity_hysteresis=0.1u"°",
+                               metabolic_multipliers=NamedTuple())
     simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), organism, environment_pars,
                                sun_forcing, shade_forcing, limits; shell_thickness,
                                surface_solve=LinearizedSurface(), solver=OrdinaryDiffEqTsit5.Tsit5(),
@@ -229,7 +250,8 @@ end
                                bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
                                climb_forcing=nothing, underground_forcing=nothing,
                                sleep_forcing=shade_forcing, initial_phase=nothing,
-                               activity_period=Diurnal(), activity_hysteresis=0.1u"°")
+                               activity_period=Diurnal(), activity_hysteresis=0.1u"°",
+                               metabolic_multipliers=NamedTuple())
 
 Event-driven diurnal behavioral thermoregulation. Seven phases: `SleepPhase`/`BurrowPhase`
 (inactive site), `BaskPhase`, `ForagePhase`, `CoolPhase`/`ClimbPhase` (too-hot escape site),
@@ -273,6 +295,12 @@ relatively against those phases' other exit reasons for the same reason as above
 resumes to `ForagePhase` once core temperature drops back to `active_temperature_max -
 active_min_hysteresis`.
 
+`metabolic_multipliers` scales metabolic heat production per phase, e.g.
+`(; forage=3.0, climb=2.5, bask=1.5)` — unlisted phases (keys: `sleep`, `bask`, `forage`, `cool`,
+`climb`, `burrow`, `refuge`) default to `1.0` (no scaling). Applied by wrapping the organism's
+metabolic rate model in a closure for the duration of each bout (constant while a phase is
+active, since phase never changes mid-bout), so it composes with any `MetabolicRateEquation`.
+
 # Returns
 NamedTuple with `t` (s), `core_temperature` (K) [, `shell_temperature` (K) for the two-lump
 method], `state` (`Vector{OrganismState}`), `phase` (`Vector{TransientBehavioralPhase}`), one
@@ -291,6 +319,7 @@ function simulate_diurnal_behavior(
     initial_phase::Union{Nothing,TransientBehavioralPhase}=nothing,
     activity_period::ActivityPeriod=Diurnal(),
     activity_hysteresis=0.1u"°",
+    metabolic_multipliers::NamedTuple=NamedTuple(),
 )
     _simulate_diurnal_behavior(
         times, ustrip(u"K", core_temperature_init), organism, environment_pars, sun_forcing, shade_forcing, limits;
@@ -299,6 +328,7 @@ function simulate_diurnal_behavior(
         active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
         climb_forcing, underground_forcing, sleep_forcing, initial_phase, activity_period,
         activity_hysteresis=ustrip(u"°", activity_hysteresis),
+        metabolic_multipliers,
     )
 end
 function simulate_diurnal_behavior(
@@ -315,6 +345,7 @@ function simulate_diurnal_behavior(
     initial_phase::Union{Nothing,TransientBehavioralPhase}=nothing,
     activity_period::ActivityPeriod=Diurnal(),
     activity_hysteresis=0.1u"°",
+    metabolic_multipliers::NamedTuple=NamedTuple(),
 )
     u0 = Float64[ustrip(u"K", state.core_temperature), ustrip(u"K", state.shell_temperature)]
     _simulate_diurnal_behavior(
@@ -324,6 +355,7 @@ function simulate_diurnal_behavior(
         active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
         climb_forcing, underground_forcing, sleep_forcing, initial_phase, activity_period,
         activity_hysteresis=ustrip(u"°", activity_hysteresis),
+        metabolic_multipliers,
     )
 end
 
@@ -334,6 +366,7 @@ function _simulate_diurnal_behavior(
     shell_thickness, surface_solve,
     solver, solver_kwargs, smoothing::SmoothingStrategy, max_bouts, bout_chunk, active_min_hysteresis,
     climb_forcing, underground_forcing, sleep_forcing, initial_phase, activity_period, activity_hysteresis,
+    metabolic_multipliers,
 )
     _validate_thresholds(limits, active_min_hysteresis)
 
@@ -382,8 +415,9 @@ function _simulate_diurnal_behavior(
 
         forcing = _phase_forcing(phase, forcings)
         posture = _phase_posture(phase)
+        bout_organism = _phase_organism(organism, _metabolic_multiplier(metabolic_multipliers, phase))
         f = (u, _, t) -> _body_temperature_rate(
-            u, t, organism, environment_pars, forcing(t * u"s"; smoothing);
+            u, t, bout_organism, environment_pars, forcing(t * u"s"; smoothing);
             shell_thickness, posture, surface_solve, smoothing,
         )
         condition = _phase_condition(phase, phase_context)
