@@ -167,6 +167,13 @@ organism_traits = example_ectotherm_organism_traits(
     escape_temperature_max = u"K"(44.0u"°C"),
     can_climb               = true,
     can_retreat_underground = true,
+    depths                  = depths,
+    heights                 = heights,
+    depth_foraging          = 0.0u"cm",    # surface
+    height_foraging         = 1.0u"cm",    # ground-level node
+    height_max              = 200.0u"cm",  # climbing into creosote bushes (Porter et al. 1973)
+    depth_min               = 5.0u"cm",    # shallowest burrow retreat (R: mindepth=3)
+    depth_max               = 200.0u"cm",  # full depth range available
     burrow_shade_mode       = MinShadeOnly(),
     emerge_signal       = 0.0u"K/hr",
     can_seek_shade          = false,

@@ -41,11 +41,12 @@ panting parameters).
   per iteration (SHADEADJUST.f `DSHD`).
 - `depth::D`: `SteppedParameter` for soil-node index. `reference` is the animal's normal/foraging
   depth (node 1 = surface, for a typical ground-dwelling ectotherm; a deeper node for a fossorial
-  one); `max` is the retreat depth (SELDEP.f `MINNODE`/NicheMapR `mindepth` is now just
-  `reference + step`, the search's starting point); `step` = 1.
+  one) — independent of the retreat range. `min`/`max` bound the underground retreat search
+  (SELDEP.f `MINNODE`/`maxdepth`); `step` = 1.
 - `height::H`: `SteppedParameter` for atmospheric profile height-node index. `reference` is the
   animal's normal/foraging height (node 1 = ground, for a typical species; an elevated node for
-  an arboreal one); `max` is the retreat height; `step` = 1.
+  an arboreal one) — independent of the retreat range. `min`/`max` bound the climb retreat
+  search; `step` = 1.
 
 # Fields – absorptivity
 - `absorptivity::Ab`: `SteppedParameter` for dorsal solar absorptivity (0–1).

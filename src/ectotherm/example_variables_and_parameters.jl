@@ -22,12 +22,14 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `shade_min`                  | 0.0       | minshade / 100                |
 | `shade_max`                  | 0.9       | maxshade / 100                |
 | `shade_step`                 | 0.03      | delta_shade / 100             |
-| `depth_min`                  | 1 (surface) | foraging depth node (Int index, or a length that snaps to the nearest node in `depths`) |
+| `depth_foraging`             | 1 (surface) | normal/foraging depth node, independent of the retreat range (Int index, or a length snapped via `depths`) |
+| `depth_min`                  | `depth_foraging`+1 | mindepth, retreat search lower bound (Int index, or a length snapped via `depths`) |
 | `depth_max`                  | all nodes | maxdepth, retreat search upper bound (Int index, or a length snapped via `depths`) |
-| `depths`                     | `nothing` | physical depth array, required if `depth_min`/`depth_max` are given as lengths |
-| `height_min`                 | 1 (ground)  | foraging height node (Int index, or a length snapped via `heights`) |
-| `height_max`                 | all nodes | (default: use all heights); Int index, or a length snapped via `heights` |
-| `heights`                    | `nothing` | physical height array, required if `height_min`/`height_max` are given as lengths |
+| `depths`                     | `nothing` | physical depth array, required if any `depth_*` is given as a length |
+| `height_foraging`            | 1 (ground)  | normal/foraging height node, independent of the retreat range (Int index, or a length snapped via `heights`) |
+| `height_min`                 | `height_foraging`+1 | retreat (climb) search lower bound (Int index, or a length snapped via `heights`) |
+| `height_max`                 | all nodes | retreat (climb) search upper bound (Int index, or a length snapped via `heights`) |
+| `heights`                    | `nothing` | physical height array, required if any `height_*` is given as a length |
 | `absorptivity_min`           | 0.9       | alpha_min                     |
 | `absorptivity_max`           | 0.9       | alpha_max                     |
 | `absorptivity_step`          | 0.0       | (derived: alpha_max-alpha_min)|
@@ -63,14 +65,17 @@ function example_ectotherm_behavioral_limits(;
     # Panting
     pant_max         = 1.0,
     pant_step        = 0.1,
-    # Depth (soil node indices) - depth_min is the foraging node, depth_max the retreat bound.
-    # Either may be given as a node index (Int) or a physical depth (e.g. `20.0u"cm"`), which
-    # snaps to the nearest node in `depths` (required in that case).
-    depth_min = 1,
+    # Depth (soil node indices) - depth_foraging is the normal/foraging node; depth_min/depth_max
+    # bound the underground retreat search, independent of depth_foraging. Any of the three may
+    # be given as a node index (Int) or a physical depth (e.g. `20.0u"cm"`), which snaps to the
+    # nearest node in `depths` (required in that case).
+    depth_foraging = 1,
+    depth_min = nothing,   # defaults to depth_foraging's node + 1
     depth_max = typemax(Int),
     depths = nothing,
     # Height (atmospheric profile node indices) - same pattern as depth, via `heights`.
-    height_min = 1,
+    height_foraging = 1,
+    height_min = nothing,  # defaults to height_foraging's node + 1
     height_max = typemax(Int),
     heights = nothing,
     # Thermal thresholds
@@ -109,19 +114,23 @@ function example_ectotherm_behavioral_limits(;
         max       = shade_max,
         step      = shade_step,
     )
-    depth_min_node = _resolve_node(depth_min, depths, "depth_min")
+    depth_foraging_node = _resolve_node(depth_foraging, depths, "depth_foraging")
+    depth_min_node = depth_min === nothing ? depth_foraging_node + 1 : _resolve_node(depth_min, depths, "depth_min")
     depth_max_node = _resolve_node(depth_max, depths, "depth_max")
     depth = SteppedParameter(;
-        current   = depth_min_node,
-        reference = depth_min_node,
+        current   = depth_foraging_node,
+        reference = depth_foraging_node,
+        min       = depth_min_node,
         max       = depth_max_node,
         step      = 1,
     )
-    height_min_node = _resolve_node(height_min, heights, "height_min")
+    height_foraging_node = _resolve_node(height_foraging, heights, "height_foraging")
+    height_min_node = height_min === nothing ? height_foraging_node + 1 : _resolve_node(height_min, heights, "height_min")
     height_max_node = _resolve_node(height_max, heights, "height_max")
     height = SteppedParameter(;
-        current   = height_min_node,
-        reference = height_min_node,
+        current   = height_foraging_node,
+        reference = height_foraging_node,
+        min       = height_min_node,
         max       = height_max_node,
         step      = 1,
     )

@@ -143,7 +143,8 @@ using CSV, DataFrames
             organism_traits = example_ectotherm_organism_traits(
                 activity_period         = CombinedActivity(Diurnal(), Nocturnal(), Crepuscular()),
                 can_climb               = false,
-                can_retreat_underground = true,          # R: mindepth=3 (search now starts at depth.reference+step)
+                can_retreat_underground = true,
+                depth_min               = 3,          # R: mindepth=3
                 emerge_signal        = 0.0u"K/hr",  # R: warmsig=0
                 can_seek_shade          = scen.can_seek_shade,
                 can_solar_orient        = scen.can_solar_orient,
