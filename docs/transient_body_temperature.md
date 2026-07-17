@@ -68,23 +68,61 @@ phase's problem (bout-by-bout, following the same pattern `c:/git/DEBtool_J.jl` 
 its lifecycle-transition simulations).
 
 Reuses existing types rather than inventing parallel ones: `EctothermBehavioralLimits`'
-`active_temperature_min/max` and `basking_temperature_min` fields are the phase thresholds
-(R's `T_F_min`/`T_F_max`/`T_B_min`), and `NormalToSun`/`Intermediate` are the postures.
+`active_temperature_min/max`, `basking_temperature_min`, `emerge_temperature_min`,
+`can_climb`, `can_retreat_underground` fields are the phase thresholds/gates (R's
+`T_F_min`/`T_F_max`/`T_B_min`/`T_RB_min`/`CLIMB`/`BURROW`), and `NormalToSun`/`Intermediate`
+are the postures — the same fields the steady-state `ectothermy.jl` loop already reads.
 
 `simulate_diurnal_behavior` dispatches on the initial state, matching R's `lump` parameter:
 a plain temperature runs the one-lump model (`HeatExchange.onelump`); a `(; core_temperature,
 shell_temperature)` NamedTuple runs two-lump (`HeatExchange.twolump`, needs a
 `shell_thickness` keyword). Behavioral thresholds always act on core temperature.
 
+**Seven phases**: `SleepPhase`/`BurrowPhase` (inactive site), `BaskPhase`, `ForagePhase`,
+`CoolPhase`/`ClimbPhase` (too-hot escape site), `RefugePhase` (deeper too-hot escalation).
+`BurrowPhase` substitutes for `SleepPhase` whenever `limits.can_retreat_underground` and an
+`underground_forcing` are both given; `ClimbPhase` substitutes for `CoolPhase` whenever
+`limits.can_climb` and a `climb_forcing` are both given. Both substitutions are unconditional
+(decided once from capability + forcing presence, not re-evaluated as a competing choice each
+bout) and apply for the whole run. `sleep_forcing` (default `shade_forcing`) sets the
+inactive-period site independently — pass `sun_forcing` for an unshaded sleeper. `initial_phase`
+overrides the default day/night starting logic to start in any reachable phase. `activity_period`
+(default `Diurnal()`) generalizes which part of the day is the active window: `_activity_signal`
+is a continuous analogue of `is_active` (`thermoregulation.jl`), reused for `Nocturnal`/
+`Crepuscular`/`CombinedActivity` — `Bask`/`Forage` run during the active window, `night_phase`
+during the inactive one, regardless of which part of the day that maps to. `ResponsiveActivity`
+isn't supported (no continuous signal can be derived from an arbitrary boolean function).
+
+When `has_burrow` (same gate as `BurrowPhase`), `CoolPhase`/`ClimbPhase` can additionally
+escalate to `RefugePhase` (same `underground_forcing` site) if core temperature keeps rising
+past `limits.escape_temperature_max` despite shade/climbing — the same threshold
+`select_depth` uses in the steady-state loop to pick an underground node. `RefugePhase` resumes
+straight to `ForagePhase` once core temperature drops back to `active_temperature_max -
+active_min_hysteresis`.
+
+Unlike the steady-state loop, which searches many height/depth *nodes* each hour
+(`AvailableEnvironments`, `select_depth`, `climb`), `ClimbPhase`/`BurrowPhase` are each locked
+to one caller-chosen `EnvironmentForcing` for the whole run — the same simplification already
+accepted for `sun_forcing`/`shade_forcing` (one shade fraction, not a continuous search), not a
+port of the multi-node search (which needs discrete hourly indexing the continuous ODE driver
+doesn't have mid-integration).
+
+**Reused vs. deliberately unused `EctothermBehavioralLimits` fields**: `can_climb`,
+`can_retreat_underground`, `emerge_temperature_min` are now read by this driver.
+`emerge_signal` (K/hr soil-trend gate), `burrow_shade_mode`, `depth`/`height`/
+`depth_min_underground` remain unused — see "Not built here" below.
+
 **Simplified relative to `trans_behav.R`:**
-- Four phases (`SleepPhase`, `BaskPhase`, `ForagePhase`, `CoolPhase`) cover the core cycle;
-  `OrganismState` only distinguishes `Resting`/`Basking`/`Active`, so `Sleep` and `Cool` both
-  report as `Resting` — a diagnostic-detail simplification, not revisited here.
-- Burrow/depth/height/absorptivity/panting behaviours (`EctothermBehavioralLimits`' other
-  fields) aren't wired into this driver — `trans_behav.R` itself doesn't use them either; they
-  belong to the separate, existing steady-state `ectothermy.jl` loop.
-- Diurnal activity only. `is_active`'s `Nocturnal`/`Crepuscular`/`CombinedActivity` dispatch
-  isn't threaded through the phase transitions yet.
+- `OrganismState` only distinguishes `Resting`/`Basking`/`Active`; `Sleep`/`Cool`/`Climb`/
+  `Burrow` all report as `Resting` (location doesn't change activity classification, matching
+  the steady-state loop) — fine-grained site identity is in the `phase` trajectory field
+  instead.
+- `depth`/`height`/`absorptivity`/`panting` `SteppedParameter`s aren't wired into this driver —
+  `climb_forcing`/`underground_forcing` are each a single fixed site, not a searched node.
+- `is_active`'s `Diurnal`/`Nocturnal`/`Crepuscular`/`CombinedActivity` dispatch is reused via
+  `activity_period` (see above); `ResponsiveActivity` isn't supported (needs a continuous
+  signal, not an arbitrary boolean function). `sunlight`/global radiation isn't part of the
+  signal (only zenith), matching the existing "SOLR unattenuated" simplification below.
 - `test/trans_behav_r.jl` compares against a real `trans_behav.R` run (`test/R/trans_behav.R`,
   real `micro_global` forcing saved to `test/data/trans_behav/`) — `max_Tb` within ~2°C of R's,
   a loose tolerance that absorbs `onelump`'s evaporative loss and dorsal/ventral
@@ -114,6 +152,35 @@ shell_temperature)` NamedTuple runs two-lump (`HeatExchange.twolump`, needs a
   value oscillates `BaskPhase`⇄`ForagePhase` forever at zero elapsed time, exhausting
   `max_bouts` — unlike the `ForagePhase` fix above, a relative-signal comparison can't fix this
   since the two thresholds are legitimately the same number.
+- `_validate_thresholds` checks `escape_temperature_min < emerge_temperature_min <
+  basking_temperature_min < active_temperature_min < active_temperature_max <
+  escape_temperature_max` (with the `active_min_hysteresis` margin below
+  `active_temperature_min`) once per call. The base ordering (`_validate_ectotherm_thresholds`,
+  `src/ectotherm/ectotherm_traits.jl`) is shared with the steady-state loop (`thermoregulate`
+  and `example_ectotherm_behavioral_limits` both call it too), so a misconfigured
+  `EctothermBehavioralLimits` raises an `ArgumentError` up front instead of silently stalling
+  or behaving nonsensically in either driver.
+- `BurrowPhase`'s emergence check compares the animal's own core temperature (the ODE state)
+  against `emerge_temperature_min`, not the underground forcing's temperature — the transient
+  driver never pins core temperature to the environment underground (unlike the steady-state
+  loop's `solve_underground=false` shortcut), so only the animal's own state answers "is it
+  warm enough to move."
+- The day/night boundary (`activity_signal=0`) needs two independent fixes, each protecting
+  against a different failure mode:
+  - **`activity_hysteresis`** (default `0.1u"°"`) separates `SleepPhase`/`BurrowPhase`'s exit
+    (`activity_signal <= -activity_hysteresis`) from `BaskPhase`/`ForagePhase`/`CoolPhase`/
+    `ClimbPhase`'s day-arrived check (`activity_signal` compared at the raw boundary) — two
+    *different* phases anchored at the same `activity_signal=0`, the same failure class
+    `active_min_hysteresis` fixes for temperature. Without it, an animal already warm going
+    into the boundary can hand off and bounce straight back with zero elapsed time.
+  - **Relative routing** in `_next_phase(::BaskPhase/ForagePhase/CoolPhase/ClimbPhase, ...)`
+    compares the day-arrived signal against that *same* phase's own temperature-based exit
+    reason, not against zero independently — this is `activity_hysteresis` alone can't fix,
+    because it's one phase's own routing ambiguity (which of its several exit reasons fired),
+    not two phases sharing a threshold. Needed for `Crepuscular`/`CombinedActivity` in
+    particular: their active window is narrow enough (10° for `Crepuscular`) that a root can
+    land within floating-point noise of the boundary on almost every crossing, and an
+    independent `>=0` check reads that noise inconsistently.
 
 ## Endotherm transient (fixed effectors, one-lump)
 
@@ -208,3 +275,10 @@ fix.
   term + movement-speed wind exposure, mirroring `ectotherm.R`'s `flyer`/`flymetab`/`flyspeed`/
   `flyhigh`) — the trigger logic in NicheMapR lives in compiled Fortran, not inspectable from
   the R wrapper, so this needs its own design pass rather than porting undocumented behaviour.
+- `emerge_signal` (K/hr soil-warming/cooling trend gate on emergence) — a discrete
+  finite-difference construct in the R source that doesn't map cleanly onto a
+  `ContinuousCallback` root; most configs use the disabled default anyway.
+- `burrow_shade_mode`-driven blended underground forcing, and graded/multi-node
+  `ClimbPhase`/`BurrowPhase` site search (matching the steady-state loop's `select_depth`/
+  `climb` over many height/depth nodes) — `climb_forcing`/`underground_forcing` are each a
+  single fixed site for now.

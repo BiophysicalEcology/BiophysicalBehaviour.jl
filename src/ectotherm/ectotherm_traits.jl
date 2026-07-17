@@ -6,14 +6,14 @@ are used for underground retreats.
 
 - `MinShadeOnly()`: always use minimum-shade soil temperatures (NicheMapR `shdburrow=0`)
 - `AdaptiveBurrowShade()`: use max-shade soil if min-shade soil at the shallowest accessible
-  node is outside `[critical_temperature_min, active_temperature_max]`; otherwise use min-shade (NicheMapR `shdburrow=1`)
+  node is outside `[escape_temperature_min, active_temperature_max]`; otherwise use min-shade (NicheMapR `shdburrow=1`)
 - `MaxShadeOnly()`: always use maximum-shade soil temperatures (NicheMapR `shdburrow=2`)
 """
 abstract type BurrowShadeMode end
 """Always use minimum-shade soil temperatures for the underground retreat (NicheMapR `shdburrow=0`)."""
 struct MinShadeOnly <: BurrowShadeMode end
 """Adaptive: use max-shade soil temperatures when min-shade soil at the shallowest accessible
-node is outside `[critical_temperature_min, active_temperature_max]` (NicheMapR `shdburrow=1`)."""
+node is outside `[escape_temperature_min, active_temperature_max]` (NicheMapR `shdburrow=1`)."""
 struct AdaptiveBurrowShade <: BurrowShadeMode end
 """Always use maximum-shade soil temperatures for the underground retreat (NicheMapR `shdburrow=2`)."""
 struct MaxShadeOnly <: BurrowShadeMode end
@@ -58,7 +58,7 @@ panting parameters).
   too hot via `pant`.
 
 # Fields – thermal thresholds
-Hierarchy: `critical_temperature_min` ≤ `emerge_temperature_min` ≤ `basking_temperature_min` ≤ `active_temperature_min` ≤ `active_temperature_max` ≤ `critical_temperature_max`
+Hierarchy: `escape_temperature_min` ≤ `emerge_temperature_min` ≤ `basking_temperature_min` ≤ `active_temperature_min` ≤ `active_temperature_max` ≤ `escape_temperature_max`
 
 - `target_temperature::Tp`: `SteppedParameter` for the operative target body temperature
   (NicheMapR TPREF). `reference`/`current` = starting target temperature;
@@ -72,8 +72,10 @@ Hierarchy: `critical_temperature_min` ≤ `emerge_temperature_min` ≤ `basking_
 - `basking_temperature_min::T`: Minimum basking temperature, TBASK (T_B_min). Thermoregulation loop warms
   the animal to at least `basking_temperature_min`; the animal is basking (not active) while
   `basking_temperature_min ≤ Tb < active_temperature_min`.
-- `critical_temperature_min::T`: Critical thermal minimum, CTMIN (lethal lower limit).
-- `critical_temperature_max::T`: Critical thermal maximum, CTMAX (lethal upper limit).
+- `escape_temperature_min::T`: Core temperature below which cold-escape behaviour (climbing
+  above a cold air layer, retreating underground) begins.
+- `escape_temperature_max::T`: Core temperature above which heat-escape behaviour (underground
+  retreat) begins.
 - `emerge_temperature_min::T`: Minimum soil temperature at the previous-hour underground depth to
   allow emergence, TEMERGE (T_RB_min).
 
@@ -109,7 +111,7 @@ Hierarchy: `critical_temperature_min` ≤ `emerge_temperature_min` ≤ `basking_
 - `burrow_shade_mode`: A `BurrowShadeMode` value controlling which soil temperatures are used
   for underground retreats. `MinShadeOnly()` = min-shade always; `MaxShadeOnly()` = max-shade
   always; `AdaptiveBurrowShade()` = max-shade when min-shade soil at the shallowest accessible
-  node is outside `[critical_temperature_min, active_temperature_max]` (NicheMapR `shdburrow` 0/1/2).
+  node is outside `[escape_temperature_min, active_temperature_max]` (NicheMapR `shdburrow` 0/1/2).
 - `emerge_signal`: Minimum soil-temperature change rate (units `K/hr`) required before the
   animal emerges from a retreat deeper than node 2, when `soil_temperature >= T_emerge_min` and
   no activity has occurred yet today (NicheMapR `warmsig`, default `0.0u"K/hr"` = disabled).
@@ -131,8 +133,8 @@ Base.@kwdef struct EctothermBehavioralLimits{
     active_temperature_min::T
     active_temperature_max::T
     basking_temperature_min::T
-    critical_temperature_min::T
-    critical_temperature_max::T
+    escape_temperature_min::T
+    escape_temperature_max::T
     emerge_temperature_min::T
     # Capability flags
     can_retreat_underground::Bool   = true
@@ -156,4 +158,19 @@ Base.@kwdef struct EctothermBehavioralLimits{
     # false → soil temperatures come from the minimum-shade run (exposed, unshaded location)
     burrow_shade_mode::Bs                = MaxShadeOnly()
     emerge_signal::Ws                  = 0.0u"K/hr"
+end
+
+# Used by both thermoregulate and simulate_diurnal_behavior.
+function _validate_ectotherm_thresholds(limits::EctothermBehavioralLimits)
+    limits.escape_temperature_min < limits.emerge_temperature_min ||
+        throw(ArgumentError("escape_temperature_min must be below emerge_temperature_min"))
+    limits.emerge_temperature_min < limits.basking_temperature_min ||
+        throw(ArgumentError("emerge_temperature_min must be below basking_temperature_min"))
+    limits.basking_temperature_min < limits.active_temperature_min ||
+        throw(ArgumentError("basking_temperature_min must be below active_temperature_min"))
+    limits.active_temperature_min < limits.active_temperature_max ||
+        throw(ArgumentError("active_temperature_min must be below active_temperature_max"))
+    limits.active_temperature_max < limits.escape_temperature_max ||
+        throw(ArgumentError("active_temperature_max must be below escape_temperature_max"))
+    return nothing
 end

@@ -149,7 +149,7 @@ Core ectotherm behavioural thermoregulation loop (ECTOTHERM.f / ectotherm.R logi
 
    *Too cold* (core_temperature < basking_temperature_min):
    `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-   `retreat_underground` (if core_temperature < critical_temperature_min)
+   `retreat_underground` (if core_temperature < escape_temperature_min)
 
    *Basking* (basking_temperature_min ≤ core_temperature < active_temperature_min): `orient_perpendicular`
 
@@ -168,6 +168,7 @@ function thermoregulate(
     previous_depth::Int;
     activity_commenced::Bool=false,
 )
+    _validate_ectotherm_thresholds(limits)
     min_shade = available_environments.min_shade_result
     max_shade = available_environments.max_shade_result
     (; max_iterations) = limits.control
@@ -339,7 +340,7 @@ function thermoregulate(
                 # Night: seek shade to reduce longwave loss to cold sky
                 limits = seek_shade(limits)
 
-            elseif limits.can_climb && core_temperature < limits.critical_temperature_min && limits.height.current < limits.height.max
+            elseif limits.can_climb && core_temperature < limits.escape_temperature_min && limits.height.current < limits.height.max
                 limits = climb(limits)
 
             elseif limits.can_retreat_underground

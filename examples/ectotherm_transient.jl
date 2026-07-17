@@ -48,7 +48,7 @@ flesh_specific_heat = 3073.0 * u"J/kg/K"
 active_temperature_min = u"K"(Float64(33.0) * u"°C")
 active_temperature_max = u"K"(Float64(43.0) * u"°C")
 basking_temperature_min = u"K"(Float64(18.0) * u"°C")
-critical_temperature_max = u"K"(Float64(48.0) * u"°C")
+escape_temperature_max = u"K"(Float64(48.0) * u"°C")
 
 shape_pars = Ellipsoid(body_mass, body_density, axis_ratio_b, axis_ratio_c)
 body = Body(shape_pars, Naked());
@@ -65,7 +65,7 @@ traits = example_ectotherm_heat_exchange_traits(;
 organism = Organism(body, traits)
 limits = example_ectotherm_behavioral_limits(;
     active_temperature_min, active_temperature_max,
-    basking_temperature_min, critical_temperature_max,
+    basking_temperature_min, escape_temperature_max,
 )
 
 times = metout.TIME .* u"minute" .|> u"s"
@@ -74,12 +74,12 @@ core_temperature_init = air_temperature[1]  # ~air temperature at midnight
 
 result = simulate_diurnal_behavior(
     times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits,
-)
+);
 
 # non-thermoregulating baseline: stays in the open (full sun) all day
 open_solution = simulate_onelump(
     times, core_temperature_init, organism, environment_pars, sun_forcing; posture=Intermediate(),
-)
+);
 
 # bout statistics: contiguous stretches of Active state
 function activity_bouts(t, state)
@@ -122,8 +122,66 @@ println("two-lump shell temperature range: ", extrema(u"°C".(result_twolump.she
 # plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb, thermoregulating", color=:orange, linewidth=2)
 # hline!([uconvert(u"°C", limits.active_temperature_max)]; label="T_F_max", color=:red, linestyle=:dash)
 # hline!([uconvert(u"°C", limits.active_temperature_min)]; label="T_F_min", color=:lightblue, linestyle=:dash)
-# hline!([uconvert(u"°C", limits.critical_temperature_max)]; label="CT_max", color=:red)
+# hline!([uconvert(u"°C", limits.escape_temperature_max)]; label="CT_max", color=:red)
 
 # Uncomment for the two-lump core-vs-shell trajectory:
 # plot(uconvert.(u"hr", result_twolump.t), uconvert.(u"°C", result_twolump.core_temperature); label="core", color=:orange, legend=:topleft)
 # plot!(uconvert.(u"hr", result_twolump.t), uconvert.(u"°C", result_twolump.shell_temperature); label="shell", color=:orange, linestyle=:dash)
+
+# =============================================================================
+# Broadened repertoire: climbing and going underground, plus a configurable
+# start/sleep site — same real forcing data, one extra EnvironmentForcing each.
+# =============================================================================
+
+# ClimbPhase forcing: reference-height columns (TAREF/VREF), as in endotherm_transient.jl.
+climb_forcing = EnvironmentForcing(
+    times,
+    HeatExchange.EnvironmentalVarsVec(;
+        air_temperature=u"K".(metout.TAREF .* u"°C"), sky_temperature=u"K".(metout.TSKYC .* u"°C"),
+        ground_temperature=u"K".(soil.D0cm .* u"°C"), substrate_temperature=u"K".(soil.D0cm .* u"°C"),
+        relative_humidity=metout.RH ./ 100, wind_speed=metout.VREF .* u"m/s",
+        atmospheric_pressure=fill(params.press * u"Pa", nrow(metout)), zenith_angle=metout.ZEN .* u"°",
+        substrate_conductivity=fill(2.79u"W/m/K", nrow(metout)), global_radiation=metout.SOLR .* u"W/m^2",
+        diffuse_fraction=fill(0.1, nrow(metout)), shade=fill(0.0, nrow(metout)),
+    ),
+)
+
+# BurrowPhase forcing: 20cm soil column, everything set to that temperature (BELOWGROUND-style).
+underground_soil = u"K".(soil.D20cm .* u"°C")
+underground_forcing = EnvironmentForcing(
+    times,
+    HeatExchange.EnvironmentalVarsVec(;
+        air_temperature=underground_soil, sky_temperature=underground_soil,
+        ground_temperature=underground_soil, substrate_temperature=underground_soil,
+        relative_humidity=fill(0.99, nrow(soil)), wind_speed=fill(0.01u"m/s", nrow(soil)),
+        atmospheric_pressure=fill(params.press * u"Pa", nrow(soil)), zenith_angle=metout.ZEN .* u"°",
+        substrate_conductivity=fill(2.79u"W/m/K", nrow(soil)), global_radiation=fill(0.0u"W/m^2", nrow(soil)),
+        diffuse_fraction=fill(0.1, nrow(soil)), shade=fill(1.0, nrow(soil)),
+    ),
+)
+
+limits_broadened = example_ectotherm_behavioral_limits(;
+    active_temperature_min, active_temperature_max,
+    basking_temperature_min, escape_temperature_max,
+    can_climb=true, can_retreat_underground=true,
+)
+
+result_broadened = simulate_diurnal_behavior(
+    times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits_broadened;
+    climb_forcing, underground_forcing,
+)
+
+println()
+println("with climb+burrow enabled:")
+println("  body temperature range: ", extrema(u"°C".(result_broadened.core_temperature)))
+for T in (ClimbPhase, BurrowPhase, CoolPhase, SleepPhase)
+    n = count(p -> p isa T, result_broadened.phase)
+    n > 0 && println("  $T: $n accepted steps")
+end
+
+# Configurable start: begin the day already underground instead of asleep in shade.
+result_start_underground = simulate_diurnal_behavior(
+    times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits_broadened;
+    climb_forcing, underground_forcing, initial_phase=BurrowPhase(),
+)
+println("  starting underground: first phase = ", typeof(result_start_underground.phase[1]))

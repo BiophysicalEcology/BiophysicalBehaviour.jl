@@ -24,8 +24,8 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `active_temperature_min`          | 24.0 °C   | T_F_min                       |
 | `active_temperature_max`          | 34.0 °C   | T_F_max                       |
 | `basking_temperature_min`         | 17.5 °C   | T_B_min                       |
-| `critical_temperature_min`        | 6.0 °C    | CT_min                        |
-| `critical_temperature_max`        | 40.0 °C   | CT_max                        |
+| `escape_temperature_min`        | 6.0 °C    | CT_min                        |
+| `escape_temperature_max`          | 40.0 °C   | (escape-behaviour trigger)    |
 | `emerge_temperature_min`          | 15.0 °C   | T_RB_min                      |
 | `can_retreat_underground`         | `true`    | burrow                        |
 | `can_climb`                       | `false`   | climb                         |
@@ -60,8 +60,8 @@ function example_ectotherm_behavioral_limits(;
     active_temperature_min  = u"K"(24.0u"°C"),
     active_temperature_max  = u"K"(34.0u"°C"),
     basking_temperature_min    = u"K"(17.5u"°C"),
-    critical_temperature_min   = u"K"(6.0u"°C"),
-    critical_temperature_max   = u"K"(40.0u"°C"),
+    escape_temperature_min   = u"K"(6.0u"°C"),
+    escape_temperature_max     = u"K"(40.0u"°C"),
     emerge_temperature_min     = u"K"(15.0u"°C"),
     # Capability flags
     can_retreat_underground      = true,
@@ -120,7 +120,7 @@ function example_ectotherm_behavioral_limits(;
         max       = active_temperature_max,
         step      = target_temperature_step,
     )
-    EctothermBehavioralLimits(;
+    limits = EctothermBehavioralLimits(;
         control,
         shade,
         depth,
@@ -132,8 +132,8 @@ function example_ectotherm_behavioral_limits(;
         active_temperature_min,
         active_temperature_max,
         basking_temperature_min,
-        critical_temperature_min,
-        critical_temperature_max,
+        escape_temperature_min,
+        escape_temperature_max,
         emerge_temperature_min,
         can_retreat_underground,
         can_climb,
@@ -146,6 +146,8 @@ function example_ectotherm_behavioral_limits(;
         burrow_shade_mode,
         emerge_signal,
     )
+    _validate_ectotherm_thresholds(limits)
+    return limits
 end
 
 """

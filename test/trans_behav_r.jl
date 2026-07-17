@@ -68,7 +68,7 @@ organism = Organism(body, traits)
 environment_pars = example_environment_pars(; ground_albedo=params.alpha_sub)
 limits = example_ectotherm_behavioral_limits(;
     active_temperature_min=u"K"(Float64(params.T_F_min) * u"°C"), active_temperature_max=u"K"(Float64(params.T_F_max) * u"°C"),
-    basking_temperature_min=u"K"(Float64(params.T_B_min) * u"°C"), critical_temperature_max=u"K"(Float64(params.CT_max) * u"°C"),
+    basking_temperature_min=u"K"(Float64(params.T_B_min) * u"°C"), escape_temperature_max=u"K"(Float64(params.CT_max) * u"°C"),
 )
 
 times = metout.TIME .* u"minute" .|> u"s"

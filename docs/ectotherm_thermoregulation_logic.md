@@ -67,7 +67,7 @@ far this hour). Key fields:
 | `target_temperature` | `SteppedParameter` — current/max preferred temperature | TPREF / T_F_max |
 | `active_temperature_min/max` | Foraging temperature range | TMINPR / TMAXPR (T_F_min / T_F_max) |
 | `basking_temperature_min` | Minimum basking temperature | TBASK (T_B_min) |
-| `critical_temperature_min/max` | Lethal thermal limits | CTMIN / CTMAX |
+| `escape_temperature_min/max` | Lethal thermal limits | CTMIN / CTMAX |
 | `emerge_temperature_min` | Minimum soil temperature to emerge from underground retreat | TEMERGE (T_RB_min) |
 | `can_*` | Boolean capability flags | BURROW / CLIMB / SHADE / postur / panting flags |
 | `sun_orientation` | Current posture angle (°): 45=Intermediate, 90=NormalToSun, 0=ParallelToSun | postur |
@@ -148,7 +148,7 @@ The underground blend factor (which soil temperature profile to use) is determin
 |---|---|---|
 | `MinShadeOnly()` | 0.0 (always min-shade soil) | 0 |
 | `MaxShadeOnly()` | 1.0 (always max-shade soil) | 2 |
-| `AdaptiveBurrowShade()` | 1.0 if min-shade soil at shallowest node is outside [critical_temperature_min, active_temperature_max], else 0.0 | 1 |
+| `AdaptiveBurrowShade()` | 1.0 if min-shade soil at shallowest node is outside [escape_temperature_min, active_temperature_max], else 0.0 | 1 |
 
 After position is determined, `interpolate_environment` builds the `EnvironmentalVars` and
 `_build_ectotherm_output` is called and **returned immediately** (no further thermoregulation).
@@ -256,8 +256,8 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
 | 3 | `can_press_to_ground` and `!pressed_to_ground` | `press_to_ground` | Record ground contact (conduction fraction from organism physiology) |
 | 4 | zenith < 90° (daytime) and `shade.current > shade.reference` | `avoid_shade` | Decrease shade by one step toward minimum |
 | 5 | `can_seek_shade` and zenith ≥ 90° (night) and `shade.current < shade.max` | `seek_shade` | At night, seek shade to reduce longwave cooling to cold sky |
-| 6 | `can_climb` and `core_temperature < critical_temperature_min` and `height.current < height.max` | `climb` | Emergency climb above critically cold layer |
-| 7 | `can_retreat_underground` | conditional `select_depth` then **break** | Retreat if `core_temperature < critical_temperature_min` (emergency) or underground is warmer than air |
+| 6 | `can_climb` and `core_temperature < escape_temperature_min` and `height.current < height.max` | `climb` | Emergency climb above critically cold layer |
+| 7 | `can_retreat_underground` | conditional `select_depth` then **break** | Retreat if `core_temperature < escape_temperature_min` (emergency) or underground is warmer than air |
 | fallback | — | **break** | No options left |
 
 **Notes:**
@@ -266,7 +266,7 @@ to the shade-seeking priority below in the **same** iteration (no `break`, no `c
   pressing to ground has no thermal effect (though it is still recorded in the output).
 - Night shade-seeking (priority 5) is the reverse of daytime shade-seeking: the sky is colder than
   vegetation at night, so moving under cover reduces longwave radiative loss.
-- Underground retreat (priority 7) is **conditional**: the animal only retreats if `Tb < critical_temperature_min`
+- Underground retreat (priority 7) is **conditional**: the animal only retreats if `Tb < escape_temperature_min`
   **or** if any accessible soil node is warmer than above-ground air. In contrast to the too-hot case,
   the loop does not `break` immediately after the condition check — it breaks regardless of whether
   it actually moved (both paths converge to `break`).
@@ -361,7 +361,7 @@ Iterates soil nodes from `depth_min_underground` to `depth.max`. Returns the **s
 where:
 
 ```
-critical_temperature_min < soil_temperature < critical_temperature_max - (critical_temperature_max - active_temperature_max)/2
+escape_temperature_min < soil_temperature < escape_temperature_max - (escape_temperature_max - active_temperature_max)/2
 ```
 
 If no node satisfies the condition, falls back to the deepest available node.

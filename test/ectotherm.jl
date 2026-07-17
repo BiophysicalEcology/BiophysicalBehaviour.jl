@@ -164,8 +164,8 @@ using CSV, DataFrames
                 basking_temperature_min  = u"K"(17.5u"°C"),  # R: T_B_min=17.5
                 emerge_temperature_min   = u"K"(15.0u"°C"),  # R: T_RB_min=15
                 target_temperature       = u"K"(30.0u"°C"),  # R: T_pref=30
-                critical_temperature_min = u"K"(6.0u"°C"),   # R: CT_min=6
-                critical_temperature_max = u"K"(40.0u"°C"),  # R: CT_max=40
+                escape_temperature_min = u"K"(6.0u"°C"),   # R: CT_min=6
+                escape_temperature_max = u"K"(40.0u"°C"),  # R: CT_max=40
                 heat_exchange           = common_heat_exchange,
             )
             organism = Organism(body, organism_traits)

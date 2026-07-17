@@ -36,7 +36,13 @@ function (forcing::EnvironmentForcing)(t; smoothing::HeatExchange.SmoothingStrat
     t_s = ustrip(u"s", t)
     wind_speed = HeatExchange.safe_relu(smoothing, interpolators.wind_speed(t_s))
     global_radiation = HeatExchange.safe_relu(smoothing, interpolators.global_radiation(t_s))
-    zenith_angle = HeatExchange.safe_clamp(smoothing, interpolators.zenith_angle(t_s), 0.0u"°", 90.0u"°")
+    # 180°, not 90°: real zenith continues past the horizon toward 180° at solar midnight -
+    # clamping at 90° (matching upstream microclimate output) pins it flat all night, which
+    # breaks Nocturnal/Crepuscular activity_period (their signal needs "how far into the
+    # night" to distinguish dusk from midnight). Radiative flows stay safe either way since
+    # global_radiation is independently zero at night (HeatExchange.jl's solar() branches on
+    # zenith>=90° without dividing by cos(zenith) there).
+    zenith_angle = HeatExchange.safe_clamp(smoothing, interpolators.zenith_angle(t_s), 0.0u"°", 180.0u"°")
     return HeatExchange.EnvironmentalVars(;
         air_temperature=interpolators.air_temperature(t_s),
         reference_air_temperature=interpolators.reference_air_temperature(t_s),

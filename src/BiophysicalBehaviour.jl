@@ -121,7 +121,7 @@ export example_ectotherm_behavioral_limits,
 
 # Transient (lumped-capacitance) body-temperature simulation
 export EnvironmentForcing, simulate_onelump, simulate_twolump
-export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase
+export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase, ClimbPhase, BurrowPhase, RefugePhase
 export simulate_diurnal_behavior
 export simulate_endotherm_activity_cycle
 
