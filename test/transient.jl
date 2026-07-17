@@ -6,8 +6,7 @@ using Test
 
 # No R reference data exists yet for onelump_var.R/twolump.R/trans_behav.R under
 # time-varying forcing (see test/R/onelump_var_test.R etc., a manual step). These are
-# smoke/self-consistency checks: sane trajectories under synthetic diurnal forcing, and
-# convergence to HeatExchange.ectotherm_onelump's closed-form steady state under constant forcing.
+# smoke/self-consistency checks: sane trajectories under synthetic and diurnal forcing.
 
 function _diurnal_forcing(times; shade=0.0, wind_speed=1.0u"m/s", radiation_scale=1.0)
     hours = ustrip.(u"hr", times)
@@ -25,19 +24,17 @@ function _diurnal_forcing(times; shade=0.0, wind_speed=1.0u"m/s", radiation_scal
     return EnvironmentForcing(times, vars)
 end
 
-body = Body(Ellipsoid(0.5u"kg", 1000.0u"kg/m^3", 1.1, 1.1), Naked())
+shape_pars = Ellipsoid(0.5u"kg", 1000.0u"kg/m^3", 1.1, 1.1)
+body = Body(shape_pars, Naked())
+traits = example_ectotherm_heat_exchange_traits(; shape_pars)
+organism = Organism(body, traits)
 environment_pars = example_environment_pars()
 
-@testset "simulate_ectotherm_onelump: constant forcing matches closed form" begin
+@testset "simulate_onelump: finite trajectory under near-constant forcing" begin
     times = (0:60:36000)u"s"
     forcing = _diurnal_forcing(times; radiation_scale=0.0)  # near-constant over a short window
     core_temperature_init = u"K"(20.0u"°C")
-    sol = simulate_ectotherm_onelump(
-        times, core_temperature_init, body, environment_pars, forcing;
-        internal_conduction=example_conduction_pars_internal(),
-        posture=Intermediate(), body_absorptivity=0.85, emissivity=0.95,
-        sky_view_factor=0.4, ground_view_factor=0.4, metabolic_heat_volumetric=0.0u"W/m^3",
-    )
+    sol = simulate_onelump(times, core_temperature_init, organism, environment_pars, forcing)
     @test length(sol.core_temperature) == length(times)
     @test all(isfinite, ustrip.(u"K", sol.core_temperature))
 end
@@ -49,13 +46,11 @@ end
     limits = example_ectotherm_behavioral_limits()
     # a small body (fast thermal response) so the 4-phase state machine (no deep-refuge
     # escape valve for extreme heat, out of scope) can track it within critical bounds
-    small_body = Body(Ellipsoid(0.05u"kg", 1000.0u"kg/m^3", 1.1, 1.1), Naked())
+    small_shape_pars = Ellipsoid(0.05u"kg", 1000.0u"kg/m^3", 1.1, 1.1)
+    small_organism = Organism(Body(small_shape_pars, Naked()), example_ectotherm_heat_exchange_traits(; shape_pars=small_shape_pars))
 
     result = simulate_diurnal_behavior(
-        times, u"K"(15.0u"°C"), small_body, environment_pars, sun_forcing, shade_forcing, limits;
-        internal_conduction=example_conduction_pars_internal(),
-        body_absorptivity=0.85, emissivity=0.95, sky_view_factor=0.4, ground_view_factor=0.4,
-        metabolic_heat_volumetric=0.0u"W/m^3",
+        times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits,
     )
     @test all(isfinite, ustrip.(u"K", result.core_temperature))
     @test result.t[end] >= times[end]

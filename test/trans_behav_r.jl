@@ -40,11 +40,32 @@ shade_forcing = forcing_from(shadmet, shadsoil, params.press, params.shade / 100
 
 # R's shape_b/shape_c are minor:major axis ratios (b axis:a axis); Julia's
 # axis_ratio_b/axis_ratio_c are major:minor (a:b) — invert to match.
-body = Body(Ellipsoid(params.Ww_g * u"g", params.rho_body * u"kg/m^3", 1 / params.shape_b, 1 / params.shape_c), Naked())
-environment_pars = example_environment_pars(; ground_albedo=params.alpha_sub)
-internal_conduction = example_conduction_pars_internal(;
+shape_pars = Ellipsoid(params.Ww_g * u"g", params.rho_body * u"kg/m^3", 1 / params.shape_b, 1 / params.shape_c)
+body = Body(shape_pars, Naked())
+
+# params.q (W/m^3) is a fixed empirical rate from R, not a forward model — inject it via the
+# generic Function fallback so it flows through the same heat_balance/metabolic_rate codepath
+# as every other Naked organism, instead of bypassing it as the old ectotherm_onelump did.
+volume = body.geometry.volume
+metabolic_model = (mass, core_temperature) -> params.q * u"W/m^3" * volume
+
+conduction_pars_internal = example_conduction_pars_internal(;
     flesh_conductivity=params.k_flesh * u"W/m/K", flesh_specific_heat=params.c_body * u"J/kg/K",
 )
+radiation_pars = example_ectotherm_radiation_pars(;
+    body_absorptivity_dorsal=params.alpha, body_absorptivity_ventral=params.alpha,
+    body_emissivity_dorsal=0.95, body_emissivity_ventral=0.95,
+    sky_view_factor=0.4, ground_view_factor=0.4,
+)
+metabolism_pars = example_ectotherm_metabolism_pars(; model=metabolic_model)
+# no substrate conduction, matching what R's trans_behav.R (and the old ectotherm_onelump) models
+traits = example_ectotherm_heat_exchange_traits(;
+    shape_pars, conduction_pars_external=example_conduction_pars_external(),
+    conduction_pars_internal, radiation_pars, metabolism_pars,
+)
+organism = Organism(body, traits)
+
+environment_pars = example_environment_pars(; ground_albedo=params.alpha_sub)
 limits = example_ectotherm_behavioral_limits(;
     active_temperature_min=u"K"(Float64(params.T_F_min) * u"°C"), active_temperature_max=u"K"(Float64(params.T_F_max) * u"°C"),
     basking_temperature_min=u"K"(Float64(params.T_B_min) * u"°C"), critical_temperature_max=u"K"(Float64(params.CT_max) * u"°C"),
@@ -54,9 +75,7 @@ times = metout.TIME .* u"minute" .|> u"s"
 core_temperature_init = u"K"(day_results.Tb[1] * u"°C")
 
 result = simulate_diurnal_behavior(
-    times, core_temperature_init, body, environment_pars, sun_forcing, shade_forcing, limits;
-    internal_conduction, body_absorptivity=params.alpha, emissivity=0.95,
-    sky_view_factor=0.4, ground_view_factor=0.4, metabolic_heat_volumetric=params.q * u"W/m^3",
+    times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits,
 )
 
 julia_max_Tb = maximum(ustrip.(u"°C", result.core_temperature))

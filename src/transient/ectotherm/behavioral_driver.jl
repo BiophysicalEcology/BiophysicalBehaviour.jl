@@ -80,29 +80,24 @@ function _next_phase(::CoolPhase, u, zenith_signal, t, limits, shade_air_tempera
     zenith_signal(t) >= 0.0 ? SleepPhase() : ForagePhase()
 end
 
-# RHS dispatch: one-lump (scalar state, HeatExchange.ectotherm_onelump) vs two-lump (2-vector
-# [core, shell], HeatExchange.ectotherm_twolump). Both methods take the same keywords so callers
-# don't need to know which model is in play - `shell_thickness` is simply unused for ectotherm_onelump.
+# RHS dispatch: one-lump (scalar state, HeatExchange.onelump) vs two-lump (2-vector
+# [core, shell], HeatExchange.twolump). Both methods take the same keywords so callers
+# don't need to know which model is in play - `shell_thickness` is simply unused for onelump.
 function _body_temperature_rate(
-    u::Real, t, body, environment_pars, environment_vars;
-    internal_conduction, shell_thickness=nothing, posture, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
+    u::Real, t, organism::Organism, environment_pars, environment_vars;
+    shell_thickness=nothing, posture, surface_solve, smoothing,
 )
-    ustrip(u"K/s", HeatExchange.ectotherm_onelump(
-        u * u"K", t * u"s", body, environment_pars, environment_vars;
-        internal_conduction, posture, body_absorptivity, emissivity,
-        sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
-    ))
+    ustrip(u"K/s", HeatExchange.onelump(
+        u * u"K", t * u"s", organism, (; environment_pars, environment_vars); posture, smoothing,
+    ).core_temperature_rate)
 end
 function _body_temperature_rate(
-    u::AbstractVector, t, body, environment_pars, environment_vars;
-    internal_conduction, shell_thickness, posture, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
+    u::AbstractVector, t, organism::Organism, environment_pars, environment_vars;
+    shell_thickness, posture, surface_solve, smoothing,
 )
-    out = HeatExchange.ectotherm_twolump(
-        (core_temperature=u[1] * u"K", shell_temperature=u[2] * u"K"), t * u"s", body, environment_pars, environment_vars;
-        internal_conduction, shell_thickness, posture, body_absorptivity, emissivity,
-        sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
+    out = HeatExchange.twolump(
+        (core_temperature=u[1] * u"K", shell_temperature=u[2] * u"K"), t * u"s", organism, (; environment_pars, environment_vars);
+        shell_thickness, posture, surface_solve, smoothing,
     )
     Float64[ustrip(u"K/s", out.core_temperature_rate), ustrip(u"K/s", out.shell_temperature_rate)]
 end
@@ -119,25 +114,22 @@ function _package_trajectory(all_t, all_u::Vector{Vector{Float64}}, all_state)
 end
 
 """
-    simulate_diurnal_behavior(times, core_temperature_init, body, environment_pars,
+    simulate_diurnal_behavior(times, core_temperature_init, organism::Organism, environment_pars,
                                sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
                                limits::EctothermBehavioralLimits;
-                               internal_conduction, body_absorptivity, emissivity,
-                               sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
-                               solver=OrdinaryDiffEqTsit5.Tsit5(),
-                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
+                               solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
+                               smoothing=HardBound(), max_bouts=100*length(times),
                                bout_chunk=3600.0, active_min_hysteresis=0.15u"K")
-    simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), body, environment_pars,
-                               sun_forcing, shade_forcing, limits; internal_conduction, shell_thickness,
-                               body_absorptivity, emissivity, sky_view_factor, ground_view_factor,
-                               metabolic_heat_volumetric, solver=OrdinaryDiffEqTsit5.Tsit5(),
+    simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), organism, environment_pars,
+                               sun_forcing, shade_forcing, limits; shell_thickness,
+                               surface_solve=LinearizedSurface(), solver=OrdinaryDiffEqTsit5.Tsit5(),
                                solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
                                bout_chunk=3600.0, active_min_hysteresis=0.15u"K")
 
 Event-driven diurnal behavioral thermoregulation (sleep → bask → forage ⇄ cool → sleep).
 Dispatches on the initial state: a plain temperature runs the one-lump model
-(`HeatExchange.ectotherm_onelump`); a `(; core_temperature, shell_temperature)` NamedTuple runs the
-two-lump model (`HeatExchange.ectotherm_twolump`, needs a `shell_thickness` keyword). Both reuse
+(`HeatExchange.onelump`); a `(; core_temperature, shell_temperature)` NamedTuple runs the
+two-lump model (`HeatExchange.twolump`, needs a `shell_thickness` keyword). Both reuse
 `limits`' `active_temperature_min/max`/`basking_temperature_min` thresholds. Port of
 NicheMapR's `trans_behav.R` (see file banner for what's simplified relative to R).
 
@@ -150,49 +142,43 @@ NamedTuple with `t` (s), `core_temperature` (K) [, `shell_temperature` (K) for t
 method], `state` (`Vector{OrganismState}`), one entry per accepted solver step across all bouts.
 """
 function simulate_diurnal_behavior(
-    times, core_temperature_init::Unitful.Quantity, body, environment_pars,
+    times, core_temperature_init::Unitful.Quantity, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
-    internal_conduction, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
     smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
     bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
 )
     _simulate_diurnal_behavior(
-        times, ustrip(u"K", core_temperature_init), body, environment_pars, sun_forcing, shade_forcing, limits;
-        internal_conduction, shell_thickness=nothing, body_absorptivity, emissivity,
-        sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
+        times, ustrip(u"K", core_temperature_init), organism, environment_pars, sun_forcing, shade_forcing, limits;
+        shell_thickness=nothing, surface_solve=HeatExchange.LinearizedSurface(),
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
         active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
     )
 end
 function simulate_diurnal_behavior(
-    times, state::NamedTuple{(:core_temperature, :shell_temperature)}, body, environment_pars,
+    times, state::NamedTuple{(:core_temperature, :shell_temperature)}, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
-    internal_conduction, shell_thickness, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
+    shell_thickness, surface_solve::SurfaceSolveStrategy=HeatExchange.LinearizedSurface(),
     solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
     smoothing::SmoothingStrategy=HeatExchange.HardBound(), max_bouts=100 * length(times),
     bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
 )
     u0 = Float64[ustrip(u"K", state.core_temperature), ustrip(u"K", state.shell_temperature)]
     _simulate_diurnal_behavior(
-        times, u0, body, environment_pars, sun_forcing, shade_forcing, limits;
-        internal_conduction, shell_thickness, body_absorptivity, emissivity,
-        sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
+        times, u0, organism, environment_pars, sun_forcing, shade_forcing, limits;
+        shell_thickness, surface_solve,
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
         active_min_hysteresis=ustrip(u"K", active_min_hysteresis),
     )
 end
 
 function _simulate_diurnal_behavior(
-    times, u0, body, environment_pars,
+    times, u0, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
-    internal_conduction, shell_thickness, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
+    shell_thickness, surface_solve,
     solver, solver_kwargs, smoothing::SmoothingStrategy, max_bouts, bout_chunk, active_min_hysteresis,
 )
     t0, tend = ustrip(u"s", first(times)), ustrip(u"s", last(times))
@@ -221,9 +207,8 @@ function _simulate_diurnal_behavior(
         forcing = _phase_forcing(phase, sun_forcing, shade_forcing)
         posture = _phase_posture(phase)
         f = (u, _, t) -> _body_temperature_rate(
-            u, t, body, environment_pars, forcing(t * u"s"; smoothing);
-            internal_conduction, shell_thickness, posture, body_absorptivity, emissivity,
-            sky_view_factor, ground_view_factor, metabolic_heat_volumetric, smoothing,
+            u, t, organism, environment_pars, forcing(t * u"s"; smoothing);
+            shell_thickness, posture, surface_solve, smoothing,
         )
         condition = phase isa CoolPhase ?
             _phase_condition(phase, zenith_signal, limits, shade_air_temperature) :

@@ -2,8 +2,7 @@
 # a warm perch into flight. Metabolic rate jumps to flight level and wind speed jumps to flight
 # airspeed simultaneously at takeoff; effectors (insulation, panting, skin wetness, flesh
 # conductivity) are held fixed for the flight (see docs/transient_body_temperature.md).
-# `simulate_endotherm_onelump` dispatches on `insulation(body(organism))`, same as
-# `HeatExchange.endotherm_onelump`.
+# `simulate_onelump` dispatches on `insulation(body(organism))`, same as `HeatExchange.onelump`.
 using BiophysicalBehaviour
 using HeatExchange
 using BiophysicalGeometry
@@ -68,7 +67,7 @@ flight_forcing = EnvironmentForcing(
     ),
 );
 
-result = simulate_endotherm_onelump(
+result = simulate_onelump(
     times, core_temperature_init, organism, environment_pars, flight_forcing;
     metabolic_heat_flow=flight_metabolic_heat_flow,
 );

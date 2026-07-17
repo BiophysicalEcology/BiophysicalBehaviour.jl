@@ -18,7 +18,8 @@ import Ipopt
 using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0,
+    SmoothingStrategy, SurfaceSolveStrategy
 using Setfield: @set
 
 # Organism and traits
@@ -119,10 +120,9 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_organism_traits
 
 # Transient (lumped-capacitance) body-temperature simulation
-export EnvironmentForcing, simulate_ectotherm_onelump, simulate_ectotherm_twolump
+export EnvironmentForcing, simulate_onelump, simulate_twolump
 export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase
 export simulate_diurnal_behavior
-export simulate_endotherm_onelump
 export simulate_endotherm_activity_cycle
 
 include("organism.jl")
@@ -139,7 +139,6 @@ include("endotherm/thermoregulation/behavioural.jl")
 include("transient/forcing.jl")
 include("transient/simulate.jl")
 include("transient/ectotherm/behavioral_driver.jl")
-include("transient/endotherm/simulate.jl")
 include("transient/endotherm/behavioral_driver.jl")
 
 end # module BiophysicalBehaviour

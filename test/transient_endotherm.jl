@@ -5,9 +5,9 @@ using Unitful
 using Test
 
 # No R reference exists for this (transient endotherm body temperature is new, not a
-# NicheMapR port) - core physics self-consistency (steady-state convergence, sign/thermal-mass
-# sanity) is already covered in HeatExchange.jl/test/endotherm_onelump.jl. These are
-# wrapper-level checks: sane trajectories under time-varying forcing.
+# NicheMapR port) - core physics self-consistency is already covered in
+# HeatExchange.jl/test/onelump.jl. These are wrapper-level checks: sane trajectories
+# under time-varying forcing.
 
 function _diurnal_forcing(times; shade=0.0, wind_speed=1.0u"m/s", radiation_scale=1.0)
     hours = ustrip.(u"hr", times)
@@ -27,7 +27,7 @@ end
 
 environment_pars = example_environment_pars()
 
-@testset "simulate_endotherm_onelump: Naked, diurnal forcing" begin
+@testset "simulate_onelump: Naked, diurnal forcing" begin
     shape_pars = example_shape_pars(; mass=0.5u"kg")
     body = Body(shape_pars, Naked())
     traits = example_heat_exchange_traits(;
@@ -38,7 +38,7 @@ environment_pars = example_environment_pars()
 
     times = (0:1:48)u"hr" .|> u"s"
     forcing = _diurnal_forcing(times)
-    result = simulate_endotherm_onelump(times, u"K"(38.0u"°C"), organism, environment_pars, forcing)
+    result = simulate_onelump(times, u"K"(38.0u"°C"), organism, environment_pars, forcing)
 
     @test length(result.t) == length(result.core_temperature) == length(result.core_temperature_rate) ==
         length(result.skin_temperature) == length(result.diagnostics)
@@ -46,7 +46,7 @@ environment_pars = example_environment_pars()
     @test all(isfinite, ustrip.(u"K/s", result.core_temperature_rate))
 end
 
-@testset "simulate_endotherm_onelump: Insulated, diurnal forcing" begin
+@testset "simulate_onelump: Insulated, diurnal forcing" begin
     shape_pars = example_shape_pars(; mass=0.0337u"kg")
     insulation_pars = example_insulation_pars()
     conduction_pars_internal = example_conduction_pars_internal(; fat_fraction=0.05)
@@ -72,7 +72,7 @@ end
     forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
 
     @testset "resting (BMR)" begin
-        result = simulate_endotherm_onelump(
+        result = simulate_onelump(
             times, u"K"(38.0u"°C"), organism, environment_pars, forcing; metabolic_heat_flow=mhf_bmr,
         )
         @test all(isfinite, ustrip.(u"K", result.core_temperature))
@@ -82,7 +82,7 @@ end
     @testset "sustained activity heats the core" begin
         # elevated fixed metabolic rate (e.g. sustained flight) should drive net warming
         active_mhf = mhf_bmr * 4.0
-        result = simulate_endotherm_onelump(
+        result = simulate_onelump(
             times, u"K"(38.0u"°C"), organism, environment_pars, forcing; metabolic_heat_flow=active_mhf,
         )
         @test all(isfinite, ustrip.(u"K", result.core_temperature))

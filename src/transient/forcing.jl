@@ -11,7 +11,7 @@ const _ENVIRONMENTAL_VARS_FIELDS = (
 
 Linear-interpolation wrapper around a time series of environmental variables,
 callable at arbitrary `t` to produce a scalar environment NamedTuple (same field
-names as `HeatExchange.EnvironmentalVars`) for `HeatExchange.ectotherm_onelump`/`ectotherm_twolump`.
+names as `HeatExchange.EnvironmentalVars`) for `HeatExchange.onelump`/`twolump`.
 Mirrors NicheMapR's `approxfun`-based time-varying forcing.
 """
 struct EnvironmentForcing{I}

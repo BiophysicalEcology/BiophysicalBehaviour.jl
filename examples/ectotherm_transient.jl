@@ -38,30 +38,31 @@ sun_forcing = forcing_from(metout, soil, params.press, 0.0);
 shade_forcing = forcing_from(shadmet, shadsoil, params.press, params.shade / 100);
 
 # Animal parameters
-body_mass = 500.0 * u"g"
+body_mass = 1.0 * u"g"
 body_density = 1000.0 * u"kg/m^3"
 axis_ratio_b = 5.0
 axis_ratio_c = 5.0
 flesh_conductivity = 0.5 * u"W/m/K"
 flesh_specific_heat = 3073.0 * u"J/kg/K"
 
-body_absorptivity=0.85
-emissivity=0.95
-sky_view_factor=0.4
-ground_view_factor=0.4
-metabolic_heat_volumetric=0.0 * u"W/m^3"
-
 active_temperature_min = u"K"(Float64(33.0) * u"°C")
 active_temperature_max = u"K"(Float64(43.0) * u"°C")
 basking_temperature_min = u"K"(Float64(18.0) * u"°C")
 critical_temperature_max = u"K"(Float64(48.0) * u"°C")
 
-body = Body(Ellipsoid(body_mass, body_density, axis_ratio_b, axis_ratio_c), Naked());
+shape_pars = Ellipsoid(body_mass, body_density, axis_ratio_b, axis_ratio_c)
+body = Body(shape_pars, Naked());
 environment_pars = example_environment_pars(; ground_albedo=params.alpha_sub)
 internal_conduction = example_conduction_pars_internal(;
     flesh_conductivity, flesh_specific_heat,
     fat_conductivity=flesh_conductivity, fat_specific_heat=flesh_specific_heat,
 )
+# no metabolic heat (matches trans_behav.R's own example); example_ectotherm_radiation_pars's
+# defaults already match the body_absorptivity/emissivity/view_factor values used here
+traits = example_ectotherm_heat_exchange_traits(;
+    shape_pars, conduction_pars_internal=internal_conduction, metabolism_pars=example_ectotherm_metabolism_pars(; model=nothing),
+)
+organism = Organism(body, traits)
 limits = example_ectotherm_behavioral_limits(;
     active_temperature_min, active_temperature_max,
     basking_temperature_min, critical_temperature_max,
@@ -70,18 +71,14 @@ limits = example_ectotherm_behavioral_limits(;
 times = metout.TIME .* u"minute" .|> u"s"
 air_temperature = u"K".(metout.TALOC .* u"°C")
 core_temperature_init = air_temperature[1]  # ~air temperature at midnight
-kw = (;
-    internal_conduction, body_absorptivity, emissivity,
-    sky_view_factor, ground_view_factor, metabolic_heat_volumetric,
-)
 
 result = simulate_diurnal_behavior(
-    times, core_temperature_init, body, environment_pars, sun_forcing, shade_forcing, limits; kw...,
+    times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits,
 )
 
 # non-thermoregulating baseline: stays in the open (full sun) all day
-open_solution = simulate_ectotherm_onelump(
-    times, core_temperature_init, body, environment_pars, sun_forcing; posture=Intermediate(), kw...,
+open_solution = simulate_onelump(
+    times, core_temperature_init, organism, environment_pars, sun_forcing; posture=Intermediate(),
 )
 
 # bout statistics: contiguous stretches of Active state
@@ -110,7 +107,7 @@ shell_thickness = 0.002u"m"
 state_init = (core_temperature=core_temperature_init, shell_temperature=core_temperature_init)
 
 result_twolump = simulate_diurnal_behavior(
-    times, state_init, body, environment_pars, sun_forcing, shade_forcing, limits; kw..., shell_thickness,
+    times, state_init, organism, environment_pars, sun_forcing, shade_forcing, limits; shell_thickness,
 )
 
 println()
@@ -119,13 +116,13 @@ println("two-lump shell temperature range: ", extrema(u"°C".(result_twolump.she
 
 # Uncomment to reproduce trans_behav.R's plot (Tb_open in grey, air temp in blue,
 # thermoregulating Tb in orange, T_F_min/T_F_max/CT_max threshold lines):
-using Plots
-plot(uconvert.(u"hr", open_solution.t), uconvert.(u"°C", open_solution.core_temperature); label="Tb, non-thermoregulating", color=:grey, legend=:topleft, ylim=(15, 50), xlabel="time (hr)", ylabel="temperature (°C)")
-plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", shade_forcing.(result.t) .|> e -> e.air_temperature); label="local air temp (shade)", color=:blue)
-plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb, thermoregulating", color=:orange, linewidth=2)
-hline!([uconvert(u"°C", limits.active_temperature_max)]; label="T_F_max", color=:red, linestyle=:dash)
-hline!([uconvert(u"°C", limits.active_temperature_min)]; label="T_F_min", color=:lightblue, linestyle=:dash)
-hline!([uconvert(u"°C", limits.critical_temperature_max)]; label="CT_max", color=:red)
+# using Plots
+# plot(uconvert.(u"hr", open_solution.t), uconvert.(u"°C", open_solution.core_temperature); label="Tb, non-thermoregulating", color=:grey, legend=:topleft, ylim=(15, 50), xlabel="time (hr)", ylabel="temperature")
+# plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", shade_forcing.(result.t) .|> e -> e.air_temperature); label="local air temp (shade)", color=:blue)
+# plot!(uconvert.(u"hr", result.t), uconvert.(u"°C", result.core_temperature); label="Tb, thermoregulating", color=:orange, linewidth=2)
+# hline!([uconvert(u"°C", limits.active_temperature_max)]; label="T_F_max", color=:red, linestyle=:dash)
+# hline!([uconvert(u"°C", limits.active_temperature_min)]; label="T_F_min", color=:lightblue, linestyle=:dash)
+# hline!([uconvert(u"°C", limits.critical_temperature_max)]; label="CT_max", color=:red)
 
 # Uncomment for the two-lump core-vs-shell trajectory:
 # plot(uconvert.(u"hr", result_twolump.t), uconvert.(u"°C", result_twolump.core_temperature); label="core", color=:orange, legend=:topleft)

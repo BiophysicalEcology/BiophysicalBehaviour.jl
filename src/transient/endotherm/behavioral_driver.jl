@@ -4,7 +4,7 @@
 # temperature, using ContinuousCallback the same way simulate_diurnal_behavior does for
 # ectotherms. No day/night cycle - see docs/transient_body_temperature.md for scope notes.
 # Insulated bodies only: metabolic_heat_flow must be an explicit per-phase input, which
-# HeatExchange.endotherm_onelump only supports for Insulated (not Naked) organisms.
+# HeatExchange.onelump only supports for Insulated (not Naked) organisms.
 
 abstract type EndothermActivityPhase end
 struct EndothermActivePhase <: EndothermActivityPhase end
@@ -42,7 +42,7 @@ rate, e.g. flight or running, typically under `active_forcing`'s higher wind spe
 temperature reaches `active_temperature_max`, then resting (`resting_metabolic_heat_flow`,
 `resting_forcing`) until it cools to `resume_temperature`, repeating. Effectors (insulation,
 panting, skin wetness, flesh conductivity) are held fixed throughout, as in
-`HeatExchange.endotherm_onelump`. Starts in the active phase.
+`HeatExchange.onelump`. Starts in the active phase.
 
 # Returns
 NamedTuple with `t` (s), `core_temperature` (K), `core_temperature_rate` (K/s), `state`
@@ -74,7 +74,7 @@ function simulate_endotherm_activity_cycle(
 
         forcing = _endotherm_phase_forcing(phase, active_forcing, resting_forcing)
         mhf = _endotherm_phase_metabolic_heat_flow(phase, active_metabolic_heat_flow, resting_metabolic_heat_flow)
-        f = (u, _, t) -> ustrip(u"K/s", HeatExchange.endotherm_onelump(
+        f = (u, _, t) -> ustrip(u"K/s", HeatExchange.onelump(
             u * u"K", t * u"s", organism, (; environment_pars, environment_vars=forcing(t * u"s"; smoothing));
             metabolic_heat_flow=mhf, smoothing,
         ).core_temperature_rate)
