@@ -345,7 +345,7 @@ function thermoregulate(
 
             elseif limits.can_retreat_underground
                 # All warming behaviours are exhausted — always retreat underground.
-                # (depth_min_underground ≥ 2 means surface is never a valid burrow node.)
+                # (select_depth searches from depth.reference+depth.step, so the foraging node itself is skipped.)
                 underground_shade_factor = _underground_blend_factor(limits.burrow_shade_mode, limits, min_shade, max_shade, step)
                 limits = select_depth(limits, min_shade, max_shade, step, underground_shade_factor)
                 env    = interpolate_environment(available_environments, step, limits, environmental_params)

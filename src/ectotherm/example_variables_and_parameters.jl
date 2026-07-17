@@ -1,3 +1,14 @@
+# Resolve a depth/height keyword to a node index: an Int is used directly (also covers the
+# typemax(Int) "no cap" sentinel); a length snaps to the nearest node in `nodes`, warning if it
+# isn't an exact match.
+_resolve_node(value::Integer, nodes, name) = value
+function _resolve_node(value::Unitful.Length, nodes, name)
+    nodes === nothing && throw(ArgumentError("$name given as a length requires the matching `depths`/`heights` keyword"))
+    node = argmin(abs.(nodes .- value))
+    nodes[node] == value || @warn "$name=$value snapped to nearest available node: $(nodes[node]) (index $node)"
+    return node
+end
+
 """
     example_ectotherm_behavioral_limits(; kwargs...) → EctothermBehavioralLimits
 
@@ -11,9 +22,12 @@ NicheMapR R `ectotherm()` function defaults (ectotherm.R).
 | `shade_min`                  | 0.0       | minshade / 100                |
 | `shade_max`                  | 0.9       | maxshade / 100                |
 | `shade_step`                 | 0.03      | delta_shade / 100             |
-| `depth_min_underground`      | 2         | mindepth (shallowest underground node)|
-| `depth_max`                  | all nodes | maxdepth (default: use all)   |
-| `height_max`                 | all nodes | (default: use all heights)    |
+| `depth_min`                  | 1 (surface) | foraging depth node (Int index, or a length that snaps to the nearest node in `depths`) |
+| `depth_max`                  | all nodes | maxdepth, retreat search upper bound (Int index, or a length snapped via `depths`) |
+| `depths`                     | `nothing` | physical depth array, required if `depth_min`/`depth_max` are given as lengths |
+| `height_min`                 | 1 (ground)  | foraging height node (Int index, or a length snapped via `heights`) |
+| `height_max`                 | all nodes | (default: use all heights); Int index, or a length snapped via `heights` |
+| `heights`                    | `nothing` | physical height array, required if `height_min`/`height_max` are given as lengths |
 | `absorptivity_min`           | 0.9       | alpha_min                     |
 | `absorptivity_max`           | 0.9       | alpha_max                     |
 | `absorptivity_step`          | 0.0       | (derived: alpha_max-alpha_min)|
@@ -49,11 +63,16 @@ function example_ectotherm_behavioral_limits(;
     # Panting
     pant_max         = 1.0,
     pant_step        = 0.1,
-    # Depth (soil node indices)
-    depth_min_underground = 2,       # mindepth: shallowest accessible underground node
-    depth_max             = typemax(Int), # maxdepth: default = use all available depth nodes
-    # Height (atmospheric profile node indices)
-    height_max            = typemax(Int), # default = use all available height nodes
+    # Depth (soil node indices) - depth_min is the foraging node, depth_max the retreat bound.
+    # Either may be given as a node index (Int) or a physical depth (e.g. `20.0u"cm"`), which
+    # snaps to the nearest node in `depths` (required in that case).
+    depth_min = 1,
+    depth_max = typemax(Int),
+    depths = nothing,
+    # Height (atmospheric profile node indices) - same pattern as depth, via `heights`.
+    height_min = 1,
+    height_max = typemax(Int),
+    heights = nothing,
     # Thermal thresholds
     target_temperature      = u"K"(30.0u"°C"),   # TPREF: starting preferred temp (rises to active_temperature_max)
     target_temperature_step = 0.5u"K",           # TBIG: step size for TPREF increment (0.5 in NicheMapR THERMOREG)
@@ -90,16 +109,20 @@ function example_ectotherm_behavioral_limits(;
         max       = shade_max,
         step      = shade_step,
     )
+    depth_min_node = _resolve_node(depth_min, depths, "depth_min")
+    depth_max_node = _resolve_node(depth_max, depths, "depth_max")
     depth = SteppedParameter(;
-        current   = 1,
-        reference = 1,
-        max       = depth_max,
+        current   = depth_min_node,
+        reference = depth_min_node,
+        max       = depth_max_node,
         step      = 1,
     )
+    height_min_node = _resolve_node(height_min, heights, "height_min")
+    height_max_node = _resolve_node(height_max, heights, "height_max")
     height = SteppedParameter(;
-        current   = 1,
-        reference = 1,
-        max       = height_max,
+        current   = height_min_node,
+        reference = height_min_node,
+        max       = height_max_node,
         step      = 1,
     )
     absorptivity = SteppedParameter(;
@@ -124,7 +147,6 @@ function example_ectotherm_behavioral_limits(;
         control,
         shade,
         depth,
-        depth_min_underground,
         height,
         absorptivity,
         pant_rate,

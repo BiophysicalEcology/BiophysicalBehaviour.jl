@@ -109,8 +109,8 @@ doesn't have mid-integration).
 
 **Reused vs. deliberately unused `EctothermBehavioralLimits` fields**: `can_climb`,
 `can_retreat_underground`, `emerge_temperature_min` are now read by this driver.
-`emerge_signal` (K/hr soil-trend gate), `burrow_shade_mode`, `depth`/`height`/
-`depth_min_underground` remain unused — see "Not built here" below.
+`emerge_signal` (K/hr soil-trend gate), `burrow_shade_mode`, `depth`/`height`
+remain unused — see "Not built here" below.
 
 **Simplified relative to `trans_behav.R`:**
 - `OrganismState` only distinguishes `Resting`/`Basking`/`Active`; `Sleep`/`Cool`/`Climb`/

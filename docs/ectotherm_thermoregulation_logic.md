@@ -59,9 +59,8 @@ far this hour). Key fields:
 | Field | Meaning | NicheMapR name |
 |---|---|---|
 | `shade` | `SteppedParameter` — current/min/max/step shade fraction | SHADE / MAXSHD / DSHD |
-| `depth` | `SteppedParameter` — current/reference(=1) depth node | BURROW depth node |
-| `depth_min_underground` | Shallowest underground node allowed | MINNODE (mindepth) |
-| `height` | `SteppedParameter` — current/reference height node | CLIMB height node |
+| `depth` | `SteppedParameter` — current/reference(foraging)/max(retreat) depth node | BURROW depth node / MINNODE (mindepth) |
+| `height` | `SteppedParameter` — current/reference(foraging)/max(retreat) height node | CLIMB height node |
 | `absorptivity` | `SteppedParameter` — current/min(ref)/max alpha | alpha_min / alpha_max |
 | `pant_rate` | `SteppedParameter` — current/max pant multiplier | pantmax |
 | `target_temperature` | `SteppedParameter` — current/max preferred temperature | TPREF / T_F_max |
@@ -357,7 +356,7 @@ wind = 0.01 m/s, `global_radiation = 0`. Underground blend factor is determined 
 
 ### `select_depth` (SELDEP.f)
 
-Iterates soil nodes from `depth_min_underground` to `depth.max`. Returns the **shallowest** node
+Iterates soil nodes from `depth.reference + depth.step` to `depth.max`. Returns the **shallowest** node
 where:
 
 ```

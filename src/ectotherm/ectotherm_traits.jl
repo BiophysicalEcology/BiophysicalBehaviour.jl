@@ -39,13 +39,13 @@ panting parameters).
 - `shade::Sh`: `SteppedParameter` for shade fraction (0–1). `reference`/`current`
   are the starting shade; `max` is maximum available shade; `step` is the increment
   per iteration (SHADEADJUST.f `DSHD`).
-- `depth::D`: `SteppedParameter` for soil-node index. `reference` = 1 (surface node);
-  `max` is the deepest accessible underground node; `step` = 1.
-- `depth_min_underground::Int`: Shallowest accessible underground node (SELDEP.f `MINNODE`,
-  NicheMapR `mindepth`). Active animals reset to `depth.reference` (surface = 1);
-  retreating underground begins at `depth_min_underground`.
-- `height::H`: `SteppedParameter` for atmospheric profile height-node index.
-  `reference` = 1 (lowest node); `max` is the highest accessible node; `step` = 1.
+- `depth::D`: `SteppedParameter` for soil-node index. `reference` is the animal's normal/foraging
+  depth (node 1 = surface, for a typical ground-dwelling ectotherm; a deeper node for a fossorial
+  one); `max` is the retreat depth (SELDEP.f `MINNODE`/NicheMapR `mindepth` is now just
+  `reference + step`, the search's starting point); `step` = 1.
+- `height::H`: `SteppedParameter` for atmospheric profile height-node index. `reference` is the
+  animal's normal/foraging height (node 1 = ground, for a typical species; an elevated node for
+  an arboreal one); `max` is the retreat height; `step` = 1.
 
 # Fields – absorptivity
 - `absorptivity::Ab`: `SteppedParameter` for dorsal solar absorptivity (0–1).
@@ -125,7 +125,6 @@ Base.@kwdef struct EctothermBehavioralLimits{
     control::C          = RuleBasedSequentialControl()
     shade::Sh
     depth::D
-    depth_min_underground::Int = 2
     height::H
     absorptivity::Ab    = SteppedParameter(; current=0.9, reference=0.9, max=0.9, step=0.0)
     pant_rate::Pa       = SteppedParameter(; current=1.0, reference=1.0, max=1.0, step=0.1)

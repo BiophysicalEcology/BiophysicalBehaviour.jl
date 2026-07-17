@@ -167,7 +167,6 @@ organism_traits = example_ectotherm_organism_traits(
     escape_temperature_max = u"K"(44.0u"°C"),
     can_climb               = true,
     can_retreat_underground = true,
-    depth_min_underground   = 3,
     burrow_shade_mode       = MinShadeOnly(),
     emerge_signal       = 0.0u"K/hr",
     can_seek_shade          = false,
