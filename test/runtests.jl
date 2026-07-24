@@ -12,3 +12,4 @@ using Test
 end
 
 @safetestset "endotherm" begin include("endotherm.jl") end
+@safetestset "ectotherm" begin include("ectotherm.jl") end
