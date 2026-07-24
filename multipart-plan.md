@@ -141,30 +141,34 @@ abstract type HeatCoupling end
 struct SharedCore <: HeatCoupling end          # parts equilibrate — contract into one node
 
 struct ConductiveCoupling{InterfaceConductivity} <: HeatCoupling
-    interface_conductivity::InterfaceConductivity   # optional override;
-                                                    # `nothing` → derive from parts
+    interface_conductivity::InterfaceConductivity
 end
-
-struct InsulatedJoin <: HeatCoupling end       # no heat crosses
 ```
+
+Joins without an entry in `couplings` are insulated by default (zero
+contribution to conductance matrix and heat load) — no explicit
+`InsulatedJoin` sentinel is needed.
 
 Example dog:
 ```julia
 couplings = (
-    dorsal_ventral = SharedCore(),                # torso halves, one blood pool
-    dorsal_head    = ConductiveCoupling(nothing), # derive from flesh_conductivity + geometry
-    ventral_leg_fl = ConductiveCoupling(nothing),
-    ventral_leg_fr = ConductiveCoupling(nothing),
-    ventral_leg_bl = ConductiveCoupling(nothing),
-    ventral_leg_br = ConductiveCoupling(nothing),
+    dorsal_ventral = SharedCore(),          # torso halves, one blood pool
+    dorsal_head    = ConductiveCoupling(),  # derive from flesh_conductivity + geometry
+    ventral_leg_fl = ConductiveCoupling(),
+    ventral_leg_fr = ConductiveCoupling(),
+    ventral_leg_bl = ConductiveCoupling(),
+    ventral_leg_br = ConductiveCoupling(),
 )
 ```
 
-Coupling policy for `ConductiveCoupling(nothing)` defaults to a series
-resistance
+The two derivation modes are distinguished at the type-parameter level,
+not by a runtime `nothing` check. `ConductiveCoupling()` constructs
+`ConductiveCoupling{Nothing}`; `contribution_to_conductance_matrix(::ConductiveCoupling{Nothing}, ...)`
+derives series resistance
 `total_resistance = distance_parent / (conductivity_parent * area) + distance_child / (conductivity_child * area)`
-computed from each part's own `flesh_conductivity` and `internal_distance` to
-the join. `ConductiveCoupling(interface_conductivity)` is an override.
+from each part's own `flesh_conductivity` and `internal_distance` to the
+join. `ConductiveCoupling(k)` constructs `ConductiveCoupling{typeof(k)}`;
+the `<:Real` method uses the explicit override. No branch in the hot loop.
 
 ### 3.4 Compartment solve
 
@@ -186,11 +190,11 @@ Couplings contribute to the solve via a two-method interface — new physics
 by rewriting the outer loop:
 
 ```julia
-contribution_to_conductance_matrix(::SharedCore, ...)          # zero; edge already contracted
-contribution_to_conductance_matrix(::ConductiveCoupling, ...)  # symmetric off-diagonal
-contribution_to_conductance_matrix(::InsulatedJoin, ...)       # zero
-contribution_to_heat_load(::HeatCoupling, ...)                 # right-hand-side shifts
-                                                               # (nonzero for perfusion)
+contribution_to_conductance_matrix(::SharedCore, ...)                    # zero; edge already contracted
+contribution_to_conductance_matrix(::ConductiveCoupling{Nothing}, ...)   # derived series resistance
+contribution_to_conductance_matrix(::ConductiveCoupling{<:Real}, ...)    # explicit override
+contribution_to_heat_load(::HeatCoupling, ...)                           # right-hand-side shifts
+                                                                         # (nonzero for perfusion)
 ```
 
 Per outer-loop iteration:
@@ -236,22 +240,20 @@ the vast majority of thermoregulation-loop iterations.
 
 Posture-change behaviors (`Roll`, `Curl`) are out of scope for this refactor.
 
-**Cache invalidation via `Val`-dispatch:**
+**Cache invalidation via direct effector dispatch.** The effector type
+is concrete at the call site, so `refresh!` dispatches on it directly —
+no `Val` wrapper, no intermediate `invalidates` trait function:
 
 ```julia
-invalidates(::Piloerect)    = (:shape,)
-invalidates(::Uncurl)       = (:shape, :radiation)
-invalidates(::Vasodilate)   = (:conductance,)          # conductance matrix
-invalidates(::Hyperthermia) = ()
-invalidates(::Pant)         = ()
-invalidates(::Sweat)        = ()
-
-@inline refresh!(cache, body, environment, ::Val{()}) = cache   # compiler elides
-@inline refresh!(cache, body, environment, ::Val{(:shape,)}) = ...
+@inline refresh!(cache, body, environment, ::Effector)    = cache   # default no-op
+@inline refresh!(cache, body, environment, ::Piloerect)   = ...     # refresh shape
+@inline refresh!(cache, body, environment, ::Uncurl)      = ...     # refresh shape + radiation
+@inline refresh!(cache, body, environment, ::Vasodilate)  = ...     # refresh conductance matrix
 ```
 
-In the hot loop the compiler sees `Val{()}` for `Vasodilate`, `Hyperthermia`,
-`Pant`, `Sweat` and eliminates the call. Only `Piloerect` and `Uncurl` do work.
+`Vasodilate`, `Hyperthermia`, `Pant`, `Sweat` fall through to the
+`::Effector` no-op and the compiler inlines them away at the call site.
+Only `Piloerect`, `Uncurl`, and `Vasodilate` do real work.
 
 ### 3.6 HeatExchange as pure physics + `CommonSolve` interface
 
@@ -261,11 +263,11 @@ machinery, and exposes the standard **`CommonSolve.jl`** interface: `init`,
 ecosystem (`DifferentialEquations`, `LinearSolve`, `NonlinearSolve`,
 `Optimization`) works, and gives us two usage modes with no code duplication.
 
-**Problem type** — a self-contained multi-part heat-balance problem:
+**Problem type** — a self-contained multi-part heat-balance problem
+(topology, physics, environment only — no solver state):
 
 ```julia
-struct HeatBalanceProblem{Geometry, Physiology, Environment, Couplings,
-                         CompartmentGraph, InitialState}
+struct HeatBalanceProblem{Geometry, Physiology, Environment, Couplings, CompartmentGraph}
     geometry::Geometry                    # per-part shape + insulation + Tier 1/2 cache scalars
     physiology::Physiology                # per-part physiological parameters
     environment::Environment              # air / ground / sky temperatures, wind,
@@ -273,36 +275,35 @@ struct HeatBalanceProblem{Geometry, Physiology, Environment, Couplings,
     couplings::Couplings                  # NamedTuple keyed by join name, values
                                           # <: HeatCoupling
     compartment_graph::CompartmentGraph   # precomputed from couplings (section 3.4)
-    initial_state::InitialState           # per-part skin/insulation, per-compartment core
 end
 ```
 
-The problem holds *everything* required to compute a full multi-part coupled
-heat balance. No hidden state; no callbacks into `BiophysicalGeometry`.
+The problem holds *everything* required to define the physics — no hidden
+state, no callbacks into `BiophysicalGeometry`. Initial state flows into
+the solver via `init` / `reinit!`, not the problem (SciML convention).
 
 **Solver type** — mutable workspace + current state, reused across successive
-solves:
+solves. Per-solve output metadata (`converged`, `iterations`, `retcode`,
+`stats`) belongs on the returned `Solution`, not the solver:
 
 ```julia
 mutable struct HeatBalanceSolver{Problem, Workspace, State}
     problem::Problem
     workspace::Workspace   # Jacobian / root-finding buffers / conductance matrix cache
     state::State           # current best estimate of skin, insulation, core temperatures
-    converged::Bool
-    iterations::Int
 end
 ```
 
 **Interface** (implemented against `CommonSolve.jl`):
 
 ```julia
-CommonSolve.init(problem::HeatBalanceProblem; kwargs...) -> HeatBalanceSolver
+CommonSolve.init(problem::HeatBalanceProblem; initial_state, kwargs...) -> HeatBalanceSolver
 CommonSolve.solve!(solver::HeatBalanceSolver) -> Solution   # run to convergence in place
 CommonSolve.reinit!(solver::HeatBalanceSolver, new_problem::HeatBalanceProblem;
                     warm_start::Bool = true)                # reset for a new problem,
                                                             # optionally reusing state
-CommonSolve.solve(problem::HeatBalanceProblem; kwargs...) =
-    solve!(init(problem; kwargs...))                        # one-shot convenience
+CommonSolve.solve(problem::HeatBalanceProblem; initial_state, kwargs...) =
+    solve!(init(problem; initial_state, kwargs...))         # one-shot convenience
 ```
 
 **Two usage modes fall out:**
@@ -311,7 +312,7 @@ CommonSolve.solve(problem::HeatBalanceProblem; kwargs...) =
    organism / environment pair, or a NicheMapR-style time-stepping driver):
    ```julia
    solution = solve(HeatBalanceProblem(geometry, physiology, environment,
-                                       couplings, initial_state))
+                                       couplings); initial_state)
    ```
    Full multi-part solve, no thermoregulation control loop, no
    `BiophysicalBehaviour` needed.
@@ -528,10 +529,9 @@ extensions.
 **`AbstractControlStrategy` maps to solver machinery:**
 `RuleBasedSequentialControl` → `reinit!` / `solve!` on the iterative
 `HeatBalanceSolver`. `IPOPTControl` → `OptimizationProblem` via the NLP
-API + `SciMLBase.solve` with `IpoptOptimizer`. `PDEControl` (future) →
-another strategy, same rails. All share the `HeatBalanceProblem` and
-per-part `solve_part_heat_balance` primitive — no forked effector code
-path.
+API + `SciMLBase.solve` with `IpoptOptimizer`. Both share the
+`HeatBalanceProblem` and per-part `solve_part_heat_balance` primitive —
+no forked effector code path.
 
 **Coefficient plumbing — one home per fact, walked at solve time.**
 Today's `_run_ipopt` reads `limits.insulation.dorsal.reference` — a
@@ -547,7 +547,7 @@ builders walk the organism at solve time.
 |---|---|
 | Insulation properties, piloerection range | `part.physiology.insulation`, `.insulation_limits` |
 | Skin wetness range, flesh conductivity range | `part.physiology.skin_wetness_range`, `.flesh_conductivity_limits` |
-| Panting capacity | `part.physiology.panting_capacity` (zero on non-lung parts; auto-derived from `lung_part`) |
+| Panting capacity | field on the `LungPart` wrapper around the lung part's physiology (§3.9); not present on other parts |
 | Aspect-ratio bounds | `aspect_ratio_bounds(part.shape, limits)` dispatch (`::Sphere` returns `(1,1)`); no user input |
 | Setpoint, Q10, minimum heat flow, penalty weights, magic-number replacements | `ThermoregulationLimits` (scalars — same as today) |
 
@@ -606,14 +606,21 @@ airway opening but not alveolar gas exchange). `HomoTherm.R` gets this
 right: it computes `TLUNG` from `parts[[2]]` and sets `RESPIRE = 0` on
 all other parts.
 
-Add `OrganismTraits.lung_part::Symbol` (e.g. `:torso`, or `:body` for
-single-part organisms). Semantics: `lung_temperature` derives from
-`lung_part`'s `core_temperature`; `Pant`'s default selector becomes
+Wrap the lung-hosting part's physiology in a `LungPart{Physiology,
+PantingCapacity}` type that adds a `panting_capacity` field. Only that
+one part carries the wrapper — non-lung parts have plain physiology and
+no zero-panting field. Dispatch on `::LungPart` routes respiration,
+metabolic O₂/CO₂ exchange, and pulmonary evaporation to the correct
+part; there is no per-part `panting_capacity` field on other parts.
+
+Add `OrganismTraits.lung_part::Symbol` as an O(1) index into
+`body.parts` (e.g. `:torso`, or `:body` for single-part organisms).
+Semantics: `lung_temperature` derives from `lung_part`'s
+`core_temperature`; `Pant`'s default selector is
 `ByName{(lung_part,)}`; respiratory evaporative heat loss is subtracted
-from `lung_part`'s energy balance; metabolic O₂/CO₂ exchange is
-attributed to `lung_part`. Single-`Body` organisms default to the sole
-part name and degenerate cleanly. Nasal passages are a separate site
-(deferred with `nasal_part` to §8.4). Add `lung_part` in Phase 4.
+from `lung_part`'s energy balance. Single-`Body` organisms wrap the
+sole part in `LungPart`. Nasal passages are a separate site (deferred
+with `nasal_part` to §8.4). Add both in Phase 4.
 
 ### 3.10 Effector + selector interface
 
@@ -663,7 +670,6 @@ HeatExchange
       HeatCoupling hierarchy, CompartmentGraph,
       HeatBalanceProblem + HeatBalanceSolver,
       CommonSolve interface (init / solve! / reinit! / solve),
-      HeatBalanceStrategy hierarchy (IterativeStrategy, NLPStrategy),
       multi-part NLP interface (nlp_template / nlp_pack / nlp_residuals! /
       nlp_variable_bounds / nlp_assemble_output)
   └── does NOT depend on Optimization.jl / OptimizationIpopt / JuMP.
@@ -755,10 +761,10 @@ phase.
 - **Co-locate per-part limits with per-part physiology** (see 3.7
   "Coefficient plumbing"). Each entry in `OrganismTraits.physiology`
   carries its own `insulation_limits`, `skin_wetness_range`,
-  `panting_capacity`, `flesh_conductivity_limits` — the same struct that
-  owns the fur owns the piloerection range for that fur. Delete the
-  parallel per-part limits containers this replaces
-  (`InsulationLimits.dorsal` / `.ventral`, etc.) as part of Phase 8.
+  `flesh_conductivity_limits` — the same struct that owns the fur owns
+  the piloerection range for that fur. Delete the parallel per-part
+  limits containers this replaces (`InsulationLimits.dorsal` /
+  `.ventral`, etc.) as part of Phase 8.
 - `ThermoregulationLimits` keeps only whole-organism scalars: control
   strategy, setpoint / Q10 / minimum heat flow, penalty weights, and
   the four magic-number-replacement fields
@@ -767,27 +773,30 @@ phase.
   Each penalty-weight field accepts either a `Float64` (broadcast to
   every relevant leaf) or a `NamedTuple{PartNames}` (opt-in per-part
   override); the template builder honours whichever form was given.
-- Add `OrganismTraits.lung_part::Symbol` (see 3.8). Route `Pant`'s default
-  selector through it. Route respiratory evaporative heat loss and O₂/CO₂
-  exchange attribution through it. Derive `lung_temperature` from `lung_part`'s
-  `core_temperature`. Single-`Body` organisms default to the sole part name.
-  Auto-derive each part's `panting_capacity` from `lung_part` (zero on
-  non-lung parts).
+- Wrap the lung-hosting part's physiology in `LungPart(physiology,
+  panting_capacity)` (§3.9). `panting_capacity` lives only on the
+  wrapper — nowhere else. Add `OrganismTraits.lung_part::Symbol` as an
+  O(1) index into `body.parts`. Route `Pant`'s default selector, plus
+  respiratory evaporative heat loss and O₂/CO₂ exchange attribution,
+  through `lung_part`. Derive `lung_temperature` from `lung_part`'s
+  `core_temperature`. Single-`Body` organisms wrap the sole part.
 
-**Exit:** Existing tests pass. New tests construct a 2-part organism with
-distinct per-part physiology *and* per-part insulation limits set from
-the parts themselves — no `ThermoregulationLimits` per-part table.
-Panting on a multi-part organism affects only the lung part's evaporative
-flux and energy balance.
+**Exit:** Existing tests pass. New tests construct a 2-part organism
+with distinct per-part physiology *and* per-part insulation limits set
+from the parts themselves — no `ThermoregulationLimits` per-part table,
+no `panting_capacity` on non-lung parts. Panting on a multi-part
+organism affects only the lung part's evaporative flux and energy
+balance.
 
 ### Phase 5 — Cache layer + `invalidates` traits
 **Package:** `BiophysicalBehaviour`
 **Work:** New `src/cache.jl`:
 - `PrecomputedCache{Parts}` — Tier 1 (shape) + Tier 2 (radiation) `NamedTuple`s
   keyed by part name.
-- `invalidates(::Effector)` trait table.
-- `refresh!(cache, body, environment, ::Val{keys})` methods; `Val{()}` is a
-  compiler no-op.
+- `refresh!(cache, body, environment, ::Effector)` dispatched directly on
+  effector type. Default method returns `cache` unchanged (compiler
+  elides it at the call site); `::Piloerect`, `::Uncurl`, `::Vasodilate`
+  do actual work.
 - Cache is a field on `Organism`, updated via `@set` after each effector.
 
 **Exit:**
@@ -835,7 +844,9 @@ flux and energy balance.
 **Package:** `HeatExchange` (major), `BiophysicalBehaviour` (integration)
 **Work:**
 - In `HeatExchange`: define `HeatCoupling` hierarchy (`SharedCore`,
-  `ConductiveCoupling{InterfaceConductivity}`, `InsulatedJoin`).
+  `ConductiveCoupling{InterfaceConductivity}`). Joins without an entry
+  in `couplings` default to zero contribution — no `InsulatedJoin`
+  sentinel type.
 - In `HeatExchange`: define `CompartmentGraph{Groups,EdgeIndices,NumCompartments}`,
   built from a `NamedTuple` of couplings via union-find over `SharedCore`
   edges. Add `contribution_to_conductance_matrix` and
