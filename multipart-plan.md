@@ -12,29 +12,14 @@ zero-allocation hot paths are.
 
 ## Naming conventions used throughout
 
-**Fully spelled identifiers.** No `T_` for temperature, no `Q_` for heat, no
-`k_` for conductivity, no `Ra`/`Pr`/`Nu` for dimensionless numbers, no `G`/`b`
-for matrix/vector, no `evap`/`resp`/`pars`/`env`/`geom` abbreviations.
-Existing code that uses abbreviated identifiers will be renamed as part of the
-phase that touches it. When this document quotes existing code or names
-(e.g. current field names, NicheMapR reference material), the original
-identifiers are kept as-is for accuracy.
-
-Standard target substitutions used throughout this plan:
-
-| Abbreviated | Full |
-|---|---|
-| `T_skin`, `T_insulation`, `T_core`, `T_air`, `T_ground`, `T_sky` | `skin_temperature`, `insulation_temperature`, `core_temperature`, `air_temperature`, `ground_temperature`, `sky_temperature` |
-| `T_lung`, `TLUNG`, `T_brain`, `T_layers` | `lung_temperature`, `brain_temperature`, `layer_temperatures` |
-| `Q_gen`, `Q_metab`, `Q_env`, `Q_conv`, `Q_rad`, `Q_evap`, `Q_resp` | `metabolic_heat`, `environmental_heat`, `convective_heat`, `radiative_heat`, `evaporative_heat`, `respiratory_heat` |
-| `Q_minimum` | `minimum_metabolic_heat` |
-| `k_flesh`, `k_interface`, `k` | `flesh_conductivity`, `interface_conductivity`, `conductivity` |
-| `Ra`, `Pr`, `Nu`, `Re` | `rayleigh_number`, `prandtl_number`, `nusselt_number`, `reynolds_number` |
-| `G` (matrix), `b` (vector) | `conductance_matrix`, `heat_load_vector` |
-| `IR`, `SBC` | `infrared`, `selective brain cooling` |
-| `evap_area`, `evap_source` | `evaporation_area`, `evaporation_source` |
-| `geom`, `env`, `pars` (new code) | `geometry`, `environment`, `parameters` |
-| `A_direct`, `A_diffuse_up`, `A_diffuse_down` | `area_direct`, `area_diffuse_up`, `area_diffuse_down` |
+**Fully spelled identifiers.** No `T_` / `Q_` / `k_` prefixes, no `Ra` /
+`Pr` / `Nu` for dimensionless numbers, no `evap` / `resp` / `pars` / `env`
+/ `geom` abbreviations — e.g. `T_skin` → `skin_temperature`, `Q_gen` →
+`metabolic_heat`, `k_flesh` → `flesh_conductivity`, `Nu` →
+`nusselt_number`, `IR` → `infrared`. Existing abbreviated identifiers are
+renamed by the phase that touches them. When this document quotes
+existing code (current field names, NicheMapR reference material), the
+original identifiers are kept as-is for accuracy.
 
 ---
 
@@ -56,34 +41,25 @@ one part with `Naked`, or two `HalfCylinder` parts with a `SharedCore` join.
 
 Three layers assume a single lumped body:
 
-- **Effectors** (`src/endotherm/thermoregulation.jl`) — `piloerect`, `uncurl`,
-  `vasodilate`, `pant`, `sweat` each read `HeatExchange.<foo>pars(organism)`
-  and rebuild `organism.body = Body(...)`. They will hard-fail on
-  `CompositeBody` (no `.insulation` field) and would erase part structure even
-  if they didn't.
-- **State** (`src/endotherm/homeothermy.jl:98-229`) — skin, insulation, core
-  temperatures and generated metabolic heat are threaded as scalars (existing
-  code names them `T_skin`, `T_insulation`, `T_core`, `Q_gen`).
-  `initialise_state` exists only as a `NullBehavior` stub
-  (`src/organism.jl:126`).
+- **Effectors** (`src/endotherm/thermoregulation.jl`) rebuild
+  `organism.body = Body(...)` — hard-fails on `CompositeBody`.
+- **State** (`src/endotherm/homeothermy.jl:98-229`) threads skin /
+  insulation / core temperatures and metabolic heat as scalars;
+  `initialise_state` is a `NullBehavior` stub (`src/organism.jl:126`).
 - **Physiology traits** (`src/organism.jl:243-257`) — a single lumped
-  `HeatExchangeTraits` with `insulation_pars.dorsal/ventral` fields. No concept
-  of per-part insulation, metabolism, or radiation.
+  `HeatExchangeTraits` with `insulation_pars.dorsal/ventral`; no
+  per-part concept.
 
-`HeatExchange` is tightly coupled to `BiophysicalGeometry`:
-
-- Direct scalar accessor calls (`total_area`, `silhouette_area`,
-  `evaporation_area`, `flesh_volume`, `characteristic_dimension`) sprinkled
-  through `biophysics.jl`, `heat_balance.jl`, `nlp_interface.jl`,
-  `insulated/utils.jl`.
-- Shape dispatch for closed-form conduction (`internal_temperature.jl:28-65`,
-  cylinder/plate/ellipsoid) and Nusselt correlations
-  (`biophysics.jl:313-392`).
-- Deep dorsal/ventral split — `_pack_sides` in `insulated/utils.jl:60-230`,
-  `MultiSided` in `traits.jl:21-28`, `Dorsal`/`Ventral` singletons, dorsal/ventral
-  fields on `RadiationParameters`, `InsulationParameters`, `AbsorptivityParameters`,
-  `ventral_fraction`, `mean_skin_temperature.jl`. Roughly half the `insulated/`
-  directory exists to service the split.
+`HeatExchange` is tightly coupled to `BiophysicalGeometry`: direct scalar
+accessor calls (`total_area`, `silhouette_area`, `evaporation_area`,
+`flesh_volume`, `characteristic_dimension`) sprinkled through
+`biophysics.jl` / `heat_balance.jl` / `nlp_interface.jl` /
+`insulated/utils.jl`; shape dispatch for closed-form conduction and
+Nusselt correlations; and a deep dorsal/ventral split (`_pack_sides` in
+`insulated/utils.jl:60-230`, `MultiSided`, `Dorsal`/`Ventral` singletons,
+dorsal/ventral fields on `Radiation`/`Insulation`/`Absorptivity`
+parameters, `ventral_fraction`, `mean_skin_temperature.jl`) —
+roughly half the `insulated/` directory exists to service the split.
 
 ---
 
@@ -388,31 +364,13 @@ the abstract types, but never calls heavy geometric functions in hot paths.
 physics with dorsal/ventral bookkeeping; renaming makes clear that it is
 strictly a *single part* primitive.)
 
-Family dispatch in `HeatExchange`:
-
-```julia
-nusselt_free(::AbstractCylindrical, rayleigh_number, prandtl_number) = ...  # McAdams
-nusselt_free(::AbstractSpherical,   rayleigh_number, prandtl_number) = ...
-nusselt_free(::AbstractEllipsoidal, rayleigh_number, prandtl_number) = ...
-nusselt_free(::AbstractSlab,        rayleigh_number, prandtl_number) = ...  # Gates plate
-
-surface_temperature(::AbstractCylindrical, radius,         heat_per_volume, conductivity) =
-    heat_per_volume * radius^2 / (4 * conductivity)
-surface_temperature(::AbstractSpherical,   radius,         heat_per_volume, conductivity) =
-    heat_per_volume * radius^2 / (6 * conductivity)
-surface_temperature(::AbstractSlab,        half_thickness, heat_per_volume, conductivity) =
-    heat_per_volume * half_thickness^2 / (2 * conductivity)
-surface_temperature(::AbstractEllipsoidal, semi_axes,      heat_per_volume, conductivity) =
-    ...                                                    # exact three-axis formula
-
-insulation_conductance(::Naked, args...)                     = zero(...)
-insulation_conductance(::AbstractFibrous, args...)           = ...  # fur, feathers, hair
-insulation_conductance(::AbstractLayer,   args...)           = ...  # fat, muscle
-insulation_conductance(c::CompositeInsulation, args...)      = sum(insulation_conductance, c.layers)
-```
-
-Adding a new concrete shape or insulation is a one-liner in
-`BiophysicalGeometry`. Physics works automatically via family dispatch.
+Family dispatch in `HeatExchange` — `nusselt_free`,
+`surface_temperature`, `insulation_conductance` each get one method per
+family abstract (`AbstractCylindrical`, `AbstractSpherical`,
+`AbstractEllipsoidal`, `AbstractSlab`; `Naked`, `AbstractFibrous`,
+`AbstractLayer`, `CompositeInsulation`). Adding a new concrete shape or
+insulation is a one-liner in `BiophysicalGeometry`; physics works
+automatically via `<:` dispatch.
 
 ### 3.7 NLP interface + strategy dispatch
 
@@ -514,428 +472,177 @@ nlp_template(problem) =
                            pant                    = 1.0))
 ```
 
-The whole pack / unpack toolkit is three `Flatten` calls, mirroring
-`DEBTOOL_J`'s `to_vec` / `to_obj`:
+Pack/unpack is three `Flatten` calls mirroring `DEBTOOL_J`'s `to_vec` /
+`to_obj`: `unpack(template, x) = Flatten.reconstruct(template, x,
+Number)` (Float64 → Unitful, per-field convert via
+`typeof(template_leaf)`); `pack(obj) = SVector(map(ustrip,
+Flatten.flatten(obj, Number)))` (Unitful → Float64); `initial(template)
+= pack(template)`.
+
+**The NLP API in `HeatExchange`** (no JuMP / optimizer / `Optimization.jl`
+dep; one new dep: `Flatten`):
 
 ```julia
-# Float64 vector (optimizer world) → NamedTuple of Unitful quantities
-unpack(template, x) = Flatten.reconstruct(template, x, Number)
-                      # per-field convert via typeof(template_leaf),
-                      # attaching units back on
-
-# NamedTuple of Unitful quantities → Float64 vector
-pack(obj)           = SVector(map(ustrip, Flatten.flatten(obj, Number)))
-
-# template itself → initial Float64 decision vector
-initial(template)   = pack(template)
+nlp_template(problem::HeatBalanceProblem)  -> NamedTuple
+nlp_pack(problem::HeatBalanceProblem)      -> PackedNLP{Problem, Template, Workspace}
+nlp_residuals!(residuals, packed, x)       -> residuals
+nlp_variable_bounds(problem, limits)       -> (lower_template, upper_template)
+nlp_assemble_output(packed, x)             -> Solution
 ```
 
-**The NLP API in `HeatExchange`** (no JuMP dep, no optimizer dep, no
-`Optimization.jl` dep; one new dep: `Flatten`):
+`nlp_residuals!` is the only hot function. It calls
+`Flatten.reconstruct` once at the top (Float64 → Unitful), runs
+`solve_part_heat_balance` per part, and `ustrip`s each residual as it's
+written. Same physics primitives (`solve_part_heat_balance`,
+`contribution_to_conductance_matrix`, `contribution_to_heat_load`) as
+the iterative solver — **zero physics duplication** between paths.
+
+**Strategy dispatch — layered on the SciML stack.** Because
+Optimization.jl already implements `CommonSolve`, an NLP
+thermoregulation solve is *already* a `solve(::OptimizationProblem)`
+call. `BiophysicalBehaviour` owns the driver:
 
 ```julia
-nlp_template(problem::HeatBalanceProblem) -> NamedTuple
-
-nlp_pack(problem::HeatBalanceProblem) -> PackedNLP{Problem, Template, Workspace}
-    # bundles problem + template + any per-solve constant physics scalars
-
-nlp_residuals!(residuals::AbstractVector,
-               packed::PackedNLP,
-               decision_variables::AbstractVector) -> residuals
-
-nlp_variable_bounds(problem::HeatBalanceProblem, limits) ->
-    (lower_template, upper_template)
-    # two NamedTuples with the same shape as `nlp_template(problem)`;
-    # flatten each to a Vector{Float64} via the same `pack` path
-
-nlp_assemble_output(packed::PackedNLP, decision_variables) -> Solution
-```
-
-`nlp_residuals!` is the only hot function. Structure:
-
-```julia
-function nlp_residuals!(residuals, packed, x)
-    obj = Flatten.reconstruct(packed.template, x, Number)   # Unitful, nested
-    part_results = map(part -> solve_part_heat_balance(packed.problem, part,
-                                                       obj.parts[part], obj),
-                       keys(obj.parts))
-    fill_compartment_residuals!(residuals, packed, obj, part_results)
-    fill_whole_organism_residuals!(residuals, packed, obj, part_results)
-    return residuals
-end
-```
-
-One `Flatten.reconstruct` at the top (Float64 → Unitful), `ustrip` on each
-residual as it's written to `residuals`. The optimizer never sees a Unitful
-quantity. Same `solve_part_heat_balance` and
-`contribution_to_conductance_matrix` / `contribution_to_heat_load` methods
-as the iterative solver — **zero physics duplication** between paths.
-
-**Adding a part, compartment, or per-part decision variable is a one-line
-change to the template.** Residual counts and variable counts fall out of
-the template shape. Bounds and objective-weight tables use the same
-template pattern (parallel `NamedTuple`s of matching shape), so a new
-decision variable adds one field in three places (template, lower-bound
-template, upper-bound template) rather than N places across an indexed
-layout table.
-
-**Strategy dispatch — layered on the SciML stack.** Because Optimization.jl
-already implements `CommonSolve`, an NLP thermoregulation solve is *already*
-a `solve(::OptimizationProblem)` call. We stay on the same rails:
-
-```julia
-# HeatExchange stays free of Optimization.jl / Ipopt. It only exposes:
-nlp_template(problem)                     -> NamedTuple    # Flatten-backed layout
-nlp_pack(problem)                         -> PackedNLP
-nlp_residuals!(residuals, packed, x)      -> residuals
-nlp_variable_bounds(problem, limits)      -> (lower_template, upper_template)
-nlp_assemble_output(packed, x)            -> Solution
-
-# BiophysicalBehaviour owns policy and the driver:
 struct IPOPTControl{Objective, Options} <: AbstractControlStrategy
     objective::Objective   # penalty weights, targets, ranges
     options::Options       # Ipopt options (tol, max_iter, hessian_approximation, ...)
 end
-
-# thermoregulate on IPOPTControl builds an OptimizationProblem from the
-# HeatBalanceProblem + IPOPTControl, then calls SciMLBase.solve:
-function thermoregulate(::IPOPTControl, organism, environment, ...)
-    heat_balance_problem = HeatBalanceProblem(from_organism(organism), environment, ...)
-    packed = HeatExchange.nlp_pack(heat_balance_problem)
-    template = HeatExchange.nlp_template(heat_balance_problem)
-    lower_template, upper_template =
-        HeatExchange.nlp_variable_bounds(heat_balance_problem, limits)
-
-    # Flatten the three parallel NamedTuples to Float64 vectors — same code path.
-    lower = collect(map(ustrip, Flatten.flatten(lower_template, Number)))
-    upper = collect(map(ustrip, Flatten.flatten(upper_template, Number)))
-    x0    = collect(map(ustrip, Flatten.flatten(template,       Number)))
-
-    optimization_function = OptimizationFunction(
-        (x, p) -> _objective(x, control.objective, template),
-        SciMLBase.NoAD();
-        cons = (r, x, p) -> _residuals!(r, x, packed, control),
-        grad = _grad!, hess = _hess!, cons_j = _cons_j!, cons_h = _cons_h!,
-    )
-    optimization_problem = OptimizationProblem(
-        optimization_function, x0;
-        lb = lower, ub = upper,
-        lcons = equality_and_inequality_lower_bounds,
-        ucons = equality_and_inequality_upper_bounds,
-    )
-    SciMLBase.solve(optimization_problem, IpoptOptimizer(; control.options...))
-end
 ```
 
-For the iterative path, `RuleBasedSequentialControl` continues to drive the
-`HeatBalanceSolver{IterativeStrategy}` from section 3.6.
+`thermoregulate(::IPOPTControl, organism, environment, ...)` builds a
+`HeatBalanceProblem`, calls `HeatExchange.nlp_pack` /
+`nlp_variable_bounds`, flattens the templates to `Vector{Float64}` (same
+`pack` path used everywhere), wraps into an `OptimizationFunction` +
+`OptimizationProblem`, and calls `SciMLBase.solve(_, IpoptOptimizer(;
+control.options...))`. `RuleBasedSequentialControl` continues to drive
+the `HeatBalanceSolver{IterativeStrategy}` from 3.6.
 
-**Package layout:**
-
-- `HeatExchange` — no `Optimization.jl` dep, no `OptimizationIpopt` dep.
-  Just the physics primitives.
-- `BiophysicalBehaviour` — depends directly on `Optimization.jl` and
-  `SciMLBase` (control-strategy driver machinery). `OptimizationIpopt` and
-  `Ipopt` can be direct deps or moved behind a package extension
-  (`ext/BiophysicalBehaviourIpoptExt.jl` loaded when `OptimizationIpopt` is
-  present) so that users who only want the rule-based path don't have to
-  build Ipopt. The extension only defines
-  `thermoregulate(::IPOPTControl, ...)`; every other type and function is
-  in the main module.
-- Alternative optimisers (KNITRO, MadNLP, Percival) plug in the same way —
-  each is a separate extension that adds another `::AbstractControlStrategy`
-  method or reuses `IPOPTControl` with a different optimiser factory.
+**Package layout:** `HeatExchange` has no `Optimization.jl` /
+`OptimizationIpopt` dep. `BiophysicalBehaviour` depends on
+`Optimization.jl` + `SciMLBase`; `OptimizationIpopt` + `Ipopt` sit in
+`ext/BiophysicalBehaviourIpoptExt.jl` (loaded when `OptimizationIpopt`
+is present) so users of the rule-based path don't have to build Ipopt.
+Alternative optimisers (KNITRO, MadNLP, Percival) plug in as sibling
+extensions.
 
 **`AbstractControlStrategy` maps to solver machinery:**
-
-- `RuleBasedSequentialControl` → rebuild `HeatBalanceProblem` after each
-  effector via `reinit!`, `solve!` on the `IterativeStrategy`
-  `HeatBalanceSolver` from section 3.6.
-- `IPOPTControl{Objective, Options}` → build `HeatBalanceProblem` once,
-  build an `OptimizationProblem` via `HeatExchange`'s NLP interface, call
-  `SciMLBase.solve` with `IpoptOptimizer`.
-- `PDEControl` (future) → another strategy, same rails.
-
-All three share the `HeatBalanceProblem` and the per-part
-`solve_part_heat_balance` primitive. No forked effector code path.
+`RuleBasedSequentialControl` → `reinit!` / `solve!` on the iterative
+`HeatBalanceSolver`. `IPOPTControl` → `OptimizationProblem` via the NLP
+API + `SciMLBase.solve` with `IpoptOptimizer`. `PDEControl` (future) →
+another strategy, same rails. All share the `HeatBalanceProblem` and
+per-part `solve_part_heat_balance` primitive — no forked effector code
+path.
 
 **Coefficient plumbing — one home per fact, walked at solve time.**
-
-The scaling concern is real: today's `_run_ipopt` reads
-`limits.insulation.dorsal.reference` — a piloerection range stored on
-`ThermoregulationLimits`, *parallel to and disconnected from* the
-actual insulation on the body at `organism.body.insulation.dorsal`.
-That's two homes for one fact. For one shape it's tolerable
-duplication; for N parts it would force the user to author N per-part
-limits entries kept in lock-step with N per-part insulation entries.
-That doesn't scale.
-
-The refactor eliminates the parallelism by moving each per-part fact
-to exactly one home — the part itself — and keeping only genuinely
-whole-organism knobs on `ThermoregulationLimits`. Template builders
-walk the organism at solve time; the user authors nothing that lives
-in more than one place.
+Today's `_run_ipopt` reads `limits.insulation.dorsal.reference` — a
+piloerection range stored on `ThermoregulationLimits`, parallel to
+`organism.body.insulation.dorsal`. Two homes for one fact; tolerable
+for one shape, unmaintainable for N parts. The refactor moves every
+per-part fact to a single home — the part itself — and template
+builders walk the organism at solve time.
 
 *Where each fact lives:*
 
-| Fact | Home | Notes |
-|---|---|---|
-| Insulation properties (depth, conductivity, ...) | `part.physiology.insulation` | already there today |
-| Insulation piloerection range (min / ref / max depth) | `part.physiology.insulation_limits` | co-located with the insulation |
-| Skin wetness range | `part.physiology.skin_wetness_range` | per part; typically zero for parts without sweat glands |
-| Panting capacity | `part.physiology.panting_capacity` | zero for non-lung parts (auto-derived from `lung_part` in 3.9) |
-| Flesh conductivity range | `part.physiology.flesh_conductivity_limits` | co-located with conductivity |
-| Aspect-ratio bounds | dispatched on `part.shape` | `aspect_ratio_bounds(::Sphere) = (1,1)`; no user input |
-| Whole-organism setpoint, Q10, minimum heat flow | `ThermoregulationLimits` (scalar) | same as today |
-| Whole-organism penalty weights | `ThermoregulationLimits` (scalar; opt-in NamedTuple override) | same as today for uniform case |
-| Skin-temperature slack constants, heat-flow multiplier, range guard | `ThermoregulationLimits` (scalar) | replaces inline magic numbers (table below) |
+| Fact | Home |
+|---|---|
+| Insulation properties, piloerection range | `part.physiology.insulation`, `.insulation_limits` |
+| Skin wetness range, flesh conductivity range | `part.physiology.skin_wetness_range`, `.flesh_conductivity_limits` |
+| Panting capacity | `part.physiology.panting_capacity` (zero on non-lung parts; auto-derived from `lung_part`) |
+| Aspect-ratio bounds | `aspect_ratio_bounds(part.shape, limits)` dispatch (`::Sphere` returns `(1,1)`); no user input |
+| Setpoint, Q10, minimum heat flow, penalty weights, magic-number replacements | `ThermoregulationLimits` (scalars — same as today) |
 
-Per-part physiology already becomes a `NamedTuple` keyed by part name in
-Phase 4; this section extends each entry to carry its own limits
-alongside its physiology. **For the common case (uniform tuning across
-parts) the user surface is exactly what it is today** — a handful of
-scalar fields on `ThermoregulationLimits`, plus the per-part physiology
-structs the user already writes to define the organism.
+For the common case (uniform tuning across parts) the user surface is
+exactly what it is today — scalar fields on `ThermoregulationLimits`
+plus the per-part physiology the user already writes.
 
-*Per-part variation is opt-in.* Anywhere a scalar sits on
-`ThermoregulationLimits`, swapping it for a `NamedTuple{PartNames}`
-gives per-part control:
+Per-part variation is opt-in: any scalar penalty field on
+`ThermoregulationLimits` accepts either `Float64` (broadcast to every
+leaf) or a `NamedTuple{PartNames}` (per-part override). A `weight_for(w,
+part)` helper handles both forms.
 
-```julia
-# uniform (default):
-ThermoregulationLimits(skin_wetness_penalty = 1.0, ...)
-
-# per-part (opt-in):
-ThermoregulationLimits(skin_wetness_penalty =
-    (head = 0.0, torso_dorsal = 1.0, torso_ventral = 5.0,
-     leg_fl = 2.0, leg_fr = 2.0, leg_bl = 2.0, leg_br = 2.0), ...)
-```
-
-The template builder honours whichever form was given — same code path.
-
-*Template builders walk the parts; the user writes none of them.*
 `nlp_template`, `nlp_variable_bounds`, and `nlp_objective_templates`
-each iterate `problem.body.parts` and derive their `NamedTuple` output
-from the part's own physiology plus whole-organism limits:
+iterate `problem.body.parts` and derive their `NamedTuple` outputs from
+per-part physiology plus whole-organism scalars — the user writes none
+of them. The objective is one generic reduction: `sum over leaves of
+w · ((x − ref) / range)²`, plus a possibly-empty list of pairwise
+`cross_penalty(kind, obj)` terms (today's `gradient_penalty` reduces to
+a `CoreSkinGradient{part, compartment}` entry). Ranges auto-derive from
+bounds as `upper − lower`, guarded by `minimum_normalisation_range`.
 
-```julia
-function nlp_variable_bounds(problem, limits)
-    parts_lower = map(problem.body.parts, problem.body.parts_physiology) do part, physiology
-        skin_low, skin_high = skin_temperature_bounds(part, problem.environment, limits)
-        (; skin_temperature       = skin_low,
-           insulation_temperature = skin_low,
-           insulation_depth       = physiology.insulation_limits.reference,  # <- from part
-           skin_wetness           = physiology.skin_wetness_range.reference, # <- from part
-           aspect_ratio           = aspect_ratio_bounds(part.shape, limits)[1])
-    end
-    ...
-end
+*Magic numbers move to named `ThermoregulationLimits` fields:*
 
-function nlp_objective_templates(problem, limits)
-    parts_weights = map(problem.body.parts) do part
-        (; skin_wetness = weight_for(limits.skin_wetness_penalty, nameof(part)),
-           ...)
-    end
-    ...
-end
-
-weight_for(w::Real, _)             = w                          # broadcast scalar
-weight_for(w::NamedTuple, part)    = w[part]                    # honour per-part override
-```
-
-One code path per template, all parts handled uniformly. Adding a part
-adds no new user surface — its physiology carries everything the
-builders need. Adding a per-part penalty override is a scalar →
-`NamedTuple` swap on one field.
-
-*The resulting objective is one generic reduction over leaves:*
-
-```julia
-function _leaf_objective(x, template, weights, references, ranges)
-    xs  = Flatten.flatten(Flatten.reconstruct(template, x, Number), Number)
-    ws  = Flatten.flatten(weights,    Number)
-    rs  = Flatten.flatten(references, Number)
-    ns  = Flatten.flatten(ranges,     Number)
-    sum(w * ((ustrip(x) - ustrip(r)) / ustrip(n))^2
-        for (w, x, r, n) in zip(ws, xs, rs, ns))
-end
-```
-
-Every current objective term reduces to one leaf weight —
-`core_temperature_penalty` → `weights.compartments[c].core_temperature`,
-`panting_penalty` → `weights.whole_organism.pant`, etc. On a 1-part
-organism the scalar broadcasting produces numerically identical
-objectives to the current branch.
-
-*Cross-part / cross-compartment penalties.* The current
-`gradient_penalty` term reads two leaves (`core - skin`) against a
-target — pairwise, not per-leaf. Under multi-part, "core – skin" for
-which pair? A small explicit list on `IPOPTControl.objective`:
-
-```julia
-struct CoreSkinGradient{PartName, CompartmentName, Weight, Target, Range}
-    part::PartName; compartment::CompartmentName
-    weight::Weight; target::Target; range::Range
-end
-```
-
-Objective sums leaf terms plus `cross_penalty(kind, obj) -> Float64`
-per entry. Empty list → pure sum-over-leaves objective. New cross-term
-physics (per-limb balance, brain-core gradient once selective brain
-cooling lands) is a new struct + method, not a rewrite.
-
-*Shape-derivable bounds go via per-shape dispatch — no `isa` branches
-and no user input:*
-
-```julia
-aspect_ratio_bounds(::Sphere,              limits) = (1.0, 1.0)   # frozen
-aspect_ratio_bounds(::AbstractCylindrical, limits) =
-    (Float64(limits.aspect_ratio_factor.reference),
-     Float64(limits.aspect_ratio_factor.max))
-
-skin_temperature_bounds(part, environment, limits) =
-    (min(environment.air_temperature,
-         environment.sky_temperature,
-         environment.ground_temperature) - limits.skin_temperature_undershoot,
-     limits.core_temperature.max + limits.skin_temperature_core_overshoot)
-```
-
-A new shape family adds one `aspect_ratio_bounds` method; no other
-touchpoint.
-
-*Magic numbers move to named `ThermoregulationLimits` fields* —
-tunable, discoverable, unitful, still whole-organism scalar:
-
-| Current inline value | New named field on `ThermoregulationLimits` |
+| Current inline value | New field |
 |---|---|
 | `air_temperature - 5.0` | `skin_temperature_undershoot::Temperature = 5.0u"K"` (subtracted from the *coldest* radiant boundary — air, sky, or ground) |
 | `core_temperature_max + 5.0` | `skin_temperature_core_overshoot::Temperature = 5.0u"K"` |
-| `heat_flow_min_W * 20.0` | `metabolic_heat_flow_max_multiplier::Float64 = 20.0` (or a `maximum_heat_flow::Power` field on the lung part's physiology) |
-| `panting_rate_min = 1.0` | already the reference on the lung part's `panting_capacity`; expose explicitly |
-| `max(_, 1e-6)` guards | `minimum_normalisation_range::Float64 = 1e-6` (single field; applied inside the auto-derivation of `normalisation_ranges_template` from bounds) |
+| `heat_flow_min_W * 20.0` | `metabolic_heat_flow_max_multiplier::Float64 = 20.0` |
+| `max(_, 1e-6)` guards | `minimum_normalisation_range::Float64 = 1e-6` |
 
-*Initial values via a helper; warm-start via template reuse.* The
-inline `insulation_depth_max` / `aspect_ratio_min` heuristics move to
-`default_initial_template(problem, environment, limits) -> NamedTuple`,
-which fills each per-part leaf from a small set of principled rules
-(cold environment → erected fur & curled posture; hot → the opposite)
-by consulting each part's own physiology limits. Warm-starting across
-effector iterations or across time steps is trivial: the previous
-solve's assembled output *is* a `NamedTuple` of the same shape, so
-`initial_template = previous_solution` — no repacking.
+The `insulation_depth_max` / `aspect_ratio_min` initial heuristics move
+to `default_initial_template(problem, environment, limits)`, which
+consults each part's own physiology. Warm-starting is trivial: the
+previous solve's output *is* a `NamedTuple` of the same shape, so
+`initial_template = previous_solution`.
 
-*Consolidation with Phase 8's deletion pass.* Today's
-`limits.insulation.dorsal` and `body.insulation.dorsal` — two homes for
-one fact — both fold into `part.physiology.insulation_limits` on a
-single `torso_dorsal` part; the `.dorsal` / `.ventral` field indirection
-disappears with the rest of the dorsal/ventral machinery in Phase 8.
-
-*Q10 constraint* stays a single whole-organism inequality; the residual
-reads two named leaves off the reconstructed template — no index
-arithmetic — and tracks whichever part hosts the lung via `lung_part`
-from 3.9:
-
-```julia
-q10_residual(obj, limits, lung_part) =
-    exp(obj.whole_organism.log_metabolic_heat_flow) -
-    limits.minimum_heat_flow *
-        limits.q10 ^ ((obj.compartments[compartment_of(lung_part)].core_temperature
-                       - limits.setpoint_temperature) / 10u"K")
-```
+The Q10 constraint stays a single whole-organism inequality reading two
+named leaves off the reconstructed template — no index arithmetic — and
+tracks whichever part hosts the lung via `lung_part` from 3.9.
 
 ### 3.8 State schema (per-part, DEBTOOL_J-style)
 
-Follow `DEBTOOL_J`'s pattern: nested `NamedTuple` template fixed at the
-organism type level, generated function that guarantees compile-time shape.
-
-```julia
-@generated function initialise_state(::Type{O}) where {O<:Organism}
-    ...  # derives keys from body.parts NamedTuple type
-    quote
-        (; parts = NamedTuple{$partnames}(map(_ -> _part_state_template(), $partnames)),
-           compartments = NamedTuple{$compartmentnames}(...))
-    end
-end
-```
-
-Per-part state is `(; skin_temperature, insulation_temperature)`. Compartment
-state is `(; core_temperature)`. State flows through the outer loop as an
+State follows `DEBTOOL_J`'s pattern — nested `NamedTuple` template fixed at
+the organism type level, produced by a generated `initialise_state`. Per-part
+state is `(; skin_temperature, insulation_temperature)`; compartment state
+is `(; core_temperature)`. State flows through the outer loop as an
 immutable `NamedTuple`. For future DiffEq / ForwardDiff paths, a
-`StateReconstructor`-style wrapper (borrowed from `DEBTOOL_J`'s
-`src/animals/ode/utils.jl`) flattens to `SVector` and rebuilds on demand — not
-needed immediately but the schema makes it easy.
+`StateReconstructor`-style wrapper (`DEBTOOL_J/src/animals/ode/utils.jl`)
+flattens to `SVector` and rebuilds on demand — not needed immediately.
 
 ### 3.9 Lung-part identification
 
-Respiratory heat and mass exchange happens primarily at the **lung surface**,
-which sits in the torso — not in the head. The head hosts the airway opening
-(nares/mouth) but is not where alveolar gas exchange, air warming, or the bulk
-of respiratory water loss occur. `HomoTherm.R` gets this right — it computes
-lung temperature from `parts[[2]]` (the trunk, in a `TLUNG` variable) and
-disables respiration on all other parts (`RESPIRE = 0` in the per-part `endoR`
-loop).
+Respiratory heat and mass exchange happens primarily at the **lung
+surface**, which sits in the torso (not the head — the head hosts the
+airway opening but not alveolar gas exchange). `HomoTherm.R` gets this
+right: it computes `TLUNG` from `parts[[2]]` and sets `RESPIRE = 0` on
+all other parts.
 
-Add to `OrganismTraits`:
-
-```julia
-lung_part::Symbol   # e.g. :torso, or :body for single-part organisms
-```
-
-Semantics:
-- `lung_temperature` is derived from `lung_part`'s `core_temperature` via the
-  appropriate closed-form conduction (part shape + interior geometry).
-- The `Pant` effector's default selector becomes `ByName{(lung_part,)}`.
-  Panting increases respiratory rate, which increases evaporative flux at the
-  lung surface — attributed to `lung_part`.
-- Respiratory evaporative heat loss is subtracted from `lung_part`'s energy
-  balance, not spread across the body.
-- Metabolic O₂ / CO₂ exchange is attributed to `lung_part`.
-- For single-`Body` (1-part) organisms, `lung_part = :body` matches the sole
-  part name and everything degenerates cleanly.
-
-**Separate from lung site:** the *nasal* passages (in the head) also
-contribute a smaller share of heat/water exchange via nasal countercurrent
-recovery, and are the anatomical basis for selective brain cooling (see
-section 8.4 — selective brain cooling uses nasal-vein evaporative cooling to
-chill arterial blood bound for the brain). A `nasal_part::Symbol` field is
-deliberately deferred until 8.4 lands; nothing in the current refactor needs
-it.
-
-Add `lung_part` in Phase 4 alongside per-part physiology.
+Add `OrganismTraits.lung_part::Symbol` (e.g. `:torso`, or `:body` for
+single-part organisms). Semantics: `lung_temperature` derives from
+`lung_part`'s `core_temperature`; `Pant`'s default selector becomes
+`ByName{(lung_part,)}`; respiratory evaporative heat loss is subtracted
+from `lung_part`'s energy balance; metabolic O₂/CO₂ exchange is
+attributed to `lung_part`. Single-`Body` organisms default to the sole
+part name and degenerate cleanly. Nasal passages are a separate site
+(deferred with `nasal_part` to §8.4). Add `lung_part` in Phase 4.
 
 ### 3.10 Effector + selector interface
 
-Selectors let a behavior target the whole body, a subset, or a single part.
-`WholeBody()` degenerates to the current single-body API.
+Selectors let a behavior target the whole body, a subset, or a single
+part. `WholeBody()` degenerates to the current single-body API.
 
 ```julia
 abstract type PartSelector end
-struct WholeBody           <: PartSelector end
-struct ByName{Names}       <: PartSelector end
-struct Compartment{Name}   <: PartSelector end     # for e.g. Vasodilate / Hyperthermia
+struct WholeBody         <: PartSelector end
+struct ByName{Names}     <: PartSelector end
+struct Compartment{Name} <: PartSelector end     # Vasodilate / Hyperthermia
 
-# Effectors as small dispatch tags:
 abstract type Effector end
-struct Piloerect    <: Effector end
-struct Uncurl       <: Effector end
-struct Vasodilate   <: Effector end
+struct Piloerect <: Effector end
+struct Uncurl <: Effector end
+struct Vasodilate <: Effector end
 struct Hyperthermia <: Effector end
-struct Pant         <: Effector end
-struct Sweat        <: Effector end
+struct Pant <: Effector end
+struct Sweat <: Effector end
 
 effect(op, selector, organism, limits) -> (new_limits, new_organism)
-apply(op, part, part_limits)           -> (new_part, new_part_limits)   # per-part atom
+apply(op, part, part_limits)           -> (new_part, new_part_limits)
 
-# Existing scalar API kept:
 piloerect(organism, limits) = effect(Piloerect(), WholeBody(), organism, limits)
 ```
 
-Effector scope by anatomy:
-- `Piloerect`, `Uncurl`, `Sweat` → per-part (each part has its own fur / shape /
-  sweat glands).
-- `Vasodilate`, `Hyperthermia` → per-compartment (perfusion and core
-  temperature live at the compartment level, not the part level).
-- `Pant` → per-part where anatomically real — routed to `lung_part` by default.
+Scope: `Piloerect` / `Uncurl` / `Sweat` are per-part; `Vasodilate` /
+`Hyperthermia` are per-compartment; `Pant` is routed to `lung_part` by
+default.
 
 ---
 
@@ -1343,243 +1050,37 @@ Beyond per-phase exits:
   document the translation recipe (`ventral_fraction = x` ≡ two
   `HalfCylinder` parts with mass fractions `x` / `1 − x` joined by
   `SharedCore`) but do not provide shims.
-- `ModelParameters.Param` wrapping — not adopted. Use `Flatten` /
-  `ConstructionBase` / `Setfield` directly (already in the dep tree).
 - The four extensions in section 8 — see below.
 
 ## 8. Future extensions (design must not preclude)
 
-Four physical extensions we know we will need eventually. Not built in this
-refactor, but the architecture must accommodate them without a redesign. Each
-subsection sketches the interface so today's decisions don't paint us into a
-corner.
+Four extensions we know we'll need eventually. Not built here; each one lists
+the aspect of today's design that must stay open so a future add-on doesn't
+force a rewrite.
 
-### 8.1 Concentric layered shapes
+- **8.1 Concentric layered shapes** (`LayeredShape{Shape}`, e.g. brain → CSF
+  → skull → skin). Requires: per-part state schema extensible from
+  `(skin_temperature, insulation_temperature)` to include
+  `layer_temperatures::NTuple{NumLayers}`; compartment graph nodes at
+  layer-granularity, not part-granularity (union-find over nodes, not parts —
+  Phase 7).
+- **8.2 Part-to-part view factors** (leg occludes belly's view of sky).
+  Requires: Tier 2 radiation cache with room for a per-part incoming-IR
+  vector; compartment solve extensible from block-diagonal (independent
+  parts) to a full linear system so cross-part radiation off-diagonals can
+  be added.
+- **8.3 Local convection per part** (leeward parts see less wind).
+  Requires: Tier 2 cache accepts an extra per-part `flow_factor` scalar
+  (default 1.0). No structural change.
+- **8.4 Selective brain cooling** (nasal countercurrent + carotid rete).
+  Requires: `HeatCoupling` hierarchy open to new subtypes via
+  `contribution_to_conductance_matrix` /
+  `contribution_to_heat_load` methods (so `BloodPerfusionCoupling` is a
+  new method, not a rewrite); `lung_part` from 3.9 in place so nasal /
+  pulmonary flux can be distinguished when a future `nasal_part` lands.
 
-**Motivation:** Head as brain → cerebrospinal fluid → skull → skin. Torso as
-lung → ribcage → muscle → fat → skin. `HomoTherm.R` already handles two
-layers (fat + flesh) inside one part; we want arbitrary radial layering.
-
-**Sketch:**
-
-```julia
-struct LayeredShape{Shape<:AbstractShape, NumLayers, Boundaries, Conductivities}
-        <: AbstractShape
-    outer::Shape                            # outermost shape, defines family for dispatch
-    boundaries::Boundaries                  # NTuple{NumLayers-1} of inner boundary radii
-                                            # (or fractions)
-    conductivities::Conductivities          # NTuple{NumLayers} of per-layer conductivity values
-end
-```
-
-`LayeredShape{Shape}` inherits `Shape`'s family supertype
-(`LayeredShape{Cylinder} <: AbstractCylindrical` etc.) via explicit type
-parameter constraint, so `HeatExchange`'s family dispatch still works — just
-with additional per-shell conduction calculations for the same shape family.
-Cylinder, sphere, and ellipsoid all have closed-form radial conduction.
-
-**Impact on today's design:**
-- Per-part state schema must be extensible from
-  `(; skin_temperature, insulation_temperature)` to
-  `(; skin_temperature, insulation_temperature,
-      layer_temperatures::NTuple{NumLayers})`. Design `initialise_state` to
-  derive shape from the part's shape type, so a `LayeredShape` naturally
-  contributes extra state slots.
-- Compartment graph nodes are today "one per part core"; must allow
-  "`NumLayers` per part" (one per shell). Union-find groups nodes, not parts.
-  Design accordingly from Phase 7.
-
-### 8.2 Part-to-part view factors
-
-**Motivation:** A leg partially occludes the belly's view of the sky; the
-belly radiates infrared to the leg above the leg's `skin_temperature`.
-Ignoring this mis-attributes ~10-20% of infrared exchange in animals with
-limbs close to the body or in curled postures.
-
-**Sketch:**
-
-```julia
-struct ViewFactors{NumParts, ElementType}
-    parts::SMatrix{NumParts, NumParts, ElementType}   # entry [i, j]: fraction of
-                                                      # part i's outgoing infrared
-                                                      # reaching part j
-    sky::SVector{NumParts, ElementType}               # view_factor_to_sky[i]
-    ground::SVector{NumParts, ElementType}            # view_factor_to_ground[i]
-end
-```
-
-Constraints per part: sum of outgoing view factors (to all other parts, to
-sky, to ground) equals one. Reciprocity:
-`area_i * view_factor_i_to_j == area_j * view_factor_j_to_i`.
-
-Computation: precomputed at organism-construction. Analytical formulas for
-simple pairs (disc-disc, parallel-cylinders); ray-cast / hemicube on the
-composite geometry for the general case, reusing the rasterization
-infrastructure that already backs `silhouette_rasterized`. Belongs in
-`BiophysicalGeometry` — same layer as silhouette.
-
-Default until this ships: `parts` matrix is zero; sky + ground sum to one per
-part (today's model).
-
-**Impact on today's design:**
-- The Tier 2 radiation cache must have room for a per-part
-  `incoming_infrared_from_parts` vector or an incoming-radiation pre-sum. Add
-  as an optional field now (empty in the no-inter-part-radiation case) so
-  consumers can already look for it.
-- Introduces cross-part coupling in the outer loop: part `i`'s
-  `environmental_heat` depends on part `j`'s `skin_temperature`. Either
-  linearize (add off-diagonal terms to the compartment system) or iterate.
-  Design the compartment solve to be extensible from block-diagonal
-  (independent parts) to full linear system.
-
-### 8.3 Local convection per part
-
-**Motivation:** Wind is not uniform across the body. Leeward parts see less
-convection; the dog's legs shelter the belly from horizontal wind. Effect
-scales with the wind field's directional coherence and posture.
-
-**Sketch:**
-
-```julia
-struct FlowOcclusion{NumParts, ElementType}
-    per_part::SVector{NumParts, ElementType}   # multiplier on incident wind speed, 0..1
-end
-```
-
-Precomputed per (posture, wind direction) — same cadence as posture-dependent
-radiation cache. Each part's Nusselt-number calculation uses
-`local_wind = ambient_wind * occlusion_factor[part]`. Behavioral effectors
-(`TurnToWind`, `FaceHeadIntoWind`) invalidate this cache the same way `Roll`
-invalidates the radiation cache.
-
-**Impact on today's design:**
-- Tier 2 cache design already accommodates per-part scalars keyed by part
-  name. Add `flow_factor` as a Tier 2 entry (default 1.0 per part until
-  computed). No structural change; just an extra field.
-
-### 8.4 Selective brain cooling
-
-**Motivation:** Ungulates, canids, felids, some birds. Nasal evaporation
-cools venous return blood; carotid rete transfers cool from vein to artery
-bound for the brain; brain temperature stays below core during heat stress.
-
-**Sketch:**
-
-Represent brain as either a distinct part (`parts.brain = Body(Sphere(...),
-Naked())` inside the head) or as a layer inside a `LayeredShape` head. Couple
-to the body's arterial system with a new `HeatCoupling`:
-
-```julia
-struct BloodPerfusionCoupling{Effectiveness, EvaporationSource} <: HeatCoupling
-    rete_effectiveness::Effectiveness            # 0..1, may be effector-controlled
-    evaporation_source::EvaporationSource        # part hosting the cooling evaporation,
-                                                 # e.g. :head
-end
-```
-
-At compartment-solve time, `BloodPerfusionCoupling` contributes a modified
-row/column: the brain's `core_temperature` equals arterial core temperature
-minus `rete_effectiveness * evaporation_source_heat`. The evaporation-source
-heat is the *nasal* evaporative flux from a `nasal_part` (typically the head)
-— **not** the pulmonary flux from `lung_part` (section 3.9). Nasal
-countercurrent evaporation cools venous return specifically; alveolar
-evaporation cools mixed venous return via general circulation and does not
-contribute to selective brain cooling.
-
-Adds a companion `OrganismTraits.nasal_part::Symbol` at the same time.
-
-**Impact on today's design:**
-- The `HeatCoupling` abstraction in `HeatExchange` (section 3.3) must be open
-  to new types — `SharedCore`, `ConductiveCoupling`, `InsulatedJoin` today;
-  `BloodPerfusionCoupling` and other perfusion models later. `HeatBalanceSolver`
-  dispatches on coupling type when building `conductance_matrix` and
-  `heat_load_vector`. Keep the interface
-  `contribution_to_conductance_matrix` / `contribution_to_heat_load` for each
-  coupling type, so adding new physics is a new method, not a rewrite.
-- The `lung_part` tag from section 3.9 is a prerequisite for correct
-  respiration attribution. Build it now. `nasal_part` is deferred until this
-  extension.
-
----
-
-**Cross-cutting design principle for section 8:** the state schema,
-compartment graph, radiation cache, and coupling interface are all designed to
-be *additive* — extensions add new node types, new coupling types, new cache
-fields, without rewriting the outer loop. Every phase-8 exit criterion should
-be checked against "would this survive adding one of section 8's extensions?"
-
----
-
-## 9. Design notes worth preserving
-
-- **Cache lives on the organism** (not threaded as a separate argument). Kept
-  simple; consistent with the existing `@set organism.body = ...` pattern.
-- **Physics annotations (`HeatCoupling`) live in `HeatExchange`**, not on
-  `Join` in `BiophysicalGeometry` and not in `BiophysicalBehaviour`. Coupling
-  types are heat-physics concepts; `BiophysicalGeometry` stays pure geometry
-  (usable by aerodynamic / mechanical consumers); `BiophysicalBehaviour` only
-  *stores* couplings in `OrganismTraits.couplings` and forwards them into
-  `HeatBalanceProblem`.
-- **`HeatExchange` implements `CommonSolve`.** `solve` for one-shot users,
-  `init` / `reinit!` / `solve!` for `BiophysicalBehaviour`'s thermoregulation
-  control loop, which warm-starts across effector iterations. Same interface
-  the SciML ecosystem uses; no bespoke drive API.
-- **Iterative and NLP paths share physics.** The `IterativeStrategy`
-  (Picard + compartment `SMatrix` solve) and the `IPOPTControl` driver
-  (Optimization.jl + OptimizationIpopt.jl, in a `BiophysicalBehaviour`
-  extension) both consume the same `solve_part_heat_balance`,
-  `contribution_to_conductance_matrix`, and `contribution_to_heat_load`
-  primitives in `HeatExchange`. `HeatExchange` never depends on
-  `Optimization.jl`.
-- **Optimization.jl already implements `CommonSolve`.** No JuMP model to
-  persist, no bespoke driver — `IPOPTControl` composes with the SciML
-  stack directly.
-- **Preserve numerical invariants from the current IPOPT branch:** the
-  Float64 / Unitful boundary (now consolidated at the single
-  `Flatten.reconstruct` call inside `nlp_residuals!`), the
-  `log(metabolic_heat_flow)` transform (a `log_metabolic_heat_flow` leaf
-  on the template), the per-effector quadratic-penalty objective
-  normalised by `_range` values, and the single whole-organism Q10
-  inequality.
-- **NLP variable layout uses the DEBTOOL_J template pattern.** A nested
-  `NamedTuple` template with `Unitful` values expresses the entire
-  decision-variable structure; `Flatten.flatten` / `Flatten.reconstruct`
-  (as in `DEBTOOL_J`'s `StateReconstructor`,
-  `DEBTOOL_J/src/animals/ode/utils.jl:39`) do all pack / unpack work.
-  Adding a part, compartment, or per-part decision variable is a one-line
-  change to the template — no generated function, no compile-time
-  `VariableLayout{Names, Sizes, Ranges}` type, no per-formulation `_pack`
-  / `_unpack` helpers with hardcoded `effectors[i]` indices. Bounds and
-  objective weights follow the same template pattern, so a new variable
-  adds one field in each parallel table rather than N places across an
-  indexed layout.
-- **One home per fact — the user authors nothing per-part twice.**
-  Per-part information (insulation, insulation piloerection range,
-  skin wetness range, panting capacity, flesh-conductivity range) all
-  live inside each part's own physiology entry — the same struct that
-  owns the fur owns the piloerection range for that fur. Whole-organism
-  scalars (setpoint, Q10, penalty weights, the four magic-number
-  replacements) stay on `ThermoregulationLimits`, mostly identical to
-  today. Every "parallel template" the optimizer needs (bounds,
-  weights, references, ranges) is machine-derived by walking parts and
-  reading their own physiology plus the whole-organism scalars — the
-  user writes none of them. Per-part penalty variation is opt-in by
-  swapping a scalar field for a `NamedTuple{PartNames}` on that field.
-  For the common case (uniform tuning) the user surface is the same as
-  today; adding a part adds no new user surface. See 3.7 "Coefficient
-  plumbing" for the full mechanism.
-- **Family-abstract dispatch beats mapping tables.** Adding a shape is one
-  line in `BiophysicalGeometry`; physics works via `<:` automatically.
-- **`ventral_fraction` is a modelling assumption smuggled into a data
-  structure.** Replacement uses actual pose + silhouette. Small physics
-  upgrade, one real change to the radiation code.
-- **DEBTOOL_J's `foldl` over life stages** is the direct analogue for
-  `foldl_parts` over body parts. Same immutable-state discipline.
-- **Zero-allocation compartment solve is possible** because topology is
-  type-parameter-encoded and small —
-  `SMatrix{NumCompartments,NumCompartments} \ SVector{NumCompartments}` is
-  unrolled and stack-allocated.
-- **Spelled-out identifiers throughout.** No `T_`, `Q_`, `k_`, `Ra`, `Pr`,
-  `Nu`, `G`, `b`, `IR`, `SBC`, `evap`, `resp`, `geom`, `env`, `pars`. New
-  code introduced by this refactor uses fully-spelled names; existing
-  abbreviated names are renamed as part of the phase that touches them.
+**Cross-cutting principle:** state schema, compartment graph, radiation
+cache, and coupling interface are all designed additively — new node types,
+coupling types, and cache fields plug in without rewriting the outer loop.
+Every phase-8 exit criterion is checked against "would this survive one of
+these extensions?"
