@@ -2,6 +2,23 @@
 # trans_behav.R (sleep -> bask -> forage <-> cool), using ContinuousCallback in place of
 # R's rootfun events. Simplifications relative to R noted in docs/transient_body_temperature.md.
 
+"""
+    TransientBehavioralPhase
+
+Abstract supertype for a phase in `simulate_transient_behavior`'s event-driven transient model.
+
+To add a custom phase, define a singleton subtype and implement methods for: `phase_forcing`,
+`phase_posture`, `phase_state`, `phase_key`, `phase_condition`, `next_phase` (all ordinary
+dispatch, no registration needed). `SleepPhase`/`BaskPhase`/`ForagePhase`/`CoolPhase`/
+`ClimbPhase`/`BurrowPhase`/`RefugePhase` below are worked examples.
+
+`phase_condition`/`next_phase` take an internal `phase_context::NamedTuple` with fields:
+`activity_signal` (function of `t`, negative during the activity window), `limits`
+(`EctothermBehavioralLimits`), `active_min_hysteresis`, `activity_hysteresis`, `forcings`
+(`(; sun, shade, sleep, climb, underground)`, `climb`/`underground` may be `nothing`),
+`smoothing`, `night_phase`, `escape_phase`, `refuge_phase`, `cool_resume_margin`,
+`cool_resume_offset`.
+"""
 abstract type TransientBehavioralPhase end
 struct SleepPhase <: TransientBehavioralPhase end
 struct BaskPhase <: TransientBehavioralPhase end
@@ -11,42 +28,47 @@ struct ClimbPhase <: TransientBehavioralPhase end
 struct BurrowPhase <: TransientBehavioralPhase end
 struct RefugePhase <: TransientBehavioralPhase end
 
-# forcings = (; sun, shade, sleep, climb, underground) - climb/underground may be `nothing`,
-# but are only ever looked up when ClimbPhase/BurrowPhase is reachable (see has_climb/has_burrow).
-_phase_forcing(::SleepPhase, forcings) = forcings.sleep
-_phase_forcing(::BaskPhase, forcings) = forcings.sun
-_phase_forcing(::ForagePhase, forcings) = forcings.sun
-_phase_forcing(::CoolPhase, forcings) = forcings.shade
-_phase_forcing(::ClimbPhase, forcings) = forcings.climb
-_phase_forcing(::BurrowPhase, forcings) = forcings.underground
-_phase_forcing(::RefugePhase, forcings) = forcings.underground
+"""
+    phase_forcing(phase::TransientBehavioralPhase, forcings) -> EnvironmentForcing
 
-_phase_posture(::SleepPhase) = Intermediate()
-_phase_posture(::BaskPhase) = NormalToSun()
-_phase_posture(::ForagePhase) = Intermediate()
-_phase_posture(::CoolPhase) = Intermediate()
-_phase_posture(::ClimbPhase) = Intermediate()
-_phase_posture(::BurrowPhase) = Intermediate()
-_phase_posture(::RefugePhase) = Intermediate()
+`EnvironmentForcing` driving the ODE while `phase` is active. Part of the
+`TransientBehavioralPhase` interface. `forcings = (; sun, shade, sleep, climb, underground)`.
+"""
+phase_forcing(::SleepPhase, forcings) = forcings.sleep
+phase_forcing(::BaskPhase, forcings) = forcings.sun
+phase_forcing(::ForagePhase, forcings) = forcings.sun
+phase_forcing(::CoolPhase, forcings) = forcings.shade
+phase_forcing(::ClimbPhase, forcings) = forcings.climb
+phase_forcing(::BurrowPhase, forcings) = forcings.underground
+phase_forcing(::RefugePhase, forcings) = forcings.underground
 
-_phase_state(::SleepPhase) = Resting()
-_phase_state(::BaskPhase) = Basking()
-_phase_state(::ForagePhase) = Active()
-_phase_state(::CoolPhase) = Resting()
-_phase_state(::ClimbPhase) = Resting()
-_phase_state(::BurrowPhase) = Resting()
-_phase_state(::RefugePhase) = Resting()
+"Solar posture used for the heat-balance solve while `phase` is active. Part of the `TransientBehavioralPhase` interface."
+phase_posture(::SleepPhase) = Intermediate()
+phase_posture(::BaskPhase) = NormalToSun()
+phase_posture(::ForagePhase) = Intermediate()
+phase_posture(::CoolPhase) = Intermediate()
+phase_posture(::ClimbPhase) = Intermediate()
+phase_posture(::BurrowPhase) = Intermediate()
+phase_posture(::RefugePhase) = Intermediate()
 
-# Keys into the user-supplied `metabolic_multipliers` NamedTuple (e.g. `(; forage=3.0, climb=2.5)`).
-# Phases not present in that NamedTuple default to a multiplier of 1.0 (no scaling).
-_phase_key(::SleepPhase) = :sleep
-_phase_key(::BaskPhase) = :bask
-_phase_key(::ForagePhase) = :forage
-_phase_key(::CoolPhase) = :cool
-_phase_key(::ClimbPhase) = :climb
-_phase_key(::BurrowPhase) = :burrow
-_phase_key(::RefugePhase) = :refuge
-_metabolic_multiplier(multipliers::NamedTuple, phase) = Float64(get(multipliers, _phase_key(phase), 1.0))
+"OrganismState reported in the output while `phase` is active. Reporting only, no effect on the physics. Part of the `TransientBehavioralPhase` interface."
+phase_state(::SleepPhase) = Resting()
+phase_state(::BaskPhase) = Basking()
+phase_state(::ForagePhase) = Active()
+phase_state(::CoolPhase) = Resting()
+phase_state(::ClimbPhase) = Resting()
+phase_state(::BurrowPhase) = Resting()
+phase_state(::RefugePhase) = Resting()
+
+"Symbol key for `metabolic_multipliers` lookup (e.g. `(; forage=3.0)`); unlisted phases default to 1.0. Part of the `TransientBehavioralPhase` interface."
+phase_key(::SleepPhase) = :sleep
+phase_key(::BaskPhase) = :bask
+phase_key(::ForagePhase) = :forage
+phase_key(::CoolPhase) = :cool
+phase_key(::ClimbPhase) = :climb
+phase_key(::BurrowPhase) = :burrow
+phase_key(::RefugePhase) = :refuge
+_metabolic_multiplier(multipliers::NamedTuple, phase) = Float64(get(multipliers, phase_key(phase), 1.0))
 
 # Wraps the organism's metabolic rate model so it scales by `multiplier`, via HeatExchange's
 # existing "any callable works as MetabolismParameters.model" fallback - no change needed there.
@@ -64,7 +86,8 @@ _core_temperature_of(u::AbstractVector) = u[1]
 
 # Conditions take plain Float64 (u in K, t in s), negative while in-phase, crossing zero
 # when the phase should end (ContinuousCallback root). Sub-signals keep their own unit
-# scale — min/max only need matching sign, giving AND=`min`, OR=`max`.
+# scale — min/max only need matching sign, giving AND=`min` (all signals must be >0), 
+# and OR=`max` (any signal is > 0).
 _basking_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.basking_temperature_min)
 _active_min_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.active_temperature_min)
 _active_max_signal(u, limits) = _core_temperature_of(u) - ustrip(u"K", limits.active_temperature_max)
@@ -79,28 +102,31 @@ _activity_signal(::Nocturnal, zenith) = 90.0 - zenith
 _activity_signal(::Crepuscular, zenith) = abs(zenith - 90.0) - 5.0
 _activity_signal(a::CombinedActivity, zenith) = minimum(p -> _activity_signal(p, zenith), a.periods)
 
-# phase_context = (; activity_signal, limits, active_min_hysteresis, activity_hysteresis,
-#                    forcings, smoothing, night_phase, escape_phase, refuge_phase,
-#                    cool_resume_margin, cool_resume_offset)
+"""
+    phase_condition(phase::TransientBehavioralPhase, phase_context) -> (u, t) -> Float64
+
+`ContinuousCallback` root function for `phase`'s exit: negative while `phase` continues,
+crossing zero when it should end. Combine competing exit reasons with `max` (any one reason
+ends the phase) or `min` (all must agree). Part of the `TransientBehavioralPhase` interface.
+"""
 # Sleep/Burrow only exit `activity_hysteresis` past the day/night boundary, not exactly at it -
-# Bask/Forage/Cool/Climb's own day-arrived check (below) sits right at the boundary, so this
-# is genuine separation between two different phases' thresholds, not a self-comparison (that
-# ambiguity is instead resolved by comparing competing reasons within one phase - see _next_phase).
-function _phase_condition(::SleepPhase, phase_context)
+# Bask/Forage/Cool/Climb's own event check (below) sits at the boundary. Any ambiguity is
+# resolved by comparing competing reasons within one phase - see next_phase).
+function phase_condition(::SleepPhase, phase_context)
     (u, t) -> min(-phase_context.activity_signal(t) - phase_context.activity_hysteresis, _basking_signal(u, phase_context.limits))
 end
 # Bask/Forage hysteresis: exit thresholds sit `active_min_hysteresis` above/below
 # active_temperature_min so they never coincide (see docs).
-function _phase_condition(::BaskPhase, phase_context)
+function phase_condition(::BaskPhase, phase_context)
     (u, t) -> max(_active_min_signal(u, phase_context.limits) - phase_context.active_min_hysteresis, phase_context.activity_signal(t))
 end
-function _phase_condition(::ForagePhase, phase_context)
+function phase_condition(::ForagePhase, phase_context)
     (u, t) -> max(_active_max_signal(u, phase_context.limits), -_active_min_signal(u, phase_context.limits) - phase_context.active_min_hysteresis, phase_context.activity_signal(t))
 end
-# trans_behav.R's `forage` event: resume at active_temperature_min, or the candidate site's air
-# temp + cool_resume_offset if that's higher (otherwise unreachable in a warm site), falling
-# back to active_temperature_min if the site is within cool_resume_margin of
-# active_temperature_max. Shared by CoolPhase (shade) and ClimbPhase (climb site).
+# Resume at active_temperature_min, or the candidate site's air temp + cool_resume_offset 
+# if that's higher (otherwise unreachable in a warm site), falling  back to active_temperature_min
+# if the site is within cool_resume_margin of active_temperature_max.
+# Shared by CoolPhase (shade) and ClimbPhase (climb site).
 function _cool_resume_threshold(limits, candidate_air_temperature, cool_resume_margin, cool_resume_offset)
     active_min = ustrip(u"K", limits.active_temperature_min)
     active_max = ustrip(u"K", limits.active_temperature_max)
@@ -119,36 +145,43 @@ _cool_resume_signal(phase_context, forcing, u, t) =
 _escape_max_signal(u, phase_context) =
     phase_context.refuge_phase === nothing ? -Inf : _core_temperature_of(u) - ustrip(u"K", phase_context.limits.escape_temperature_max)
 
-function _phase_condition(::CoolPhase, phase_context)
+function phase_condition(::CoolPhase, phase_context)
     (u, t) -> max(_cool_resume_signal(phase_context, phase_context.forcings.shade, u, t), phase_context.activity_signal(t), _escape_max_signal(u, phase_context))
 end
-function _phase_condition(::ClimbPhase, phase_context)
+function phase_condition(::ClimbPhase, phase_context)
     (u, t) -> max(_cool_resume_signal(phase_context, phase_context.forcings.climb, u, t), phase_context.activity_signal(t), _escape_max_signal(u, phase_context))
 end
-function _phase_condition(::BurrowPhase, phase_context)
+function phase_condition(::BurrowPhase, phase_context)
     (u, t) -> min(-phase_context.activity_signal(t) - phase_context.activity_hysteresis, _emerge_signal(u, phase_context.limits))
 end
 # Resumes once core temperature (not the underground site's temperature - same reasoning as
 # BurrowPhase's own emergence check) drops back below active_temperature_max, offset by
 # active_min_hysteresis so it doesn't land exactly on ForagePhase's own hot-exit threshold.
-function _phase_condition(::RefugePhase, phase_context)
+function phase_condition(::RefugePhase, phase_context)
     (u, t) -> (ustrip(u"K", phase_context.limits.active_temperature_max) - phase_context.active_min_hysteresis) - _core_temperature_of(u)
 end
 
+"""
+    next_phase(phase::TransientBehavioralPhase, u, t, phase_context) -> TransientBehavioralPhase
+
+Phase to transition to once `phase_condition(phase, ...)` signals exit. Route by comparing the
+same signals used in `phase_condition` relatively against each other, not independently against
+zero. Part of the `TransientBehavioralPhase` interface.
+"""
 # Sleep and Burrow play the identical downstream role (the night phase always hands off to
 # Bask unconditionally at its own exit) - one method covers both.
-_next_phase(::Union{SleepPhase,BurrowPhase}, u, t, phase_context) = BaskPhase()
+next_phase(::Union{SleepPhase,BurrowPhase}, u, t, phase_context) = BaskPhase()
 
-# Routing compares each phase's own competing exit reasons to each other, not any one of them
-# to zero independently (same principle as the ForagePhase fix below) - root-finding can land
-# a root a few ULPs off an exact threshold, which an independent >=0 check can misread, but a
-# relative comparison against a clearly-negative-or-positive competitor can't.
-function _next_phase(::BaskPhase, u, t, phase_context)
+# Compare competing exit signals to each other rather than testing each against zero
+# independently (same principle as the ForagePhase fix below). Root finding may stop a
+# few floating-point representable values (ULPs) from the exact threshold, so relative 
+# comparisons are more robust.
+function next_phase(::BaskPhase, u, t, phase_context)
     day = phase_context.activity_signal(t)
     warm = _active_min_signal(u, phase_context.limits) - phase_context.active_min_hysteresis
     day >= warm ? phase_context.night_phase : ForagePhase()
 end
-function _next_phase(::ForagePhase, u, t, phase_context)
+function next_phase(::ForagePhase, u, t, phase_context)
     day = phase_context.activity_signal(t)
     hot = _active_max_signal(u, phase_context.limits)
     cold = -_active_min_signal(u, phase_context.limits) - phase_context.active_min_hysteresis
@@ -163,7 +196,7 @@ end
 # Cool and Climb additionally escalate to RefugePhase if shade/climbing alone isn't enough
 # (core temperature keeps climbing toward escape_temperature_max) - a third exit reason
 # compared relatively against the other two, same principle as ForagePhase's hot/cold branches.
-function _next_phase(::CoolPhase, u, t, phase_context)
+function next_phase(::CoolPhase, u, t, phase_context)
     day = phase_context.activity_signal(t)
     resume = _cool_resume_signal(phase_context, phase_context.forcings.shade, u, t)
     escape = _escape_max_signal(u, phase_context)
@@ -175,7 +208,7 @@ function _next_phase(::CoolPhase, u, t, phase_context)
         ForagePhase()
     end
 end
-function _next_phase(::ClimbPhase, u, t, phase_context)
+function next_phase(::ClimbPhase, u, t, phase_context)
     day = phase_context.activity_signal(t)
     resume = _cool_resume_signal(phase_context, phase_context.forcings.climb, u, t)
     escape = _escape_max_signal(u, phase_context)
@@ -189,7 +222,7 @@ function _next_phase(::ClimbPhase, u, t, phase_context)
 end
 # RefugePhase only has one exit reason (cooled down enough), so it always resumes straight to
 # ForagePhase - the animal was already active before fleeing the heat, no warm-up phase needed.
-_next_phase(::RefugePhase, u, t, phase_context) = ForagePhase()
+next_phase(::RefugePhase, u, t, phase_context) = ForagePhase()
 
 # RHS dispatch: one-lump (scalar state, HeatExchange.onelump) vs two-lump (2-vector
 # [core, shell], HeatExchange.twolump). Both methods take the same keywords so callers
@@ -238,89 +271,133 @@ function _validate_thresholds(limits, active_min_hysteresis)
 end
 
 """
-    simulate_diurnal_behavior(times, core_temperature_init, organism::Organism, environment_pars,
-                               sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
+    simulate_transient_behavior(times, 
+                               core_temperature_init, 
+                               organism::Organism, 
+                               environment_pars,
+                               sun_forcing::EnvironmentForcing, 
+                               shade_forcing::EnvironmentForcing,
                                limits::EctothermBehavioralLimits;
-                               solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;),
-                               smoothing=HardBound(), max_bouts=100*length(times),
-                               bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
-                               climb_forcing=nothing, underground_forcing=nothing,
-                               sleep_forcing=shade_forcing, initial_phase=nothing,
-                               activity_period=Diurnal(), activity_hysteresis=0.1u"°",
+                               solver=OrdinaryDiffEqTsit5.Tsit5(), solver_kwargs=(;), smoothing=HardBound(), 
+                               max_bouts=100*length(times),
+                               bout_chunk=3600.0, 
+                               active_min_hysteresis=0.15u"K",
+                               climb_forcing=nothing, 
+                               underground_forcing=nothing,
+                               sleep_forcing=shade_forcing, 
+                               initial_phase=nothing,
+                               activity_period=Diurnal(), 
+                               activity_hysteresis=0.1u"°",
                                metabolic_multipliers=NamedTuple(),
-                               cool_resume_margin=2.0u"K", cool_resume_offset=1.0u"K")
-    simulate_diurnal_behavior(times, (; core_temperature, shell_temperature), organism, environment_pars,
-                               sun_forcing, shade_forcing, limits; shell_thickness,
+                               cool_resume_margin=2.0u"K", 
+                               cool_resume_offset=1.0u"K"
+                               )
+    simulate_transient_behavior(times, 
+                               (; core_temperature, shell_temperature), 
+                               organism, 
+                               environment_pars,
+                               sun_forcing, 
+                               shade_forcing, 
+                               limits; 
+                               shell_thickness,
                                surface_solve=LinearizedSurface(), solver=OrdinaryDiffEqTsit5.Tsit5(),
-                               solver_kwargs=(;), smoothing=HardBound(), max_bouts=100*length(times),
-                               bout_chunk=3600.0, active_min_hysteresis=0.15u"K",
-                               climb_forcing=nothing, underground_forcing=nothing,
-                               sleep_forcing=shade_forcing, initial_phase=nothing,
-                               activity_period=Diurnal(), activity_hysteresis=0.1u"°",
+                               solver_kwargs=(;), smoothing=HardBound(), 
+                               max_bouts=100*length(times),
+                               bout_chunk=3600.0, 
+                               active_min_hysteresis=0.15u"K",
+                               climb_forcing=nothing, 
+                               underground_forcing=nothing,
+                               sleep_forcing=shade_forcing, 
+                               initial_phase=nothing,
+                               activity_period=Diurnal(), 
+                               activity_hysteresis=0.1u"°",
                                metabolic_multipliers=NamedTuple(),
-                               cool_resume_margin=2.0u"K", cool_resume_offset=1.0u"K")
+                               cool_resume_margin=2.0u"K", 
+                               cool_resume_offset=1.0u"K"
+                               )
 
-Event-driven diurnal behavioral thermoregulation. Seven phases: `SleepPhase`/`BurrowPhase`
-(inactive site), `BaskPhase`, `ForagePhase`, `CoolPhase`/`ClimbPhase` (too-hot escape site),
-`RefugePhase` (deeper too-hot escalation from `CoolPhase`/`ClimbPhase`).
-Dispatches on the initial state: a plain temperature runs the one-lump model
-(`HeatExchange.onelump`); a `(; core_temperature, shell_temperature)` NamedTuple runs the
-two-lump model (`HeatExchange.twolump`, needs a `shell_thickness` keyword). Port of NicheMapR's
-`trans_behav.R` (see file banner for what's simplified relative to R).
+Event-driven diurnal behavioral thermoregulation for an organism with a transient
+heat budget (thermal inertia).
 
-`BurrowPhase` substitutes for `SleepPhase` whenever `limits.can_retreat_underground` and
-`underground_forcing` is given; `ClimbPhase` substitutes for `CoolPhase` whenever
-`limits.can_climb` and `climb_forcing` is given — unconditional substitution, not a competing
-choice. `sleep_forcing` sets the inactive-period site (default `shade_forcing`; pass
-`sun_forcing` for an unshaded sleeper). `initial_phase` overrides the default day/night
-starting logic; passing `ClimbPhase()`/`BurrowPhase()` without the matching capability +
-forcing throws `ArgumentError`. `activity_period` (`Diurnal()` default, or `Nocturnal()`/
-`Crepuscular()`/`CombinedActivity(...)`) sets which part of the day counts as the active
-window (`Bask`/`Forage`) vs. inactive (`night_phase`) — the continuous-time analogue of
-`is_active` (`thermoregulation.jl`); `ResponsiveActivity` is not supported.
+Behavior is represented as a sequence of phases:
 
-`active_min_hysteresis` separates Bask's and Forage's exit thresholds around
-`active_temperature_min` (± 0.15 K by default), preventing an indefinite zero-duration
-oscillation if core temperature settles exactly on that boundary.
-`limits`' thresholds are validated at call time (`escape_temperature_min <
-emerge_temperature_min < basking_temperature_min < active_temperature_min <
-active_temperature_max < escape_temperature_max`, with the `active_min_hysteresis` margin
-below `active_temperature_min`) to catch the same class of bug up front.
+- `SleepPhase` (or `BurrowPhase`)
+- `BaskPhase`
+- `ForagePhase`
+- `CoolPhase` (or `ClimbPhase`)
+- `RefugePhase`
 
-Two complementary fixes protect the day/night boundary: `activity_hysteresis` (default
-`0.1u"°"`) separates `SleepPhase`/`BurrowPhase`'s exit from `BaskPhase`/`ForagePhase`/
-`CoolPhase`/`ClimbPhase`'s day-arrived check — genuinely different phases sharing one exact
-`activity_signal=0` threshold, the same failure class as `active_min_hysteresis` above. Within
-each of those phases, day-arrived is *also* compared against that phase's own temperature exit
-reason (not against zero independently), the same relative-comparison principle already used
-for `ForagePhase`'s hot/cold branches — this handles one phase's own routing ambiguity, which a
-margin alone can't fix.
+The model switches between phases using continuous event detection rather than fixed
+time steps. This is a Julia port of NicheMapR's `trans_behav.R`.
 
-`limits.escape_temperature_max` also gates `CoolPhase`/`ClimbPhase`'s further escalation to
-`RefugePhase` (underground) if shade/climbing alone can't keep core temperature down, compared
-relatively against those phases' other exit reasons for the same reason as above. `RefugePhase`
-resumes to `ForagePhase` once core temperature drops back to `active_temperature_max -
-active_min_hysteresis`.
+# Heat budget
 
-`metabolic_multipliers` scales metabolic heat production per phase, e.g.
-`(; forage=3.0, climb=2.5, bask=1.5)` — unlisted phases (keys: `sleep`, `bask`, `forage`, `cool`,
-`climb`, `burrow`, `refuge`) default to `1.0` (no scaling). Applied by wrapping the organism's
-metabolic rate model in a closure for the duration of each bout (constant while a phase is
-active, since phase never changes mid-bout), so it composes with any `MetabolicRateEquation`.
+Dispatches on the initial thermal state:
 
-`cool_resume_margin` (default `2.0u"K"`) and `cool_resume_offset` (default `1.0u"K"`) tune
-`CoolPhase`/`ClimbPhase`'s resume threshold: resume at `active_temperature_min`, or the
-candidate site's air temperature + `cool_resume_offset` if that's higher — unless the site's
-air temperature is within `cool_resume_margin` of `active_temperature_max`, in which case the
-site is too warm for that offset to be meaningful and the threshold falls back to
-`active_temperature_min`.
+- `initial_temperature::Quantity` → one-lump model (`HeatExchange.onelump`),
+  suitable for small animals (≈ <5 kg).
+- `(; core_temperature, shell_temperature)` → two-lump model
+  (`HeatExchange.twolump`; requires `shell_thickness`), suitable for larger
+  animals or shelled organisms.
+
+# Habitat options
+
+Providing additional environmental forcings enables alternative behavioural phases:
+
+- `underground_forcing` + `limits.can_retreat_underground`
+  enables `BurrowPhase`.
+- `climb_forcing` + `limits.can_climb`
+  enables `ClimbPhase`.
+
+`sleep_forcing` specifies the inactive location (defaults to `shade_forcing`).
+
+# Activity
+
+`activity_period` (`Diurnal()` by default) defines the active window
+(`BaskPhase`/`ForagePhase`) and inactive window (`SleepPhase`/`BurrowPhase`).
+Supported values are `Diurnal`, `Nocturnal`, `Crepuscular`, and
+`CombinedActivity(...)`.
+
+`initial_phase` overrides the default day/night starting phase.
+
+# Temperature limits
+
+Behavior is controlled by the thresholds in `limits`.
+
+Thresholds are validated on entry to ensure
+
+    escape_min < emerge_min < bask_min < active_min < active_max < escape_max
+
+with the required hysteresis around `active_min`.
+
+`active_min_hysteresis` prevents oscillation between `BaskPhase` and
+`ForagePhase` when body temperature sits exactly at `active_temperature_min`.
+
+`activity_hysteresis` similarly separates day/night transitions.
+
+# Metabolism
+
+`metabolic_multipliers` scales metabolic heat production independently for each
+phase (e.g. `(; forage=3, bask=1.5)`).
+
+# Cool-phase resume
+
+`cool_resume_margin` and `cool_resume_offset` determine when
+`CoolPhase`/`ClimbPhase` return to `ForagePhase`.
 
 # Returns
-NamedTuple with `t` (s), `core_temperature` (K) [, `shell_temperature` (K) for the two-lump
-method], `state` (`Vector{OrganismState}`), `phase` (`Vector{TransientBehavioralPhase}`), one
-entry per accepted solver step across all bouts.
+
+A `NamedTuple` containing
+
+- `t`
+- `core_temperature`
+- `shell_temperature` (two-lump model only)
+- `state`
+- `phase`
+
+with one entry per accepted solver step.
 """
-function simulate_diurnal_behavior(
+function simulate_transient_behavior(
     times, core_temperature_init::Unitful.Quantity, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
@@ -337,7 +414,7 @@ function simulate_diurnal_behavior(
     cool_resume_margin=2.0u"K",
     cool_resume_offset=1.0u"K",
 )
-    _simulate_diurnal_behavior(
+    _simulate_transient_behavior(
         times, ustrip(u"K", core_temperature_init), organism, environment_pars, sun_forcing, shade_forcing, limits;
         shell_thickness=nothing, surface_solve=HeatExchange.LinearizedSurface(),
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
@@ -349,7 +426,7 @@ function simulate_diurnal_behavior(
         cool_resume_offset=ustrip(u"K", cool_resume_offset),
     )
 end
-function simulate_diurnal_behavior(
+function simulate_transient_behavior(
     times, state::NamedTuple{(:core_temperature, :shell_temperature)}, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
@@ -368,7 +445,7 @@ function simulate_diurnal_behavior(
     cool_resume_offset=1.0u"K",
 )
     u0 = Float64[ustrip(u"K", state.core_temperature), ustrip(u"K", state.shell_temperature)]
-    _simulate_diurnal_behavior(
+    _simulate_transient_behavior(
         times, u0, organism, environment_pars, sun_forcing, shade_forcing, limits;
         shell_thickness, surface_solve,
         solver, solver_kwargs, smoothing, max_bouts, bout_chunk,
@@ -381,7 +458,7 @@ function simulate_diurnal_behavior(
     )
 end
 
-function _simulate_diurnal_behavior(
+function _simulate_transient_behavior(
     times, u0, organism::Organism, environment_pars,
     sun_forcing::EnvironmentForcing, shade_forcing::EnvironmentForcing,
     limits::EctothermBehavioralLimits;
@@ -430,19 +507,19 @@ function _simulate_diurnal_behavior(
         t_current >= tend && break
 
         for _ in 1:8
-            condition = _phase_condition(phase, phase_context)
+            condition = phase_condition(phase, phase_context)
             condition(u_current, t_current) < 0 && break
-            phase = _next_phase(phase, u_current, t_current, phase_context)
+            phase = next_phase(phase, u_current, t_current, phase_context)
         end
 
-        forcing = _phase_forcing(phase, forcings)
-        posture = _phase_posture(phase)
+        forcing = phase_forcing(phase, forcings)
+        posture = phase_posture(phase)
         bout_organism = _phase_organism(organism, _metabolic_multiplier(metabolic_multipliers, phase))
         f = (u, _, t) -> _body_temperature_rate(
             u, t, bout_organism, environment_pars, forcing(t * u"s"; smoothing);
             shell_thickness, posture, surface_solve, smoothing,
         )
-        condition = _phase_condition(phase, phase_context)
+        condition = phase_condition(phase, phase_context)
         # affect_neg!=nothing: only the upward crossing ends a phase.
         callback = OrdinaryDiffEqTsit5.ContinuousCallback(
             (u, t, integrator) -> condition(u, t), OrdinaryDiffEqTsit5.terminate!;
@@ -454,13 +531,13 @@ function _simulate_diurnal_behavior(
 
         append!(all_t, sol.t)
         append!(all_u, sol.u)
-        append!(all_state, fill(_phase_state(phase), length(sol.t)))
+        append!(all_state, fill(phase_state(phase), length(sol.t)))
         append!(all_phase, fill(phase, length(sol.t)))
 
         t_next = sol.t[end]
         u_next = sol.u[end]
         if t_next < t_chunk_end
-            phase = _next_phase(phase, u_next, t_next, phase_context)
+            phase = next_phase(phase, u_next, t_next, phase_context)
         end
         t_current, u_current = t_next, u_next
     end

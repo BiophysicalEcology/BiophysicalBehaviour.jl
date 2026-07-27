@@ -1,6 +1,6 @@
 # Diurnal thermoregulatory behavior under a transient heat budget, mimicking trans_behav.R's
 # own example (500 g desert ectotherm shuttling between sun and shade), using real
-# NicheMapR forcing (test/R/trans_behav.R). `simulate_diurnal_behavior` dispatches on the
+# NicheMapR forcing (test/R/trans_behav.R). `simulate_transient_behavior` dispatches on the
 # initial state: a plain temperature runs one-lump, a `(; core_temperature,
 # shell_temperature)` NamedTuple runs two-lump.
 using BiophysicalBehaviour
@@ -72,7 +72,7 @@ times = metout.TIME .* u"minute" .|> u"s"
 air_temperature = u"K".(metout.TALOC .* u"°C")
 core_temperature_init = air_temperature[1]  # ~air temperature at midnight
 
-result = simulate_diurnal_behavior(
+result = simulate_transient_behavior(
     times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits,
 );
 
@@ -106,7 +106,7 @@ println("body temperature range (non-thermoregulating, open): ", extrema(u"°C".
 shell_thickness = 0.002u"m"
 state_init = (core_temperature=core_temperature_init, shell_temperature=core_temperature_init)
 
-result_twolump = simulate_diurnal_behavior(
+result_twolump = simulate_transient_behavior(
     times, state_init, organism, environment_pars, sun_forcing, shade_forcing, limits; shell_thickness,
 )
 
@@ -166,7 +166,7 @@ limits_broadened = example_ectotherm_behavioral_limits(;
     can_climb=true, can_retreat_underground=true,
 )
 
-result_broadened = simulate_diurnal_behavior(
+result_broadened = simulate_transient_behavior(
     times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits_broadened;
     climb_forcing, underground_forcing,
 )
@@ -180,7 +180,7 @@ for T in (ClimbPhase, BurrowPhase, CoolPhase, SleepPhase)
 end
 
 # Configurable start: begin the day already underground instead of asleep in shade.
-result_start_underground = simulate_diurnal_behavior(
+result_start_underground = simulate_transient_behavior(
     times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits_broadened;
     climb_forcing, underground_forcing, initial_phase=BurrowPhase(),
 )

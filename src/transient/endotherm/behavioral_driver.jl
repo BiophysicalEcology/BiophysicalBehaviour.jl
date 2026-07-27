@@ -1,7 +1,7 @@
 # Event-driven activity/rest cycling for the transient endotherm model: an animal alternates
 # between an active phase (elevated metabolic rate, e.g. flight or running - and typically
 # elevated wind exposure) and resting (basal metabolic rate) purely as a function of core
-# temperature, using ContinuousCallback the same way simulate_diurnal_behavior does for
+# temperature, using ContinuousCallback the same way simulate_transient_behavior does for
 # ectotherms. No day/night cycle - see docs/transient_body_temperature.md for scope notes.
 # Insulated bodies only: metabolic_heat_flow must be an explicit per-phase input, which
 # HeatExchange.onelump only supports for Insulated (not Naked) organisms.

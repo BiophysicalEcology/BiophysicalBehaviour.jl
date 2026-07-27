@@ -74,7 +74,7 @@ limits = example_ectotherm_behavioral_limits(;
 times = metout.TIME .* u"minute" .|> u"s"
 core_temperature_init = u"K"(day_results.Tb[1] * u"°C")
 
-result = simulate_diurnal_behavior(
+result = simulate_transient_behavior(
     times, core_temperature_init, organism, environment_pars, sun_forcing, shade_forcing, limits,
 )
 

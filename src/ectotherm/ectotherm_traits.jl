@@ -160,7 +160,7 @@ Base.@kwdef struct EctothermBehavioralLimits{
     emerge_signal::Ws                  = 0.0u"K/hr"
 end
 
-# Used by both thermoregulate and simulate_diurnal_behavior.
+# Used by both thermoregulate and simulate_transient_behavior.
 function _validate_ectotherm_thresholds(limits::EctothermBehavioralLimits)
     limits.escape_temperature_min < limits.emerge_temperature_min ||
         throw(ArgumentError("escape_temperature_min must be below emerge_temperature_min"))

@@ -39,7 +39,7 @@ environment_pars = example_environment_pars()
     @test all(isfinite, ustrip.(u"K", sol.core_temperature))
 end
 
-@testset "simulate_diurnal_behavior: sensible daily cycle" begin
+@testset "simulate_transient_behavior: sensible daily cycle" begin
     times = (0:1:48)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0)
     shade_forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
@@ -49,7 +49,7 @@ end
     small_shape_pars = Ellipsoid(0.05u"kg", 1000.0u"kg/m^3", 1.1, 1.1)
     small_organism = Organism(Body(small_shape_pars, Naked()), example_ectotherm_heat_exchange_traits(; shape_pars=small_shape_pars))
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits,
     )
     @test all(isfinite, ustrip.(u"K", result.core_temperature))
@@ -66,14 +66,14 @@ end
 small_shape_pars = Ellipsoid(0.05u"kg", 1000.0u"kg/m^3", 1.1, 1.1)
 small_organism = Organism(Body(small_shape_pars, Naked()), example_ectotherm_heat_exchange_traits(; shape_pars=small_shape_pars))
 
-@testset "simulate_diurnal_behavior: burrow substitutes for sleep" begin
+@testset "simulate_transient_behavior: burrow substitutes for sleep" begin
     times = (0:1:48)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0)
     shade_forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
     underground_forcing = _diurnal_forcing(times; shade=1.0, radiation_scale=0.0, wind_speed=0.01u"m/s")
     limits = example_ectotherm_behavioral_limits()  # can_retreat_underground=true by default
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits;
         underground_forcing,
     )
@@ -82,14 +82,14 @@ small_organism = Organism(Body(small_shape_pars, Naked()), example_ectotherm_hea
     @test !any(p -> p isa SleepPhase, result.phase)  # full substitution, not a competing choice
 end
 
-@testset "simulate_diurnal_behavior: climb substitutes for cool" begin
+@testset "simulate_transient_behavior: climb substitutes for cool" begin
     times = (0:1:48)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0, mean_temp_c=40.0)  # hot enough to force an escape phase
     shade_forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
     climb_forcing = _diurnal_forcing(times; shade=0.0, wind_speed=3.0u"m/s")
     limits = example_ectotherm_behavioral_limits(; can_climb=true)
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits;
         climb_forcing,
     )
@@ -98,7 +98,7 @@ end
     @test !any(p -> p isa CoolPhase, result.phase)  # full substitution, not a competing choice
 end
 
-@testset "simulate_diurnal_behavior: initial_phase" begin
+@testset "simulate_transient_behavior: initial_phase" begin
     # Start at hour 10 (clearly daytime, away from the dawn/dusk boundary) so the requested
     # initial phase isn't immediately re-decided by the pre-check loop.
     times = (10:1:34)u"hr" .|> u"s"
@@ -106,28 +106,28 @@ end
     shade_forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
     limits = example_ectotherm_behavioral_limits()
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(20.0u"°C"), organism, environment_pars, sun_forcing, shade_forcing, limits;
         initial_phase=BaskPhase(),
     )
     @test result.phase[1] isa BaskPhase
 
-    @test_throws ArgumentError simulate_diurnal_behavior(
+    @test_throws ArgumentError simulate_transient_behavior(
         times, u"K"(30.0u"°C"), organism, environment_pars, sun_forcing, shade_forcing, limits;
         initial_phase=ClimbPhase(),  # can_climb=false, no climb_forcing
     )
 end
 
-@testset "simulate_diurnal_behavior: sleep_forcing" begin
+@testset "simulate_transient_behavior: sleep_forcing" begin
     times = (0:1:24)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0)
     shade_forcing = _diurnal_forcing(times; shade=0.9, radiation_scale=0.05, wind_speed=0.5u"m/s")
     limits = example_ectotherm_behavioral_limits()
 
-    default_sleep = simulate_diurnal_behavior(
+    default_sleep = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits,
     )
-    unshaded_sleep = simulate_diurnal_behavior(
+    unshaded_sleep = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits;
         sleep_forcing=sun_forcing,
     )
@@ -135,19 +135,19 @@ end
     @test extrema(default_sleep.core_temperature) != extrema(unshaded_sleep.core_temperature)
 end
 
-@testset "simulate_diurnal_behavior: threshold validation" begin
+@testset "simulate_transient_behavior: threshold validation" begin
     times = (0:1:24)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0)
     shade_forcing = _diurnal_forcing(times; shade=0.9)
     # basking_temperature_min == active_temperature_min (default 24°C) - reintroduces the
     # shared-threshold bug class the active_min_hysteresis fix was designed to prevent.
     bad_limits = example_ectotherm_behavioral_limits(; basking_temperature_min=u"K"(24.0u"°C"))
-    @test_throws ArgumentError simulate_diurnal_behavior(
+    @test_throws ArgumentError simulate_transient_behavior(
         times, u"K"(20.0u"°C"), organism, environment_pars, sun_forcing, shade_forcing, bad_limits,
     )
 end
 
-@testset "simulate_diurnal_behavior: nocturnal activity_period" begin
+@testset "simulate_transient_behavior: nocturnal activity_period" begin
     times = (0:1:48)u"hr" .|> u"s"
     # _diurnal_forcing clamps zenith to [0,90], pinning the Nocturnal signal at exactly 0 all
     # night - use an unclamped zenith (continuing past 90 toward 180 at solar midnight) instead.
@@ -172,7 +172,7 @@ end
         active_temperature_min=u"K"(18.0u"°C"),
     )
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits;
         activity_period=Nocturnal(),
     )
@@ -186,7 +186,7 @@ end
     @test all(>=(85.0), active_zenith)
 end
 
-@testset "simulate_diurnal_behavior: crepuscular activity_period" begin
+@testset "simulate_transient_behavior: crepuscular activity_period" begin
     times = (0:1:48)u"hr" .|> u"s"
     # Same unclamped-zenith rationale as the nocturnal test above.
     hours = ustrip.(u"hr", times)
@@ -210,7 +210,7 @@ end
         active_temperature_min=u"K"(18.0u"°C"),
     )
 
-    result = simulate_diurnal_behavior(
+    result = simulate_transient_behavior(
         times, u"K"(15.0u"°C"), small_organism, environment_pars, sun_forcing, shade_forcing, limits;
         activity_period=Crepuscular(),
     )

@@ -6,7 +6,7 @@
 - `HeatExchange.jl/src/internal_temperature.jl` — `internal_gradient_shape_factor`
 - `src/transient/forcing.jl` — `EnvironmentForcing` (time-varying environment)
 - `src/transient/simulate.jl` — `simulate_onelump`/`simulate_twolump`
-- `src/transient/ectotherm/behavioral_driver.jl` — `simulate_diurnal_behavior`
+- `src/transient/ectotherm/behavioral_driver.jl` — `simulate_transient_behavior`
 - `src/transient/endotherm/behavioral_driver.jl` — `simulate_endotherm_activity_cycle`
 
 Ported from NicheMapR's `onelump.R`/`onelump_var.R`/`twolump.R`/`trans_behav.R`. Unlike the
@@ -28,7 +28,7 @@ including evaporative and respiratory heat loss; its insulated branch
   has a closed-form `final_core_temperature`.
 - `RootFindSurface()`: exact root-find each call, no closed form.
 
-`simulate_diurnal_behavior` and the underlying `_body_temperature_rate` dispatch (one-lump
+`simulate_transient_behavior` and the underlying `_body_temperature_rate` dispatch (one-lump
 vs. two-lump) pass `surface_solve` straight through to `twolump`.
 
 `simulate_onelump` handles both `Naked` and insulated bodies (one wrapper); `simulate_twolump`
@@ -58,7 +58,7 @@ as a dynamics constraint in an optimal-control formulation without rewriting it.
   calibrated, already-tested) correlations rather than R's. `twolump` only supports
   `Cylinder`/`Ellipsoid` anyway, matching the R source.
 
-## Behavioral driver (`simulate_diurnal_behavior`)
+## Behavioral driver (`simulate_transient_behavior`)
 
 Event-driven port of `trans_behav.R`'s sleep → bask → forage ⇄ cool state machine, using
 `OrdinaryDiffEqTsit5.ContinuousCallback` for each transition (root-finding events in the R
@@ -73,7 +73,7 @@ Reuses existing types rather than inventing parallel ones: `EctothermBehavioralL
 `T_F_min`/`T_F_max`/`T_B_min`/`T_RB_min`/`CLIMB`/`BURROW`), and `NormalToSun`/`Intermediate`
 are the postures — the same fields the steady-state `ectothermy.jl` loop already reads.
 
-`simulate_diurnal_behavior` dispatches on the initial state, matching R's `lump` parameter:
+`simulate_transient_behavior` dispatches on the initial state, matching R's `lump` parameter:
 a plain temperature runs the one-lump model (`HeatExchange.onelump`); a `(; core_temperature,
 shell_temperature)` NamedTuple runs two-lump (`HeatExchange.twolump`, needs a
 `shell_thickness` keyword). Behavioral thresholds always act on core temperature.
@@ -142,7 +142,7 @@ remain unused — see "Not built here" below.
   falling back to `T_F_min` if shade is already near `T_F_max`.
 - `SOLR` is unattenuated in both `metout`/`shadmet` — apply canopy shading via
   `EnvironmentalVarsVec`'s `shade` fraction, not the CSV values.
-- `_next_phase(::ForagePhase, ...)` compares `_active_max_signal`/`_active_min_signal` to each
+- `next_phase(::ForagePhase, ...)` compares `_active_max_signal`/`_active_min_signal` to each
   other rather than each to zero independently — a fast body landing near `active_max` from
   root-finding noise could otherwise flip to `BaskPhase`, which immediately bounces back to
   `ForagePhase` with zero elapsed time, stalling the simulation until `max_bouts` is exhausted.
@@ -173,7 +173,7 @@ remain unused — see "Not built here" below.
     *different* phases anchored at the same `activity_signal=0`, the same failure class
     `active_min_hysteresis` fixes for temperature. Without it, an animal already warm going
     into the boundary can hand off and bounce straight back with zero elapsed time.
-  - **Relative routing** in `_next_phase(::BaskPhase/ForagePhase/CoolPhase/ClimbPhase, ...)`
+  - **Relative routing** in `next_phase(::BaskPhase/ForagePhase/CoolPhase/ClimbPhase, ...)`
     compares the day-arrived signal against that *same* phase's own temperature-based exit
     reason, not against zero independently — this is `activity_hysteresis` alone can't fix,
     because it's one phase's own routing ambiguity (which of its several exit reasons fired),
@@ -228,7 +228,7 @@ this be sustained" is answered by inspecting the returned trajectory (e.g.
 
 ### Activity/rest cycling (`simulate_endotherm_activity_cycle`)
 
-Event-driven analogue of `simulate_diurnal_behavior` for endotherms: alternates an
+Event-driven analogue of `simulate_transient_behavior` for endotherms: alternates an
 `EndothermActivePhase` (elevated metabolic rate, e.g. flight or running) and
 `EndothermRestingPhase` (basal rate) purely as a function of core temperature, using
 `ContinuousCallback` the same way. No day/night cycle — this is an activity/rest thermal
