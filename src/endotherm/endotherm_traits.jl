@@ -6,12 +6,15 @@ A parameter that can be adjusted in steps toward a maximum value.
 # Fields
 - `current::T`: Current value
 - `reference::T`: Reference/baseline value (defaults to current)
+- `min::T`: Minimum allowed value (defaults to reference; unused by most parameters —
+  depth/height use it as the retreat search's lower bound, independent of `reference`)
 - `max::T`: Maximum allowed value
 - `step::S`: Step size for adjustment
 """
 Base.@kwdef struct SteppedParameter{T,S}
     current::T
     reference::T = current
+    min::T = reference
     max::T
     step::S
 end
