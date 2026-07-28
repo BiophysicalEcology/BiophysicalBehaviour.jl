@@ -6,7 +6,7 @@ using Test
 
 # No R reference data exists yet for onelump_var.R/twolump.R/trans_behav.R under
 # time-varying forcing (see test/R/onelump_var_test.R etc., a manual step). These are
-# smoke/self-consistency checks: sane trajectories under synthetic and diurnal forcing.
+# self-consistency checks: sane trajectories under synthetic and diurnal forcing.
 
 function _diurnal_forcing(times; shade=0.0, wind_speed=1.0u"m/s", radiation_scale=1.0, mean_temp_c=20.0, amplitude_c=8.0)
     hours = ustrip.(u"hr", times)
