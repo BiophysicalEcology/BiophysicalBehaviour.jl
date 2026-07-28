@@ -139,9 +139,10 @@ end
     times = (0:1:24)u"hr" .|> u"s"
     sun_forcing = _diurnal_forcing(times; shade=0.0)
     shade_forcing = _diurnal_forcing(times; shade=0.9)
-    # basking_temperature_min == active_temperature_min (default 24°C) - reintroduces the
-    # shared-threshold bug class the active_min_hysteresis fix was designed to prevent.
-    bad_limits = example_ectotherm_behavioral_limits(; basking_temperature_min=u"K"(24.0u"°C"))
+    # basking_temperature_min within active_min_hysteresis (default 0.15K) of active_temperature_min
+    # (default 24°C) - passes the base ordering check (still strictly less) but reintroduces the
+    # shared-threshold bug class the active_min_hysteresis margin is meant to prevent.
+    bad_limits = example_ectotherm_behavioral_limits(; basking_temperature_min=u"K"(24.0u"°C") - 0.05u"K")
     @test_throws ArgumentError simulate_transient_behavior(
         times, u"K"(20.0u"°C"), organism, environment_pars, sun_forcing, shade_forcing, bad_limits,
     )
