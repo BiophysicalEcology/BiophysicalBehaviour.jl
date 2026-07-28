@@ -10,23 +10,23 @@ abstract type EndothermActivityPhase end
 struct EndothermActivePhase <: EndothermActivityPhase end
 struct EndothermRestingPhase <: EndothermActivityPhase end
 
-_endotherm_phase_forcing(::EndothermActivePhase, active, resting) = active
-_endotherm_phase_forcing(::EndothermRestingPhase, active, resting) = resting
+endotherm_phase_forcing(::EndothermActivePhase, active, resting) = active
+endotherm_phase_forcing(::EndothermRestingPhase, active, resting) = resting
 
-_endotherm_phase_metabolic_heat_flow(::EndothermActivePhase, active_mhf, resting_mhf) = active_mhf
-_endotherm_phase_metabolic_heat_flow(::EndothermRestingPhase, active_mhf, resting_mhf) = resting_mhf
+endotherm_phase_metabolic_heat_flow(::EndothermActivePhase, active_mhf, resting_mhf) = active_mhf
+endotherm_phase_metabolic_heat_flow(::EndothermRestingPhase, active_mhf, resting_mhf) = resting_mhf
 
-_endotherm_phase_state(::EndothermActivePhase) = Active()
-_endotherm_phase_state(::EndothermRestingPhase) = Resting()
+endotherm_phase_state(::EndothermActivePhase) = Active()
+endotherm_phase_state(::EndothermRestingPhase) = Resting()
 
-_endotherm_next_phase(::EndothermActivePhase) = EndothermRestingPhase()
-_endotherm_next_phase(::EndothermRestingPhase) = EndothermActivePhase()
+endotherm_next_phase(::EndothermActivePhase) = EndothermRestingPhase()
+endotherm_next_phase(::EndothermRestingPhase) = EndothermActivePhase()
 
 # Conditions take plain Float64 (u in K), negative while in-phase, crossing zero when the
 # phase should end (ContinuousCallback root) - same convention as the ectotherm driver.
-_endotherm_phase_condition(::EndothermActivePhase, active_temperature_max, resume_temperature) =
+endotherm_phase_condition(::EndothermActivePhase, active_temperature_max, resume_temperature) =
     (u, t) -> u - ustrip(u"K", active_temperature_max)
-_endotherm_phase_condition(::EndothermRestingPhase, active_temperature_max, resume_temperature) =
+endotherm_phase_condition(::EndothermRestingPhase, active_temperature_max, resume_temperature) =
     (u, t) -> ustrip(u"K", resume_temperature) - u
 
 """
@@ -69,17 +69,17 @@ function simulate_endotherm_activity_cycle(
     for _ in 1:max_bouts
         t_current >= tend && break
 
-        condition = _endotherm_phase_condition(phase, active_temperature_max, resume_temperature)
-        condition(u_current, t_current) >= 0 && (phase = _endotherm_next_phase(phase))
+        condition = endotherm_phase_condition(phase, active_temperature_max, resume_temperature)
+        condition(u_current, t_current) >= 0 && (phase = endotherm_next_phase(phase))
 
-        forcing = _endotherm_phase_forcing(phase, active_forcing, resting_forcing)
-        mhf = _endotherm_phase_metabolic_heat_flow(phase, active_metabolic_heat_flow, resting_metabolic_heat_flow)
+        forcing = endotherm_phase_forcing(phase, active_forcing, resting_forcing)
+        mhf = endotherm_phase_metabolic_heat_flow(phase, active_metabolic_heat_flow, resting_metabolic_heat_flow)
         f = (u, _, t) -> ustrip(u"K/s", HeatExchange.onelump(
             u * u"K", t * u"s", organism, (; environment_pars, environment_vars=forcing(t * u"s"; smoothing));
             metabolic_heat_flow=mhf, smoothing,
         ).core_temperature_rate)
 
-        condition = _endotherm_phase_condition(phase, active_temperature_max, resume_temperature)
+        condition = endotherm_phase_condition(phase, active_temperature_max, resume_temperature)
         # affect_neg!=nothing: only the upward crossing of the (phase-specific) signal ends a phase.
         callback = OrdinaryDiffEqTsit5.ContinuousCallback(
             (u, t, integrator) -> condition(u, t), OrdinaryDiffEqTsit5.terminate!;
@@ -91,10 +91,10 @@ function simulate_endotherm_activity_cycle(
 
         append!(all_t, sol.t)
         append!(all_u, sol.u)
-        append!(all_state, fill(_endotherm_phase_state(phase), length(sol.t)))
+        append!(all_state, fill(endotherm_phase_state(phase), length(sol.t)))
 
         t_next, u_next = sol.t[end], sol.u[end]
-        t_next < t_chunk_end && (phase = _endotherm_next_phase(phase))
+        t_next < t_chunk_end && (phase = endotherm_next_phase(phase))
         t_current, u_current = t_next, u_next
     end
 
