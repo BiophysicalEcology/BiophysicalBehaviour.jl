@@ -13,3 +13,4 @@ end
 
 @safetestset "endotherm" begin include("endotherm.jl") end
 @safetestset "ectotherm" begin include("ectotherm.jl") end
+@safetestset "arrest" begin include("arrest.jl") end
