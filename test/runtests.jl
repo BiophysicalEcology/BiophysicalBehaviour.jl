@@ -16,3 +16,4 @@ end
 @safetestset "transient" begin include("transient.jl") end
 @safetestset "trans_behav_r" begin include("trans_behav_r.jl") end
 @safetestset "transient_endotherm" begin include("transient_endotherm.jl") end
+@safetestset "arrest" begin include("arrest.jl") end
