@@ -1,7 +1,7 @@
 # Arrest: Generalized Dormancy/Diapause/Quiescence Controllers
 
 **Source files:**
-- `src/arrest/controllers.jl` — `AbstractArrestController` interface, `Below`/`Above`, `AnyDirection`/`Rising`/`Falling`, `signal_value`/`signal_rate`, `NeverController`
+- `src/arrest/controllers.jl` — `AbstractArrestController` interface, `BelowBound`/`AboveBound`, `AnyDirection`/`RisingDirection`/`FallingDirection`, `signal_value`/`signal_rate`, `NeverController`
 - `src/arrest/metrics.jl` — `AbstractMetric`: `RawSignal`, `RawProgress`, `Accumulate`
 - `src/arrest/bounds.jl` — `AbstractBound`: `FixedBound`
 - `src/arrest/threshold.jl` — `ThresholdController` (metric-vs-bound comparison)
@@ -39,11 +39,11 @@ biological reading, using Chortoicetes throughout.
 | Process variable | `Metric` — what a controller reads (`RawSignal`, `RawProgress`, `Accumulate`) | Developmental progress, accumulated chill-hours, hydration |
 | Setpoint / reference | `Bound` (`FixedBound`) | A diapause window edge (progress `0.45`), a chill-hour limit (`720.0`), a desiccation tolerance (`0.6`) |
 | Error signal | The signed gap between metric and bound | How far past (or short of) a threshold cue the egg currently is |
-| Comparator | `Below()`/`Above()` | "Hydration below the desiccation tolerance" (`Below`), "progress above the window's low edge" (`Above`) |
+| Comparator | `BelowBound()`/`AboveBound()` | "Hydration below the desiccation tolerance" (`BelowBound`), "progress above the window's low edge" (`AboveBound`) |
 | Relay / bang-bang control | `HardBound()` | A sharp switch: the egg either has, or hasn't, crossed a cue |
 | Proportional / smoothed control | `SmoothBound(ε)` | A graded response near a threshold instead of an instant switch — not used by Chortoicetes, whose cues are treated as sharp |
-| Derivative (rate) term | `Rising()`/`Falling()` direction gating | A cue keyed to the rate of change of a signal, not just its value — not used by Chortoicetes, but common in real phenology models (e.g. photoperiod-change-rate cues) |
-| Controller output | `level ∈ [0,1]` | How strongly a given pathway is currently engaged |
+| Derivative (rate) term | `RisingDirection()`/`FallingDirection()` direction gating | A cue keyed to the rate of change of a signal, not just its value — not used by Chortoicetes, but common in real phenology models (e.g. photoperiod-change-rate cues) |
+| Controller output | `controller_level ∈ [0,1]` | How strongly a given pathway is currently engaged |
 | Integrator | `Accumulate` | The chill-hour counter and the diapause-duration counter — degree-day-style accumulators |
 | AND gate (fuzzy min) | `AllController` | Diapause requires window position AND low accumulated chill AND low accumulated duration, all at once |
 | OR gate (fuzzy max) | `AnyController` / `AnyArrestModel` | Two separate quiescence windows are alternative triggers; diapause OR quiescence are alternative dormancy pathways |
@@ -56,7 +56,7 @@ biological reading, using Chortoicetes throughout.
 be read directly as a multiplier on a process rate — `development_rate * (1 - arrest_level)` —
 rather than passed through a boolean gate. `1` means fully arrested (rate driven to zero), `0`
 means unrestricted, and values in between represent partial arrest. There is no boolean
-convenience wrapper anywhere in the module: a single fixed cutoff (e.g. `level > 0.5`) can't
+convenience wrapper anywhere in the module: a single fixed cutoff (e.g. `controller_level > 0.5`) can't
 represent both a graded response (`SmoothBound`) and an exactly-binary one (`HardBound`) with the
 same rule, so a host reads the multiplier directly and derives whatever boolean it needs itself.
 For Chortoicetes under `HardBound` throughout, `arrest_level` only ever takes the values `0.0` or
@@ -66,7 +66,7 @@ For Chortoicetes under `HardBound` throughout, `arrest_level` only ever takes th
 
 1. **Metric vs. bound** → a signed gap (`ThresholdController`'s internal `_gap`) — e.g. accumulated
    chill-hours vs. the `720.0`-hour limit.
-2. **Smoothing** turns the gap into a `level` — `HardBound()` (exact step) or `SmoothBound(ε)`
+2. **Smoothing** turns the gap into a `controller_level` — `HardBound()` (exact step) or `SmoothBound(ε)`
    (differentiable transition).
 3. **Controllers compose** via `AllController`/`AnyController` (fuzzy AND/OR); **arrest models
    compose** an induction/breakage pair via `ComposedArrest`, or whole models via
@@ -76,12 +76,12 @@ For Chortoicetes under `HardBound` throughout, `arrest_level` only ever takes th
 
 - `RawSignal(:x)` — reads `signals.x` directly, no state of its own. Chortoicetes uses
   `RawSignal(:hydration)` for the quiescence trigger. Accepts either a bare value or a
-  `(; value, rate)` NamedTuple; the latter is required only if a controller uses `Rising`/
-  `Falling` direction gating.
+  `(; value, rate)` NamedTuple; the latter is required only if a controller uses `RisingDirection`/
+  `FallingDirection` direction gating.
 - `RawProgress()` — reads `progress` directly (not a signal): both the diapause window
   (`0.45 < progress < 0.50`) and the two quiescence windows (`0.25`–`0.30`, `0.45`–`0.50`) are
   expressed this way. `RawProgress` has no notion of rate (progress is driven externally by the
-  host, not tracked as own-state); pairing it with `Rising`/`Falling` raises a clear error.
+  host, not tracked as own-state); pairing it with `RisingDirection`/`FallingDirection` raises a clear error.
 - `Accumulate(rate, init=0.0)` — integrates a rate functor
   `(progress, signals, model, arrest_state) -> rate` into its own accumulator (see below).
   Chortoicetes uses two: a chill-hour counter and a diapause-duration counter.
@@ -160,7 +160,7 @@ methods raise a clear `"no bound_value method for ..."` error — see "Extending
 ## `ThresholdController`
 
 ```julia
-ThresholdController(; metric, bound, direction=AnyDirection(), comparison=Below(),
+ThresholdController(; metric, bound, direction=AnyDirection(), comparison=BelowBound(),
                      smoothing=HardBound(), scale=1.0)
 ```
 
@@ -169,7 +169,7 @@ The chill-accumulation leaf of the diapause controller:
 ```julia
 ThresholdController(
     metric=Accumulate((p, sig, m, as) -> ustrip(u"K", sig.temperature) < 285.65 ? 1.0 : 0.0, 0.0),
-    bound=FixedBound(720.0), comparison=Below(),
+    bound=FixedBound(720.0), comparison=BelowBound(),
 )
 ```
 
@@ -186,13 +186,13 @@ for a host's `ContinuousCallback`, or `()` otherwise.
 ## `FunctionController`
 
 ```julia
-FunctionController(; condition, level_fn=nothing, needs_callback=true)
+FunctionController(; condition, level_function=nothing, needs_callback=true)
 ```
 
 Escape hatch for logic that isn't expressible as metric-vs-bound — genuinely custom or
 order-dependent conditions. `condition(own_state, progress, signals, model, arrest_state)`
 returns a signed distance (same convention as `ThresholdController`'s gap: `>= 0` means the
-condition holds), giving a hard `1.0`/`0.0` level by default; pass `level_fn` for a continuous
+condition holds), giving a hard `1.0`/`0.0` level by default; pass `level_function` for a continuous
 level instead. Not needed by Chortoicetes — every one of its rules fits the metric-vs-bound shape.
 
 ## Composite controllers: `AnyController` / `AllController`
@@ -207,10 +207,10 @@ duration must *all* hold at once:
 
 ```julia
 AllController(
-    lo=ThresholdController(metric=RawProgress(), bound=FixedBound(0.45), comparison=Above()),
-    hi=ThresholdController(metric=RawProgress(), bound=FixedBound(0.50), comparison=Below()),
-    chill=ThresholdController(metric=Accumulate(...), bound=FixedBound(720.0), comparison=Below()),
-    duration=ThresholdController(metric=Accumulate(...), bound=FixedBound(1240.0), comparison=Below()),
+    lo=ThresholdController(metric=RawProgress(), bound=FixedBound(0.45), comparison=AboveBound()),
+    hi=ThresholdController(metric=RawProgress(), bound=FixedBound(0.50), comparison=BelowBound()),
+    chill=ThresholdController(metric=Accumulate(...), bound=FixedBound(720.0), comparison=BelowBound()),
+    duration=ThresholdController(metric=Accumulate(...), bound=FixedBound(1240.0), comparison=BelowBound()),
 )
 ```
 
@@ -259,6 +259,10 @@ the mutable-cache style used in the IPOPT thermoregulation path (`src/endotherm/
 
 ## ODE integration hooks
 
+Not exported by default (see "Extending the module") — no host wires arrest into a
+`ContinuousCallback` yet, so this path is untested; reach it via
+`BiophysicalBehaviour.trigger_conditions`/`arrest_conditions` until it is.
+
 `trigger_conditions(model)` / `arrest_conditions(model)` flatten every `HardBound` controller's
 zero-crossing condition into a fixed-length `Tuple` (via `_flatten_tuples`, fully unrolled and
 concretely typed at compile time), ready to splice into a host's own `ContinuousCallback`
@@ -298,7 +302,7 @@ Running it on the Chortoicetes model:
 
 Both `diapause` and `quiescence` show `(induction AND NOT breakage)` even though neither declares
 an explicit `breakage` controller — that's `ComposedArrest`'s default `NeverController()` printing
-literally, since its `level` is always `0`, `1 - breakage` is always `1`, and the AND-NOT
+literally, since its `controller_level` is always `0`, `1 - breakage` is always `1`, and the AND-NOT
 collapses to plain induction. The diagram is otherwise a direct read of the model definition
 above: one four-way AND for diapause, an OR of two three-way ANDs for quiescence, and an OR
 across both pathways at the top.
@@ -316,13 +320,15 @@ implementation's boolean result at every step with zero mismatches.
 Every abstract type in this module (`AbstractMetric`, `AbstractBound`, `AbstractComparison`,
 `AbstractDirection`) is extended the same way: implement one or more plain functions dispatched
 on the new concrete type, from outside the package. None of these functions are underscore-
-prefixed or otherwise internal — they're exported, public API, the intended mechanism for adding
-a new cue without editing `src/arrest/` itself:
+prefixed or otherwise internal — but they're deliberately **not exported** by default, since
+nothing outside the package extends them yet (adding an export later is non-breaking; removing
+one isn't). Reach them either qualified (`BiophysicalBehaviour.metric_value`) or with an explicit
+import list: `using BiophysicalBehaviour: AbstractMetric, metric_state, metric_rate, metric_value`.
 
 | Abstract type | Methods to implement | Mandatory? |
 |---|---|---|
 | `AbstractMetric` | `metric_value` | always |
-| | `metric_rate_value` | only if used with `Rising`/`Falling` |
+| | `metric_rate_value` | only if used with `RisingDirection`/`FallingDirection` |
 | | `metric_state`, `metric_rate` | only if the metric needs its own state (default: none, no rate) |
 | `AbstractBound` | `bound_value` | always |
 | | `bound_state` | only if the bound needs its own state (default: none) |
@@ -341,6 +347,7 @@ calls:
 
 ```julia
 using BiophysicalBehaviour
+using BiophysicalBehaviour: AbstractMetric, metric_state, metric_rate, metric_value, signal_value, describe_metric
 
 struct SmoothedSignal{S<:Symbol,T,U} <: AbstractMetric
     signal::S
@@ -367,7 +374,7 @@ Used exactly like a built-in metric — `init` is seeded in the same units as th
 `average + rate * dt` both stay dimensionally consistent:
 
 ```julia
-ThresholdController(metric=SmoothedSignal(:temperature, 24.0u"hr", 290.0u"K"), bound=FixedBound(285.0u"K"), comparison=Below())
+ThresholdController(metric=SmoothedSignal(:temperature, 24.0u"hr", 290.0u"K"), bound=FixedBound(285.0u"K"), comparison=BelowBound())
 ```
 
 `AbstractBound`, `AbstractComparison`, and `AbstractDirection` follow the identical shape — e.g. a

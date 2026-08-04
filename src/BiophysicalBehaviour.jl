@@ -127,29 +127,23 @@ export phase_forcing, phase_posture, phase_state, phase_key, phase_condition, ne
 export simulate_transient_behavior
 export simulate_endotherm_activity_cycle
 
-# Arrest: generalized dormancy/diapause/quiescence controllers -- any life
-# stage, any process. See src/arrest/ for the design notes.
-export AbstractArrestController, NeverController
-export AbstractComparison, Below, Above
-export AbstractDirection, AnyDirection, Rising, Falling
-export signal_value, signal_rate
-export initial_controller_state, controller_rate, level
-export trigger_conditions, register_callback
-export signed_gap, direction_gate
-
-export AbstractMetric, RawSignal, RawProgress, Accumulate
-export metric_state, metric_rate, metric_value, metric_rate_value
-export AbstractBound, FixedBound
-export bound_state, bound_value
+# Arrest: generalized dormancy/diapause/quiescence controllers. See src/arrest/.
+# Extension-point types/functions (Abstract*, metric_*/bound_*, signed_gap,
+# direction_gate, describe_*/node_label, trigger_conditions/arrest_conditions,
+# signal_value/signal_rate) are not exported; use BiophysicalBehaviour.foo.
+export NeverController
+export BelowBound, AboveBound
+export AnyDirection, RisingDirection, FallingDirection
+export RawSignal, RawProgress, Accumulate
+export FixedBound
 export ThresholdController
 export FunctionController
 export AnyController, AllController
-
-export AbstractArrestModel, ComposedArrest, AnyArrestModel, AllArrestModel
-export initial_arrest_state, advance_arrest, arrest_level, arrest_conditions, step_state
+export ComposedArrest, AnyArrestModel, AllArrestModel
+export initial_controller_state, controller_rate, controller_level, register_callback
+export initial_arrest_state, advance_arrest, arrest_level, step_state
 export arrest_component
 export print_arrest_structure
-export describe_metric, describe_bound, describe_comparison, describe_direction, node_label
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")

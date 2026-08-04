@@ -21,10 +21,10 @@ const DIAPAUSE_HOUR_THRESHOLD = 1240.0u"hr"
 const DESICCATION_TOLERANCE = 0.6                   # hydration index
 
 # individual elements, shown separately before they're assembled below
-lo_example = ThresholdController(metric=RawProgress(), bound=FixedBound(DIAPAUSE_WINDOW[1]), comparison=Above())
-hi_example = ThresholdController(metric=RawProgress(), bound=FixedBound(DIAPAUSE_WINDOW[2]), comparison=Below())
+lo_example = ThresholdController(metric=RawProgress(), bound=FixedBound(DIAPAUSE_WINDOW[1]), comparison=AboveBound())
+hi_example = ThresholdController(metric=RawProgress(), bound=FixedBound(DIAPAUSE_WINDOW[2]), comparison=BelowBound())
 chill_example = ThresholdController(metric=Accumulate((p, sig, m, as) -> sig.temperature < COLD_TEMPERATURE ? 1.0 : 0.0, 0.0u"hr"),
-                                     bound=FixedBound(COLD_HOUR_THRESHOLD), comparison=Below())
+                                     bound=FixedBound(COLD_HOUR_THRESHOLD), comparison=BelowBound())
 induction_example = AllController(lo=lo_example, hi=hi_example, chill=chill_example)  # AND: all three must hold
 demo_model = ComposedArrest(induction=induction_example)  # duration omitted -- its rate reads a sibling accumulator, only meaningful once nested
 demo_state = initial_arrest_state(demo_model)
@@ -47,20 +47,20 @@ function build_locust_arrest_model(; smoothing::SmoothingStrategy=HardBound())
     
     # scale=2400.0u"hr" with SmoothBound(0.01) gives a 24-hour smoothing window at the limits.
     diapause_induction = AllController(
-        lo=ThresholdController(metric=RawProgress(), bound=FixedBound(lo), comparison=Above(); smoothing),
-        hi=ThresholdController(metric=RawProgress(), bound=FixedBound(hi), comparison=Below(); smoothing),
+        lo=ThresholdController(metric=RawProgress(), bound=FixedBound(lo), comparison=AboveBound(); smoothing),
+        hi=ThresholdController(metric=RawProgress(), bound=FixedBound(hi), comparison=BelowBound(); smoothing),
         chill=ThresholdController(metric=Accumulate((p, sig, m, as) -> sig.temperature < COLD_TEMPERATURE ? 1.0 : 0.0, 0.0u"hr"),
-                                   bound=FixedBound(COLD_HOUR_THRESHOLD), comparison=Below(); smoothing, scale=2400.0u"hr"),
+                                   bound=FixedBound(COLD_HOUR_THRESHOLD), comparison=BelowBound(); smoothing, scale=2400.0u"hr"),
         duration=ThresholdController(metric=Accumulate(duration_rate, 0.0u"hr"), bound=FixedBound(DIAPAUSE_HOUR_THRESHOLD),
-                                      comparison=Below(); smoothing, scale=2400.0u"hr"),
+                                      comparison=BelowBound(); smoothing, scale=2400.0u"hr"),
     )
     diapause_model = ComposedArrest(induction=diapause_induction)
 
     # quiescence submodel
     window_controller(w) = AllController(
-        lo=ThresholdController(metric=RawProgress(), bound=FixedBound(w[1]), comparison=Above(); smoothing),
-        hi=ThresholdController(metric=RawProgress(), bound=FixedBound(w[2]), comparison=Below(); smoothing),
-        wet=ThresholdController(metric=RawSignal(:hydration), bound=FixedBound(DESICCATION_TOLERANCE), comparison=Below(); smoothing),
+        lo=ThresholdController(metric=RawProgress(), bound=FixedBound(w[1]), comparison=AboveBound(); smoothing),
+        hi=ThresholdController(metric=RawProgress(), bound=FixedBound(w[2]), comparison=BelowBound(); smoothing),
+        wet=ThresholdController(metric=RawSignal(:hydration), bound=FixedBound(DESICCATION_TOLERANCE), comparison=BelowBound(); smoothing),
     )
     quiescence_model = ComposedArrest(induction=AnyController(w1=window_controller(QUIESCENCE_WINDOWS[1]),
                                                                w2=window_controller(QUIESCENCE_WINDOWS[2])))

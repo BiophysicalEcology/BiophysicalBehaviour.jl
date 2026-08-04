@@ -10,7 +10,7 @@ Base.@kwdef struct FunctionController{F,L} <: AbstractArrestController
     needs_callback::Bool = true
 end
 
-function level(c::FunctionController, own_state, progress, signals, model, arrest_state)
+function controller_level(c::FunctionController, own_state, progress, signals, model, arrest_state)
     if c.level_function === nothing
         c.condition(own_state, progress, signals, model, arrest_state) >= 0 ? 1.0 : 0.0
     else

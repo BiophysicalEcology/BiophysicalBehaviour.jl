@@ -29,15 +29,15 @@ end
 function _sub_levels(c::_CompositeController, own_state, progress, signals, model, arrest_state)
     ks = keys(c.controllers)
     map(ks) do k
-        level(getfield(c.controllers, k), getfield(own_state, k), progress, signals, model, arrest_state)
+        controller_level(getfield(c.controllers, k), getfield(own_state, k), progress, signals, model, arrest_state)
     end
 end
 # hard maximum/minimum -- a kink at the crossover regardless of child
 # smoothing. A smooth version needs a SmoothingStrategy field here routed
 # through HeatExchange.safe_max/safe_min.
-level(c::AnyController, own_state, progress, signals, model, arrest_state) =
+controller_level(c::AnyController, own_state, progress, signals, model, arrest_state) =
     maximum(_sub_levels(c, own_state, progress, signals, model, arrest_state))
-level(c::AllController, own_state, progress, signals, model, arrest_state) =
+controller_level(c::AllController, own_state, progress, signals, model, arrest_state) =
     minimum(_sub_levels(c, own_state, progress, signals, model, arrest_state))
 
 register_callback(c::_CompositeController) = any(register_callback, values(c.controllers))
