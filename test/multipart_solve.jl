@@ -11,6 +11,7 @@ using BiophysicalBehaviour
 using BiophysicalGeometry
 using HeatExchange
 using Unitful, UnitfulMoles
+using Setfield: @set
 using Test
 
 const ρ = 1000.0u"kg/m^3"
@@ -178,4 +179,73 @@ end
     @test limits.skin_temperature_core_overshoot == 5.0u"K"
     @test limits.metabolic_heat_flow_max_multiplier == 20.0
     @test limits.minimum_normalisation_range == 1e-6
+end
+
+@testset "map_part_physiology selector: ByName touches only its target" begin
+    organism = two_part_organism()
+    before = physiology(organism)
+
+    # Bump only the head's flesh conductivity via a ByName selector.
+    bumped = map_part_physiology(ByName(:head), organism) do phys
+        @set phys.conduction_pars_internal.flesh_conductivity = 9.9u"W/m/K"
+    end
+    after = physiology(bumped)
+
+    @test HeatExchange.conduction_pars_internal(after.head).flesh_conductivity == 9.9u"W/m/K"
+    @test HeatExchange.conduction_pars_internal(after.torso).flesh_conductivity ==
+          HeatExchange.conduction_pars_internal(before.torso).flesh_conductivity
+    # The lung index and part set are preserved through the update.
+    @test lung_part(bumped) == :torso
+    @test keys(physiology(bumped)) == (:torso, :head)
+end
+
+@testset "six-part dog: many-part solve + thermoregulation ladder" begin
+    torso_shape = Cylinder(18.0u"kg", ρ, b)
+    head_shape  = Cylinder(2.0u"kg", ρ, 1.5)
+    leg_shape   = Cylinder(1.0u"kg", ρ, 5.0)
+    torso = Body(torso_shape, CompositeInsulation(fur, fat))
+    head  = Body(head_shape,  CompositeInsulation(fur, fat))
+    mk_leg() = Body(leg_shape, CompositeInsulation(fur, fat))
+    r_head = 0.02u"m"
+    r_leg  = 0.015u"m"
+    L = torso.geometry.length.length_skin       # axial coordinate for Lateral leg mounts
+
+    dog = CompositeBody(;
+        parts = (; torso, head,
+                   leg_fl = mk_leg(), leg_fr = mk_leg(),
+                   leg_bl = mk_leg(), leg_br = mk_leg()),
+        joins = (
+            Join(torso = Attachment(EndA(0.0u"m", 0.0), Disc(r_head)),
+                 head  = Attachment(EndB(0.0u"m", 0.0), Disc(r_head))),
+            Join(torso = Attachment(Lateral(0.25L, π/2 + 0.3), Disc(r_leg)),
+                 leg_fl = Attachment(EndB(0.0u"m", 0.0), Disc(r_leg))),
+            Join(torso = Attachment(Lateral(0.25L, π/2 - 0.3), Disc(r_leg)),
+                 leg_fr = Attachment(EndB(0.0u"m", 0.0), Disc(r_leg))),
+            Join(torso = Attachment(Lateral(0.75L, π/2 + 0.3), Disc(r_leg)),
+                 leg_bl = Attachment(EndB(0.0u"m", 0.0), Disc(r_leg))),
+            Join(torso = Attachment(Lateral(0.75L, π/2 - 0.3), Disc(r_leg)),
+                 leg_br = Attachment(EndB(0.0u"m", 0.0), Disc(r_leg))),
+        ),
+    )
+
+    phys = (;
+        torso  = heat_exchange_of(torso_shape),
+        head   = heat_exchange_of(head_shape),
+        leg_fl = heat_exchange_of(leg_shape), leg_fr = heat_exchange_of(leg_shape),
+        leg_bl = heat_exchange_of(leg_shape), leg_br = heat_exchange_of(leg_shape),
+    )
+    traits = OrganismTraits(Endotherm(), phys, behav; lung_part = :torso)
+    organism = Organism(dog, traits)
+
+    # Direct solve: one surface result per part, lung mass from the torso.
+    solved = solve_multipart_metabolic_rate(organism, environment, skin0, insul0)
+    @test length(solved.parts) == 6
+    @test all(part -> part.success, solved.parts)
+    @test BiophysicalBehaviour._lung_mass(dog, :torso) == 18.0u"kg"
+
+    # Full rule-based ladder runs on the six-part organism.
+    init = BiophysicalBehaviour.initial_physiological_state(organism, env_vars)
+    regulated = thermoregulate(organism, environment, init)
+    @test length(regulated.parts) == 6
+    @test regulated.metabolic_heat_flow > 0.0u"W"
 end
