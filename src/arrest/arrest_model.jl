@@ -32,8 +32,8 @@ advance_arrest(m::ComposedArrest, arrest_state, progress, signals) =
        breakage=controller_rate(m.breakage, arrest_state.breakage, progress, signals, m, arrest_state))
 
 function arrest_level(m::ComposedArrest, arrest_state, progress, signals)
-    ind = level(m.induction, arrest_state.induction, progress, signals, m, arrest_state)
-    brk = level(m.breakage, arrest_state.breakage, progress, signals, m, arrest_state)
+    ind = controller_level(m.induction, arrest_state.induction, progress, signals, m, arrest_state)
+    brk = controller_level(m.breakage, arrest_state.breakage, progress, signals, m, arrest_state)
     ind * (1 - brk)
 end
 

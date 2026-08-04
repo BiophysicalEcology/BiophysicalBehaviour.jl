@@ -12,13 +12,13 @@ describe_bound(b::AbstractBound) = error("no describe_bound method for $(typeof(
 describe_bound(b::FixedBound) = string(b.value)
 
 describe_comparison(c::AbstractComparison) = error("no describe_comparison method for $(typeof(c))")
-describe_comparison(::Below) = "<"
-describe_comparison(::Above) = ">"
+describe_comparison(::BelowBound) = "<"
+describe_comparison(::AboveBound) = ">"
 
 describe_direction(d::AbstractDirection) = error("no describe_direction method for $(typeof(d))")
 describe_direction(::AnyDirection) = ""
-describe_direction(::Rising) = " (rising)"
-describe_direction(::Falling) = " (falling)"
+describe_direction(::RisingDirection) = " (rising)"
+describe_direction(::FallingDirection) = " (falling)"
 
 node_label(c::AbstractArrestController) = error("no node_label method for $(typeof(c))")
 function node_label(c::ThresholdController)

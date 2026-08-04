@@ -21,7 +21,7 @@ struct RawProgress <: AbstractMetric end
 metric_value(::RawProgress, own_state, progress, signals) = progress
 # progress is driven externally by the host, not tracked as own-state -- no rate to report.
 metric_rate_value(::RawProgress, own_state, progress, signals) =
-    error("RawProgress has no notion of rate; Rising/Falling direction is not supported for RawProgress")
+    error("RawProgress has no notion of rate; RisingDirection/FallingDirection is not supported for RawProgress")
 
 # integrates a rate functor into its own accumulator, from `init`. Generalizes
 # chill_accumulation/diapause_duration and DualAccumulatorArrest -- two

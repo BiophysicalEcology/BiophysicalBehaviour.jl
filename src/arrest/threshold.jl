@@ -3,7 +3,7 @@ Base.@kwdef struct ThresholdController{M<:AbstractMetric,B<:AbstractBound,D<:Abs
     metric::M
     bound::B
     direction::D = AnyDirection()
-    comparison::C = Below()
+    comparison::C = BelowBound()
     smoothing::S = HardBound()
     scale::SC = 1.0
 end
@@ -22,7 +22,7 @@ function _gap(c::ThresholdController, own_state, progress, signals)
     signed_gap(c.comparison, value, bound)
 end
 
-function level(c::ThresholdController, own_state, progress, signals, model, arrest_state)
+function controller_level(c::ThresholdController, own_state, progress, signals, model, arrest_state)
     gap = _gap(c, own_state, progress, signals)
     base = safe_step(c.smoothing, gap; scale=c.scale)
     if c.direction isa AnyDirection
