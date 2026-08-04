@@ -83,7 +83,7 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `target_core_skin_gradient::Float64`: Target core_temperature − skin_temperature difference (K).
   Only used when `gradient_penalty > 0`. Typical resting value is ~3 K. Default 2.0.
 """
-Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw,Tu} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
     minimum_heat_flow::Q
     insulation::I
@@ -98,4 +98,22 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     skin_wetness_penalty::Float64      = 1.0
     gradient_penalty::Float64          = 0.0
     target_core_skin_gradient::Float64 = 2.0
+    # Named replacements for the inline NLP magic numbers (§3.7). Consumed by the
+    # multi-part NLP template/objective builders (Phase 7.5).
+    skin_temperature_undershoot::Tu        = 5.0u"K"
+    skin_temperature_core_overshoot::Tu    = 5.0u"K"
+    metabolic_heat_flow_max_multiplier::Float64 = 20.0
+    minimum_normalisation_range::Float64        = 1e-6
 end
+
+"""
+    weight_for(weight, part::Symbol) -> weight
+
+Resolve a penalty-weight coefficient for a specific `part`. A scalar `weight`
+broadcasts to every part; a `NamedTuple{PartNames}` selects the per-part
+override (§3.7 "Per-part variation is opt-in"). This is how the multi-part NLP
+objective (Phase 7.5) reads whole-organism-or-per-part penalty fields off
+`ThermoregulationLimits` without the caller distinguishing the two forms.
+"""
+weight_for(weight::Real, ::Symbol) = weight
+weight_for(weight::NamedTuple, part::Symbol) = getfield(weight, part)
