@@ -16,10 +16,8 @@ import Ipopt
 using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0,
-    SmoothingStrategy, SurfaceSolveStrategy, HardBound, SmoothBound, safe_step, safe_clamp, safe_abs
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
 using Setfield: @set
-using ComponentArrays
 
 # Organism and traits
 export AbstractBehavior,
@@ -118,30 +116,6 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_behavioral_traits,
     example_ectotherm_organism_traits
 
-# Arrest: generalized dormancy/diapause/quiescence controllers -- any life
-# stage, any process. See src/arrest/ for the design notes.
-export AbstractArrestController, NeverController
-export AbstractComparison, Below, Above
-export AbstractDirection, AnyDirection, Rising, Falling
-export signal_value, signal_rate
-export initial_controller_state, controller_rate, level
-export trigger_conditions, register_callback
-export signed_gap, direction_gate
-
-export AbstractMetric, RawSignal, RawProgress, Accumulate
-export metric_state, metric_rate, metric_value, metric_rate_value
-export AbstractBound, FixedBound
-export bound_state, bound_value
-export ThresholdController
-export FunctionController
-export AnyController, AllController
-
-export AbstractArrestModel, ComposedArrest, AnyArrestModel, AllArrestModel
-export initial_arrest_state, advance_arrest, arrest_level, arrest_conditions, step_state
-export arrest_component
-export print_arrest_structure
-export describe_metric, describe_bound, describe_comparison, describe_direction, node_label
-
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
@@ -153,15 +127,5 @@ include("ectotherm/thermoregulation.jl")
 include("ectotherm/ectothermy.jl")
 include("ectotherm/example_variables_and_parameters.jl")
 include("endotherm/thermoregulation/behavioural.jl")
-
-include("arrest/controllers.jl")
-include("arrest/metrics.jl")
-include("arrest/bounds.jl")
-include("arrest/threshold.jl")
-include("arrest/function_controller.jl")
-include("arrest/composition.jl")
-include("arrest/arrest_model.jl")
-include("arrest/component.jl")
-include("arrest/structure.jl")
 
 end # module BiophysicalBehaviour
