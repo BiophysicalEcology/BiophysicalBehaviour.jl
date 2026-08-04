@@ -9,16 +9,26 @@
 
 # ----------------------------------------------------------------------------
 # Effectors
+#
+# Each effector is an `effect(op::Effector, ::WholeBody, organism, limit…)`
+# method; the old scalar names (`piloerect`, …) forward to it. On today's
+# whole-organism dorsal/ventral physiology every effector targets the whole
+# body — the genuine per-part / per-compartment `apply` split (§3.10) lands
+# with per-part physiology in Phase 4. Numerics are unchanged from the
+# pre-refactor functions.
 # ----------------------------------------------------------------------------
 
 """
-    piloerect(organism::Organism, insulation_limits::InsulationLimits)
+    piloerect(organism, insulation_limits) =
+        effect(Piloerect(), WholeBody(), organism, insulation_limits)
 
 Reduce insulation depth toward reference values (flatten fur/feathers).
-
 Returns updated `InsulationLimits` and `organism`.
 """
-function piloerect(organism::Organism, insulation_limits::InsulationLimits)
+piloerect(organism::Organism, insulation_limits::InsulationLimits) =
+    effect(Piloerect(), WholeBody(), organism, insulation_limits)
+
+function effect(::Piloerect, ::WholeBody, organism::Organism, insulation_limits::InsulationLimits)
     insulation_pars = HeatExchange.insulation_pars(organism)
     shape_pars = HeatExchange.shape_pars(organism)
     fibre_length_dorsal = insulation_pars.dorsal.length
@@ -58,13 +68,16 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
 end
 
 """
-    uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
+    uncurl(organism, axis_ratio_limits) =
+        effect(Uncurl(), WholeBody(), organism, axis_ratio_limits)
 
 Increase body axis ratio (uncurl from ball to elongated).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
+uncurl(organism::Organism, axis_ratio_limits::SteppedParameter) =
+    effect(Uncurl(), WholeBody(), organism, axis_ratio_limits)
+
+function effect(::Uncurl, ::WholeBody, organism::Organism, axis_ratio_limits::SteppedParameter)
     shape_pars = HeatExchange.shape_pars(organism)
 
     # No meaning to uncurl a sphere
@@ -86,13 +99,16 @@ function uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
 end
 
 """
-    vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
+    vasodilate(organism, flesh_conductivity_limits) =
+        effect(Vasodilate(), WholeBody(), organism, flesh_conductivity_limits)
 
 Increase tissue thermal conductivity (vasodilation).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
+vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter) =
+    effect(Vasodilate(), WholeBody(), organism, flesh_conductivity_limits)
+
+function effect(::Vasodilate, ::WholeBody, organism::Organism, flesh_conductivity_limits::SteppedParameter)
     flesh_conductivity = min(flesh_conductivity_limits.current + flesh_conductivity_limits.step, flesh_conductivity_limits.max)
     flesh_conductivity_limits = @set flesh_conductivity_limits.current = flesh_conductivity
 
@@ -102,13 +118,17 @@ function vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParame
 end
 
 """
-    hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+    hyperthermia(organism, core_temperature_limits, pant_cost) =
+        effect(Hyperthermia(), WholeBody(), organism, core_temperature_limits, pant_cost)
 
 Allow core temperature to rise (hyperthermia).
-
 Returns updated `SteppedParameter`, new minimum_heat_flow, and `organism`.
 """
-function hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost) =
+    effect(Hyperthermia(), WholeBody(), organism, core_temperature_limits, pant_cost)
+
+function effect(::Hyperthermia, ::WholeBody, organism::Organism,
+                core_temperature_limits::SteppedParameter, pant_cost)
     minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     core_temp = min(core_temperature_limits.current + core_temperature_limits.step, core_temperature_limits.max)
     core_temperature_limits = @set core_temperature_limits.current = core_temp
@@ -124,13 +144,16 @@ function hyperthermia(organism::Organism, core_temperature_limits::SteppedParame
 end
 
 """
-    pant(organism::Organism, panting_limits::PantingLimits)
+    pant(organism, panting_limits) =
+        effect(Pant(), WholeBody(), organism, panting_limits)
 
 Increase panting rate for evaporative cooling.
-
 Returns updated `PantingLimits`, new minimum_heat_flow, and `organism`.
 """
-function pant(organism::Organism, panting_limits::PantingLimits)
+pant(organism::Organism, panting_limits::PantingLimits) =
+    effect(Pant(), WholeBody(), organism, panting_limits)
+
+function effect(::Pant, ::WholeBody, organism::Organism, panting_limits::PantingLimits)
     minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     pant_rate_limits = panting_limits.pant
     pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
@@ -152,13 +175,16 @@ function pant(organism::Organism, panting_limits::PantingLimits)
 end
 
 """
-    sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
+    sweat(organism, skin_wetness_limits) =
+        effect(Sweat(), WholeBody(), organism, skin_wetness_limits)
 
 Increase skin wetness for evaporative cooling (sweating).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
+sweat(organism::Organism, skin_wetness_limits::SteppedParameter) =
+    effect(Sweat(), WholeBody(), organism, skin_wetness_limits)
+
+function effect(::Sweat, ::WholeBody, organism::Organism, skin_wetness_limits::SteppedParameter)
     skin_wetness = min(skin_wetness_limits.current + skin_wetness_limits.step, skin_wetness_limits.max)
     skin_wetness_limits = @set skin_wetness_limits.current = skin_wetness
 
