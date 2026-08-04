@@ -12,5 +12,6 @@ using Test
 end
 
 @safetestset "parts" begin include("parts.jl") end
+@safetestset "physiology" begin include("physiology.jl") end
 @safetestset "endotherm" begin include("endotherm.jl") end
 @safetestset "ectotherm" begin include("ectotherm.jl") end
