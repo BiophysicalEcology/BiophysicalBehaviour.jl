@@ -84,6 +84,18 @@ export PartSelector,
     foldl_parts,
     set_part
 
+# Per-part physiology + lung part (§3.9, §4)
+export LungPart,
+    panting_capacity,
+    is_lung_part,
+    unwrap_physiology,
+    broadcast_physiology,
+    physiology,
+    part_physiology,
+    lung_part,
+    lung_physiology,
+    pant_selector
+
 # Effector tags + interface
 export Effector,
     Piloerect,
@@ -139,6 +151,7 @@ export example_ectotherm_behavioral_limits,
 
 include("organism.jl")
 include("parts.jl")
+include("physiology.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
