@@ -96,3 +96,86 @@ end
     @test result.skin_temperature < core
     @test result.lung_temperature < core
 end
+
+# Build a reusable two-part (torso lung + head) organism.
+function two_part_organism()
+    torso_shape = Cylinder(0.6u"kg", ρ, b)
+    head_shape  = Cylinder(0.4u"kg", ρ, b)
+    torso = Body(torso_shape, CompositeInsulation(fur, fat))
+    head  = Body(head_shape,  CompositeInsulation(fur, fat))
+    r_join = 0.02u"m"
+    dog = CompositeBody(;
+        parts = (; torso, head),
+        joins = (Join(torso = Attachment(EndA(0.0u"m", 0.0), Disc(r_join)),
+                      head  = Attachment(EndB(0.0u"m", 0.0), Disc(r_join))),),
+    )
+    phys = (; torso = heat_exchange_of(torso_shape), head = heat_exchange_of(head_shape))
+    traits = OrganismTraits(Endotherm(), phys, behav; lung_part = :torso)
+    return Organism(dog, traits)
+end
+
+@testset "panting affects only the lung part (§3.9 exit criterion)" begin
+    organism = two_part_organism()
+    limits = thermoregulation(organism)
+
+    before = physiology(organism)
+    _, _, panted = BiophysicalBehaviour._pant_multipart(organism, limits.panting)
+    after = physiology(panted)
+
+    # Pant rate rises on the torso (lung) and is untouched on the head.
+    @test HeatExchange.respiration_pars(after.torso).pant > HeatExchange.respiration_pars(before.torso).pant
+    @test HeatExchange.respiration_pars(after.head).pant == HeatExchange.respiration_pars(before.head).pant
+
+    # The head's cutaneous physiology (skin wetness, flesh conductivity) is unchanged;
+    # panting is respiratory, at the lung, not a whole-body cutaneous response.
+    @test HeatExchange.evaporation_pars(after.head).skin_wetness ==
+          HeatExchange.evaporation_pars(before.head).skin_wetness
+    @test HeatExchange.conduction_pars_internal(after.head).flesh_conductivity ==
+          HeatExchange.conduction_pars_internal(before.head).flesh_conductivity
+end
+
+@testset "per-part vasodilation and sweating span all parts" begin
+    organism = two_part_organism()
+    limits = thermoregulation(organism)
+
+    _, dilated = BiophysicalBehaviour._vasodilate_multipart(organism, limits.flesh_conductivity)
+    dphys = physiology(dilated)
+    step = limits.flesh_conductivity.step
+    @test HeatExchange.conduction_pars_internal(dphys.torso).flesh_conductivity ==
+          limits.flesh_conductivity.current + step
+    @test HeatExchange.conduction_pars_internal(dphys.head).flesh_conductivity ==
+          limits.flesh_conductivity.current + step
+
+    _, swept = BiophysicalBehaviour._sweat_multipart(organism, limits.skin_wetness)
+    sphys = physiology(swept)
+    wet = limits.skin_wetness.current + limits.skin_wetness.step
+    @test HeatExchange.evaporation_pars(sphys.torso).skin_wetness == wet
+    @test HeatExchange.evaporation_pars(sphys.head).skin_wetness == wet
+end
+
+@testset "multi-part rule-based thermoregulate runs the effector ladder" begin
+    organism = two_part_organism()
+    init = BiophysicalBehaviour.initial_physiological_state(organism, env_vars)
+
+    result = thermoregulate(organism, environment, init)
+
+    # The loop returns the multipart solve result and reaches (or exhausts toward)
+    # the metabolic minimum without erroring.
+    @test length(result.parts) == 2
+    @test result.metabolic_heat_flow > 0.0u"W"
+    @test all(part -> part.success, result.parts)
+end
+
+@testset "weight_for: scalar broadcasts, NamedTuple overrides per part" begin
+    @test weight_for(1.5, :torso) == 1.5
+    @test weight_for(1.5, :head) == 1.5
+    @test weight_for((; torso = 2.0, head = 0.5), :torso) == 2.0
+    @test weight_for((; torso = 2.0, head = 0.5), :head) == 0.5
+
+    # The four magic-number replacement fields default on ThermoregulationLimits.
+    limits = example_thermoregulation_limits()
+    @test limits.skin_temperature_undershoot == 5.0u"K"
+    @test limits.skin_temperature_core_overshoot == 5.0u"K"
+    @test limits.metabolic_heat_flow_max_multiplier == 20.0
+    @test limits.minimum_normalisation_range == 1e-6
+end

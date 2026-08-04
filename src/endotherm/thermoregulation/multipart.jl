@@ -226,3 +226,193 @@ _part_covered_areas(b::Body) =
 # respiration balance. `Val` keeps the NamedTuple lookup type-stable.
 _lung_mass(body, name::Symbol) = _lung_mass(_parts(body), Val(name))
 _lung_mass(part_bodies::NamedTuple, ::Val{N}) where {N} = getfield(part_bodies, N).shape.mass
+
+# =============================================================================
+# Per-part physiology mutation + multi-part rule-based effectors.
+#
+# Effectors modify the organism's *stored* per-part physiology (the raw
+# `heat_exchange` NamedTuple — plain `HeatExchangeTraits`, before the on-demand
+# `LungPart` wrapping in `physiology`). Per-part quantities (flesh_conductivity,
+# skin_wetness) are applied across the selected parts; whole-organism quantities
+# routed to the lung (core temperature, metabolic heat flow, pant rate) are
+# applied to the `lung_part` only, via `pant_selector`. Piloerection and uncurl
+# rebuild body geometry (fur depth / axis ratio) and so couple to the Tier-1
+# geometry cache — deferred to Phase 5; the multi-part ladder below starts at
+# vasodilation.
+# =============================================================================
+
+"""
+    map_part_physiology(f, selector, organism) -> organism
+
+Return `organism` with `f(physiology)` substituted for the stored physiology of
+each part picked by `selector`, and every other part left unchanged. Operates on
+the raw `heat_exchange` NamedTuple; type-stable via `ntuple(_, Val(N))`.
+"""
+function map_part_physiology(f, selector::PartSelector, o::Organism)
+    sel = select_names(selector, HeatExchange.body(o))
+    heat_exchange = HeatExchange.traits(o).heat_exchange
+    return @set o.traits.heat_exchange = _map_physiology(f, sel, heat_exchange)
+end
+
+@inline function _map_physiology(f, sel::Tuple, heat_exchange::NamedTuple)
+    names = keys(heat_exchange)
+    vals = values(heat_exchange)
+    newvals = ntuple(Val(length(names))) do i
+        _member(names[i], sel) ? f(vals[i]) : vals[i]
+    end
+    return NamedTuple{names}(newvals)
+end
+
+# Whole-organism metabolic heat flow is produced at the lung; store it there.
+_set_lung_metabolic_heat_flow(o::Organism, flow) =
+    map_part_physiology(pant_selector(o), o) do physiology
+        @set physiology.metabolism_pars.metabolic_heat_flow = flow
+    end
+
+# Vasodilation — raise tissue conductivity across every part (per-part effector).
+function _vasodilate_multipart(o::Organism, flesh_conductivity_limits::SteppedParameter)
+    flesh_conductivity = min(
+        flesh_conductivity_limits.current + flesh_conductivity_limits.step,
+        flesh_conductivity_limits.max,
+    )
+    flesh_conductivity_limits = @set flesh_conductivity_limits.current = flesh_conductivity
+    o = map_part_physiology(WholeBody(), o) do physiology
+        @set physiology.conduction_pars_internal.flesh_conductivity = flesh_conductivity
+    end
+    return flesh_conductivity_limits, o
+end
+
+# Hyperthermia — let the regulated core rise (whole-organism, routed to lung).
+function _hyperthermia_multipart(o::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+    minimum_heat_flow = thermoregulation(o).minimum_heat_flow
+    core_temperature = min(
+        core_temperature_limits.current + core_temperature_limits.step,
+        core_temperature_limits.max,
+    )
+    core_temperature_limits = @set core_temperature_limits.current = core_temperature
+    metabolism = HeatExchange.metabolism_pars(o)
+    minimum_heat_flow = (minimum_heat_flow + pant_cost) *
+                        q10_scale(metabolism.q10, core_temperature, core_temperature_limits.reference)
+    o = map_part_physiology(pant_selector(o), o) do physiology
+        physiology = @set physiology.metabolism_pars.core_temperature = core_temperature
+        @set physiology.metabolism_pars.metabolic_heat_flow = minimum_heat_flow
+    end
+    return core_temperature_limits, minimum_heat_flow, o
+end
+
+# Panting — evaporative cooling at the lung only (§3.9). The pant rate and the
+# metabolic cost land on the lung part; no other part's flux is touched.
+function _pant_multipart(o::Organism, panting_limits::PantingLimits)
+    minimum_heat_flow = thermoregulation(o).minimum_heat_flow
+    pant_rate_limits = panting_limits.pant
+    pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
+    pant_cost = ((pant_rate - 1) / (pant_rate_limits.max + 1e-6 - 1)) *
+                (panting_limits.multiplier - 1) * minimum_heat_flow
+    panting_limits = @set panting_limits.pant.current = pant_rate
+    panting_limits = @set panting_limits.cost = pant_cost
+    metabolism = HeatExchange.metabolism_pars(o)
+    minimum_heat_flow = (minimum_heat_flow + pant_cost) *
+                        q10_scale(metabolism.q10, metabolism.core_temperature, panting_limits.core_temperature_ref)
+    o = map_part_physiology(pant_selector(o), o) do physiology
+        physiology = @set physiology.respiration_pars.pant = pant_rate
+        @set physiology.metabolism_pars.metabolic_heat_flow = minimum_heat_flow
+    end
+    return panting_limits, minimum_heat_flow, o
+end
+
+# Sweating — raise skin wetness across every part (per-part effector).
+function _sweat_multipart(o::Organism, skin_wetness_limits::SteppedParameter)
+    skin_wetness = min(skin_wetness_limits.current + skin_wetness_limits.step, skin_wetness_limits.max)
+    skin_wetness_limits = @set skin_wetness_limits.current = skin_wetness
+    o = map_part_physiology(WholeBody(), o) do physiology
+        @set physiology.evaporation_pars.skin_wetness = skin_wetness
+    end
+    return skin_wetness_limits, o
+end
+
+"""
+    thermoregulate(::Endotherm, ::RuleBasedSequentialControl, organism, environment, init)
+
+Rule-based sequential control for a multi-part (`CompositeBody`) organism.
+
+Drives `solve_multipart_metabolic_rate` and applies the effector ladder —
+vasodilation → hyperthermia → panting (lung only) → sweating — until the
+metabolic heat flow reaches the minimum, mirroring the single-body loop but with
+per-part physiology and lung-routed respiration. Piloerection and uncurl (which
+reshape body geometry) are deferred to Phase 5; a multi-part organism whose fur
+must flatten before other responses is not yet supported by this ladder.
+
+Returns the final `solve_multipart_metabolic_rate` NamedTuple.
+"""
+function thermoregulate(
+    ::Endotherm,
+    control::RuleBasedSequentialControl,
+    o::Organism{<:CompositeBody},
+    environment::NamedTuple,
+    init::NamedTuple,
+)
+    (; skin_temperature, insulation_temperature) = init
+    limits = thermoregulation(o)
+    (; mode, tolerance, max_iterations) = control
+
+    flesh_conductivity_limits = limits.flesh_conductivity
+    core_temperature_limits   = limits.core_temperature
+    panting_limits            = limits.panting
+    skin_wetness_limits       = limits.skin_wetness
+
+    out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature)
+    skin_temperature       = out.skin_temperature
+    insulation_temperature = out.insulation_temperature
+    metabolic_heat_flow    = out.metabolic_heat_flow
+    minimum_heat_flow      = limits.minimum_heat_flow
+
+    iteration = 0
+    while metabolic_heat_flow < minimum_heat_flow * (1 - tolerance)
+        iteration += 1
+        if iteration > max_iterations
+            @warn "max_iterations exceeded"
+            return out
+        end
+
+        if flesh_conductivity_limits.current < flesh_conductivity_limits.max
+            flesh_conductivity_limits, o = _vasodilate_multipart(o, flesh_conductivity_limits)
+
+        elseif core_temperature_limits.current < core_temperature_limits.max
+            core_temperature_limits, minimum_heat_flow, o =
+                _hyperthermia_multipart(o, core_temperature_limits, panting_limits.cost)
+            if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
+                panting_limits, minimum_heat_flow, o = _pant_multipart(o, panting_limits)
+            end
+            if simultaneous_sweat(mode)
+                if (skin_wetness_limits.current > skin_wetness_limits.max) || (skin_wetness_limits.step <= 0)
+                    @warn "All thermoregulatory options exhausted"
+                    return out
+                end
+                skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+            end
+
+        elseif panting_limits.pant.current < panting_limits.pant.max
+            panting_limits, minimum_heat_flow, o = _pant_multipart(o, panting_limits)
+            if simultaneous_sweat(mode)
+                if (skin_wetness_limits.current > skin_wetness_limits.max) || (skin_wetness_limits.step <= 0)
+                    @warn "All thermoregulatory options exhausted"
+                    return out
+                end
+                skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+            end
+
+        else
+            if (skin_wetness_limits.current > skin_wetness_limits.max) || (skin_wetness_limits.step <= 0)
+                return out
+            end
+            skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+        end
+
+        out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature)
+        skin_temperature       = out.skin_temperature
+        insulation_temperature = out.insulation_temperature
+        metabolic_heat_flow    = out.metabolic_heat_flow
+    end
+
+    return out
+end

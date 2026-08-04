@@ -113,7 +113,9 @@ export thermoregulate
 
 # Multi-part coupled metabolic-rate solve (Phase 4 / 6-7 integration)
 export solve_multipart_metabolic_rate,
-    part_surface_setups
+    part_surface_setups,
+    map_part_physiology,
+    weight_for
 
 # Thermoregulation limit structs (shared)
 export SteppedParameter,
