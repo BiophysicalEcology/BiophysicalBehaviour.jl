@@ -111,6 +111,10 @@ export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
 
 export thermoregulate
 
+# Multi-part coupled metabolic-rate solve (Phase 4 / 6-7 integration)
+export solve_multipart_metabolic_rate,
+    part_surface_setups
+
 # Thermoregulation limit structs (shared)
 export SteppedParameter,
     InsulationLimits,
@@ -155,6 +159,7 @@ include("physiology.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
+include("endotherm/thermoregulation/multipart.jl")
 include("endotherm/thermoregulation/ipopt.jl")
 include("endotherm/example_variables_and_parameters.jl")
 include("ectotherm/ectotherm_traits.jl")
