@@ -11,5 +11,6 @@ using Test
     Aqua.test_deps_compat(BiophysicalBehaviour)
 end
 
+@safetestset "parts" begin include("parts.jl") end
 @safetestset "endotherm" begin include("endotherm.jl") end
 @safetestset "ectotherm" begin include("ectotherm.jl") end

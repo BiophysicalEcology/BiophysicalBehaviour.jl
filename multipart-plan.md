@@ -437,8 +437,7 @@ natural functions of the compile-time topology (`NumParts`,
   `2 · NumParts` (per-part skin & insulation temperatures)
   `+ 2 · NumCompartments` (per-compartment `core_temperature` and
   `flesh_conductivity`)
-  `+ 3 · NumParts` (per-part `insulation_depth`, `skin_wetness`,
-  `aspect_ratio`)
+  `+ 3 · NumParts` (per-part `insulation_depth`, `skin_wetness`)
   `+ 2` (`metabolic_heat_flow` and `pant`, whole-organism, routed to
   `lung_part`).
 
@@ -462,8 +461,7 @@ nlp_template(problem) =
     (; parts = (; head    = (; skin_temperature       = 300.0u"K",
                                 insulation_temperature = 295.0u"K",
                                 insulation_depth       = 0.01u"m",
-                                skin_wetness           = 0.1,
-                                aspect_ratio           = 1.0),
+                                skin_wetness           = 0.1),
                   torso_dorsal   = (; ...), torso_ventral = (; ...),
                   leg_fl = (; ...), leg_fr = (; ...), ...),
        compartments = (; torso_core = (; core_temperature   = 310.0u"K",
@@ -548,7 +546,6 @@ builders walk the organism at solve time.
 | Insulation properties, piloerection range | `part.physiology.insulation`, `.insulation_limits` |
 | Skin wetness range, flesh conductivity range | `part.physiology.skin_wetness_range`, `.flesh_conductivity_limits` |
 | Panting capacity | field on the `LungPart` wrapper around the lung part's physiology (§3.9); not present on other parts |
-| Aspect-ratio bounds | `aspect_ratio_bounds(part.shape, limits)` dispatch (`::Sphere` returns `(1,1)`); no user input |
 | Setpoint, Q10, minimum heat flow, penalty weights, magic-number replacements | `ThermoregulationLimits` (scalars — same as today) |
 
 For the common case (uniform tuning across parts) the user surface is
@@ -937,10 +934,6 @@ multi-part.
   penalty-weight fields accept `Float64` (broadcast) or
   `NamedTuple{PartNames}` (opt-in per-part override) via a
   `weight_for(w, part)` helper.
-- Replace the `isa Sphere` special-case with per-shape
-  `aspect_ratio_bounds` dispatch; the builder consults each part's
-  own physiology for `insulation_depth_bounds` / `skin_wetness_bounds`
-  (no top-level `limits.insulation[part]` indirection).
 - Replace inline `insulation_depth_max` / `aspect_ratio_min` initial
   heuristics with a `default_initial_template(problem, environment,
   limits)` helper. Wire warm-starting to reuse the previous solve's
@@ -1089,6 +1082,29 @@ force a rewrite.
   `contribution_to_heat_load` methods (so `BloodPerfusionCoupling` is a
   new method, not a rewrite); `lung_part` from 3.9 in place so nasal /
   pulmonary flux can be distinguished when a future `nasal_part` lands.
+
+- **8.5 Animal-in-shelter coupling** (e.g. possum in a nestbox, animal in
+  a burrow). The shelter is a *second heat-exchanging body* — its own
+  geometry, wall insulation, and heat balance — that both modifies the
+  microclimate the animal sees (attenuates wind, replaces sky/ground
+  radiant boundaries with interior-wall temperatures, traps humidity) and
+  is itself warmed by the animal. Their temperatures are mutually
+  dependent, so it is a coupled solve, not a one-way environment tweak.
+  Old monolith code for this exists but was never re-integrated post-split;
+  not built here. Requires two things to stay open, both already implied by
+  the "nodes, not parts" principle (§3.4) plus 8.2/8.4:
+  (a) a `HeatBalanceProblem`'s thermal-node graph is **not hardwired to a
+  single organism** — it can hold nodes belonging to more than one body
+  (organism parts + shelter walls), coupled by non-flesh `HeatCoupling`
+  subtypes (`RadiativeEnclosureCoupling`, `CavityAirCoupling`) added as new
+  `contribution_to_*` methods, not a rewrite;
+  (b) the per-node **environment/boundary is resolvable from other nodes'
+  state** — an animal node's radiant/convective boundary can be a shelter
+  wall node's temperature (a solve variable), not only a fixed global
+  `environment`. Keep `environment` access in `solve_part_heat_balance`
+  behind a per-part boundary lookup so a shelter can later inject
+  node-derived boundaries. The Tier 2 radiation cache's per-part
+  incoming-IR vector (8.2) already carries enclosure view factors.
 
 **Cross-cutting principle:** state schema, compartment graph, radiation
 cache, and coupling interface are all designed additively — new node types,

@@ -73,6 +73,27 @@ export thermal_strategy,
     activity_period,
     control_strategy
 
+# Part selectors and traversal
+export PartSelector,
+    WholeBody,
+    ByName,
+    Compartment,
+    part_names,
+    select_names,
+    map_parts,
+    foldl_parts,
+    set_part
+
+# Effector tags + interface
+export Effector,
+    Piloerect,
+    Uncurl,
+    Vasodilate,
+    Hyperthermia,
+    Pant,
+    Sweat,
+    effect
+
 # Endotherm thermoregulation functions
 export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
 
@@ -117,6 +138,7 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_organism_traits
 
 include("organism.jl")
+include("parts.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
