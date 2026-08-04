@@ -10,6 +10,35 @@ patterns and `ModelParameters` for parameter tooling). Nothing is registered.
 Backwards compatibility is not a constraint. Simplicity, type stability, and
 zero-allocation hot paths are.
 
+## Status (updated 2026-08-05)
+
+- **Phase 0-3** — DONE (family hierarchies, join accessors, part selectors,
+  effector refactor).
+- **Phase 4** — DONE. Per-part physiology + `LungPart` + `lung_part` index;
+  co-located per-part **limits container** deferred to 7.5 (its only consumer is
+  the NLP builder); `ThermoregulationLimits` gained the four magic-number fields
+  + `weight_for`; per-part effectors (`map_part_physiology`) with panting/core
+  routed to the lung part; multi-part `RuleBasedSequentialControl` loop driving
+  the coupled solve. `ThermoregulationLimits` *slimming* (removing
+  insulation/flesh_conductivity/etc.) stays with the Phase 8 deletion pass since
+  the single-body loop + 328-case regression still consume them.
+- **Phase 6-7** — Core physics landed in `HeatExchange` (`solve_part_heat_balance`,
+  `HeatCoupling`, `CompartmentGraph`, `solve_part_surface`,
+  `solve_coupled_metabolic_rate`, shell-fraction fix). `CommonSolve`
+  `HeatBalanceProblem`/`HeatBalanceSolver` interface (§3.6) and `Vasodilate`
+  conductance-matrix caching not yet wired. **BB-side integration DONE**:
+  `solve_multipart_metabolic_rate` / `part_surface_setups` build per-part setups
+  from a multi-part `Organism` and route through `lung_part`. Floating
+  compartments (independent leg/head cores via `solve_core_temperatures`) not
+  yet wired — current solve assumes one all-`SharedCore` compartment.
+- **Phase 9** — Example (`examples/dog_thermoregulation.jl`) + multi-part tests
+  (`test/multipart_solve.jl`) landed for the single-compartment path.
+- **Phase 5** (cache), **Phase 7.5** (multi-part NLP + `IPOPTControl`),
+  **Phase 8** (dorsal/ventral deletion), **Phase 10** (cleanup) — REMAINING.
+  Phase 8 is gated on migrating the 328-case endotherm regression off the
+  dorsal/ventral reference model; Phase 7.5 is a new Flatten-templated NLP
+  subsystem across both packages plus the Ipopt extension.
+
 ## Naming conventions used throughout
 
 **Fully spelled identifiers.** No `T_` / `Q_` / `k_` prefixes, no `Ra` /
