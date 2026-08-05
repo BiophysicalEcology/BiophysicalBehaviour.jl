@@ -52,9 +52,13 @@ limits  = example_thermoregulation_limits()
 # Rebuild the flat decision-variable vector from a solution by flattening a
 # variable structure of the same shape the packer uses — no index arithmetic.
 function pack_variables(packed, core_temperature, metabolic_heat_flow, panting_rate, part_leaves)
+    # Build a Unitful structure of the template's shape and let `flatten(_, Real)`
+    # rip out the Float64 magnitudes (in the template's canonical units) — the
+    # inverse of the packer's `reconstruct`. `log(ustrip(u"W", _))` is the targeted
+    # strip the log-transform variable genuinely needs; no other unit stripping.
     structure = BB._variable_structure(packed.part_names, core_temperature,
         log(ustrip(u"W", metabolic_heat_flow)), Float64(panting_rate), part_leaves)
-    return collect(Float64, map(ustrip, Flatten.flatten(structure, Number)))
+    return collect(Float64, Flatten.flatten(structure, Real))
 end
 
 function pack_solution(packed, out)
