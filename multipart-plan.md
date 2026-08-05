@@ -41,13 +41,42 @@ zero-allocation hot paths are.
   a later optimisation pass (the outer `physiology` broadcast still allocates).
 - **Phase 9** — Example (`examples/dog_thermoregulation.jl`) + multi-part tests
   (`test/multipart_solve.jl`) landed for the single-compartment path.
-- **Phase 7.5** (multi-part NLP + `IPOPTControl`), **Phase 8** (dorsal/ventral
-  deletion), **Phase 10** (cleanup) — REMAINING. Multi-part `Piloerect` /
-  `Uncurl` (which reshape geometry and drive the Phase 5 cache rebuild) land with
-  the per-part insulation-limits container in 7.5. Phase 8 is gated on migrating
-  the 328-case endotherm regression off the dorsal/ventral reference model;
-  Phase 7.5 is a new Flatten-templated NLP subsystem across both packages plus
-  the Ipopt extension.
+- **Phase 7.5** — multi-part NLP + `IPOPTControl(MultipartNLP())` **DONE (core)**.
+  `HeatExchange.part_surface_residuals` — the non-iterative twin of
+  `solve_part_surface` (skin/insulation as explicit inputs → per-part surface
+  balance + skin-temperature residuals via the shared `solve_part_heat_balance`),
+  so the physics side gains a residual primitive with **no** `Optimization` dep.
+  BB `MultipartNLP <: HeatExchange.NLPStrategy` + `MultipartNLPPacked` carry the
+  per-part setups and whole-organism respiration inputs; the multipart methods
+  (`_heat_balance_residuals!`, `_objective_value`, `_inputs!`, `_problem_size`,
+  `_scaling`, `_assemble`, `nlp_pack`) slot into the **existing** direct-Ipopt +
+  Enzyme callback machinery (dispatch on the packed type, flat `Float64` vector),
+  which needed repair to run under the current Enzyme: `set_runtime_activity` on
+  the reverse/forward passes, `Const`-wrap the captured `LagrangianGradient`
+  functor in the Hessian pass, and a BLAS-free hand-rolled `λ·g` in `_lagrangian`
+  (the `LinearAlgebra.dot` segfaulted under nested AD via Enzyme's fallback BLAS).
+  1-part and multi-part organisms solve to heat-balanced, Q10-satisfying states;
+  residuals vanish at the iterative coupled solution (`test/multipart_nlp.jl`, 16
+  tests). **Deviations from the original plan (deliberate):** (a) regular per-part
+  **index-stride** layout (3 + 4N vars) rather than `Flatten`-reconstruct — general
+  over N, Enzyme-friendly, and the single boundary crossing (attach/`ustrip` units)
+  is unchanged; (b) kept **direct `Ipopt.jl` + Enzyme** rather than
+  `Optimization.jl`/`OptimizationIpopt` — direct Ipopt preserves the primal+dual
+  warm-start the `Optimization` wrappers discard; (c) per-part bounds **broadcast**
+  the whole-organism `ThermoregulationLimits` (uniform-tuning default) — the
+  co-located per-part limits container is still deferred; (d) geometry effectors
+  (`insulation_depth`/`axis_ratio`, i.e. multi-part `Piloerect`/`Uncurl`) deferred
+  exactly as the rule-based ladder defers them, so no body is rebuilt under AD.
+  **Still open for 7.5:** move `Ipopt`/`Enzyme` into an
+  `ext/BiophysicalBehaviourIpoptExt.jl` extension (dependency hygiene — rule-based
+  users still build Ipopt); per-part limits container + multi-part
+  `Piloerect`/`Uncurl` decision variables; the single-body `WeightedMeanNLP` /
+  `MultiSidedNLP` IPOPT paths remain broken under the current Enzyme (they rebuild
+  bodies under AD → `IllegalTypeAnalysisException` in `_vapour_densities`), but
+  they are untested and slated for deletion in Phase 8.
+- **Phase 8** (dorsal/ventral deletion), **Phase 10** (cleanup) — REMAINING. Phase
+  8 is gated on migrating the 328-case endotherm regression off the dorsal/ventral
+  reference model.
 
 ## Naming conventions used throughout
 
