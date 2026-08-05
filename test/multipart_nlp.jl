@@ -14,6 +14,7 @@ using BiophysicalGeometry
 using HeatExchange
 using Unitful, UnitfulMoles
 using Test
+import Flatten
 const BB = BiophysicalBehaviour
 
 const ρ = 1000.0u"kg/m^3"
@@ -48,28 +49,26 @@ insul0 = env_vars.air_temperature + 2u"K"
 control = IPOPTControl(; nlp_strategy = MultipartNLP(), smoothing = HeatExchange.SmoothBound(1e-5))
 limits  = example_thermoregulation_limits()
 
-# Rebuild the flat decision-variable vector from an assembled solution so the
-# residual function can be re-evaluated at it (each part contributes 4 variables).
-function pack_solution(out, part_phys)
-    N = length(out.parts)
-    x = zeros(3 + 4 * N)
-    x[1] = ustrip(u"K", out.core_temperature)
-    x[2] = log(ustrip(u"W", out.metabolic_heat_flow))
-    x[3] = Float64(out.panting_rate)
-    for (i, p) in enumerate(values(out.parts))
-        base = 3 + 4 * (i - 1)
-        x[base + 1] = ustrip(u"K", p.skin_temperature)
-        x[base + 2] = ustrip(u"K", p.insulation_temperature)
-        x[base + 3] = ustrip(u"W/m/K", p.flesh_conductivity)
-        x[base + 4] = Float64(p.skin_wetness)
+# Rebuild the flat decision-variable vector from a solution by flattening a
+# variable structure of the same shape the packer uses — no index arithmetic.
+function pack_variables(packed, core_temperature, metabolic_heat_flow, panting_rate, part_leaves)
+    structure = BB._variable_structure(packed.part_names, core_temperature,
+        log(ustrip(u"W", metabolic_heat_flow)), Float64(panting_rate), part_leaves)
+    return collect(Float64, map(ustrip, Flatten.flatten(structure, Number)))
+end
+
+function pack_solution(packed, out)
+    part_leaves = ntuple(length(out.parts)) do i
+        p = values(out.parts)[i]
+        BB._part_leaf(p.skin_temperature, p.insulation_temperature, p.flesh_conductivity, p.skin_wetness)
     end
-    return x
+    return pack_variables(packed, out.core_temperature, out.metabolic_heat_flow, out.panting_rate, part_leaves)
 end
 
 function residuals_at(out, organism)
     packed = HeatExchange.nlp_pack(MultipartNLP(), organism, environment, skin0, insul0;
                                    smoothing = control.smoothing)
-    x = pack_solution(out, nothing)
+    x = pack_solution(packed, out)
     _, ncon = BB._problem_size(packed)
     params = (; nlp_packed = packed,
                 minimum_heat_flow = ustrip(u"W", limits.minimum_heat_flow),
@@ -90,17 +89,12 @@ end
 
     N = length(packed.setups)
     _, ncon = BB._problem_size(packed)
-    x = zeros(3 + 4N)
-    x[1] = ustrip(u"K", core)
-    x[2] = log(ustrip(u"W", ref.metabolic_heat_flow))
-    x[3] = Float64(resp.pant)
-    for (i, p) in enumerate(values(ref.parts))
-        base = 3 + 4 * (i - 1)
-        x[base + 1] = ustrip(u"K", p.skin_temperature)
-        x[base + 2] = ustrip(u"K", p.insulation_temperature)
-        x[base + 3] = ustrip(u"W/m/K", internal.flesh_conductivity)
-        x[base + 4] = Float64(evap.skin_wetness)
+    part_leaves = ntuple(N) do i
+        p = values(ref.parts)[i]
+        BB._part_leaf(p.skin_temperature, p.insulation_temperature,
+                      internal.flesh_conductivity, Float64(evap.skin_wetness))
     end
+    x = pack_variables(packed, core, ref.metabolic_heat_flow, resp.pant, part_leaves)
     params = (; nlp_packed = packed, minimum_heat_flow = ustrip(u"W", metab.metabolic_heat_flow),
                 q10 = Float64(metab.q10), setpoint_temperature = ustrip(u"K", core))
     r = zeros(ncon)
