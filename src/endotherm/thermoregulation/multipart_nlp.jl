@@ -240,15 +240,16 @@ function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effecto
     ).balance
 
     # Q10: metabolic_heat_flow − minimum_heat_flow · q10^((core − setpoint)/10) ≥ 0.
-    q10_slack = exp(vars.log_metabolic_heat_flow) -
-        p.minimum_heat_flow * p.q10 ^ ((ustrip(u"K", core_temperature) - p.setpoint_temperature) / 10.0)
+    # The Q10 exponent is an empirical correlation over a bare temperature difference.
+    q10_slack = metabolic_heat_flow -
+        p.minimum_heat_flow * p.q10 ^ (ustrip(u"K", core_temperature - p.setpoint_temperature) / 10.0)
 
     # The per-part residuals were written inside the fold above; the whole-organism
     # balance and the Q10 slack come last (the single `≥ 0` constraint — see
     # `_constraint_bounds`). This order matches `_residual_structure`, which
     # `_problem_size` counts, so the write and the count cannot disagree.
     @inbounds residuals[k += 1] = ustrip(u"W", balance)
-    @inbounds residuals[k += 1] = q10_slack
+    @inbounds residuals[k += 1] = ustrip(u"W", q10_slack)
     return nothing
 end
 
@@ -260,25 +261,24 @@ end
 # =============================================================================
 function _objective_value(packed::MultipartNLPPacked, effectors, opt)
     vars = _reconstruct_variables(packed, effectors)
-    # The objective's penalties are dimensionless Float64 (`opt` holds K / W magnitudes),
-    # so cross into that space with *targeted* `ustrip`s to the objective's units.
-    core_temperature    = ustrip(u"K", vars.core_temperature)
-    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow)
+    # Each penalty term is a ratio of like-dimensioned quantities, hence dimensionless.
+    core_temperature    = vars.core_temperature
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
     panting_rate        = vars.panting_rate
 
     part_vars = values(vars.parts)
     N = length(part_vars)
-    skin_sum = 0.0
+    skin_sum = zero(core_temperature)
     wet_sum  = 0.0
     @inbounds for i in 1:N
-        skin_sum += ustrip(u"K", part_vars[i].skin_temperature)
+        skin_sum += part_vars[i].skin_temperature
         wet_sum  += part_vars[i].skin_wetness
     end
     skin_mean         = skin_sum / N
     skin_wetness_mean = wet_sum / N
 
-    return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature_K) / opt.core_temperature_range)^2 +
-           opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.heat_flow_min_W) / opt.heat_flow_range)^2 +
+    return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature) / opt.core_temperature_range)^2 +
+           opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.minimum_heat_flow) / opt.heat_flow_range)^2 +
            opt.gradient_penalty         * ((core_temperature - skin_mean - opt.target_gradient) / opt.gradient_range)^2 +
            opt.panting_penalty          * ((panting_rate - opt.panting_rate_min) / opt.panting_rate_range)^2 +
            opt.skin_wetness_penalty     * ((skin_wetness_mean - opt.skin_wetness_min) / opt.skin_wetness_range)^2
@@ -300,8 +300,9 @@ end
 # flattened — guaranteeing alignment with the variables. Whole-organism scalars come
 # from `ThermoregulationLimits`; per-part bounds broadcast those whole-organism
 # limits to every part (the uniform-tuning default). The objective_parameters /
-# nlp_parameters NamedTuples are structurally identical to the single-body path, so
-# the shared Ipopt callbacks read them unchanged.
+# nlp_parameters NamedTuples keep their temperature fields Unitful (the objective and
+# Q10 do dimensioned arithmetic and strip only at the empirical boundary); the shared
+# Ipopt callbacks pass them through opaquely, so nothing downstream needs to change.
 # =============================================================================
 function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartNLPPacked,
                   organism, environment, init::NamedTuple)
@@ -311,64 +312,73 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     internal = conduction_pars_internal(organism)
     evap     = evaporation_pars(organism)
 
-    air_temperature_K      = ustrip(u"K", environment.environment_vars.air_temperature)
-    setpoint_temperature_K = ustrip(u"K", metab.core_temperature)
-    core_temperature_min   = ustrip(u"K", limits.core_temperature.reference)
-    core_temperature_max   = ustrip(u"K", limits.core_temperature.max)
-    skin_temperature_min   = air_temperature_K - ustrip(u"K", limits.skin_temperature_undershoot)
-    skin_temperature_max   = core_temperature_max + ustrip(u"K", limits.skin_temperature_core_overshoot)
-    heat_flow_min_W        = ustrip(u"W", limits.minimum_heat_flow)
-    heat_flow_max_W        = heat_flow_min_W * limits.metabolic_heat_flow_max_multiplier
-    flesh_conductivity_min = ustrip(u"W/m/K", limits.flesh_conductivity.reference)
-    flesh_conductivity_max = ustrip(u"W/m/K", limits.flesh_conductivity.max)
-    panting_rate_min       = Float64(limits.panting.pant.reference)
-    panting_rate_max       = Float64(limits.panting.pant.max)
-    skin_wetness_min       = Float64(limits.skin_wetness.reference)
-    skin_wetness_max       = Float64(limits.skin_wetness.max)
-    heat_flow_init         = max(ustrip(u"W", init.metabolic_heat_flow), heat_flow_min_W)
-    flesh_conductivity     = clamp(ustrip(u"W/m/K", internal.flesh_conductivity), flesh_conductivity_min, flesh_conductivity_max)
-    skin_wetness           = clamp(Float64(evap.skin_wetness), skin_wetness_min, skin_wetness_max)
-    skin_temperature_init  = clamp(ustrip(u"K", init.skin_temperature), skin_temperature_min, skin_temperature_max)
-    insulation_temp_init   = clamp(ustrip(u"K", init.insulation_temperature), skin_temperature_min, skin_temperature_max)
+    # Quantities stay Unitful; the bound/initial structures are built Unitful and
+    # `flatten(Real)` rips out the magnitudes (in the template's canonical units).
+    air_temperature      = environment.environment_vars.air_temperature
+    setpoint_temperature = metab.core_temperature
+    core_temperature_min = limits.core_temperature.reference
+    core_temperature_max = limits.core_temperature.max
+    skin_temperature_min = air_temperature - limits.skin_temperature_undershoot
+    skin_temperature_max = core_temperature_max + limits.skin_temperature_core_overshoot
+    heat_flow_min        = limits.minimum_heat_flow
+    heat_flow_max        = heat_flow_min * limits.metabolic_heat_flow_max_multiplier
+    flesh_conductivity_min = limits.flesh_conductivity.reference
+    flesh_conductivity_max = limits.flesh_conductivity.max
+    panting_rate_min     = Float64(limits.panting.pant.reference)
+    panting_rate_max     = Float64(limits.panting.pant.max)
+    skin_wetness_min     = Float64(limits.skin_wetness.reference)
+    skin_wetness_max     = Float64(limits.skin_wetness.max)
+    heat_flow_init       = clamp(init.metabolic_heat_flow, heat_flow_min, heat_flow_max)
+    flesh_conductivity   = clamp(internal.flesh_conductivity, flesh_conductivity_min, flesh_conductivity_max)
+    skin_wetness         = clamp(Float64(evap.skin_wetness), skin_wetness_min, skin_wetness_max)
+    skin_temperature_init = clamp(init.skin_temperature, skin_temperature_min, skin_temperature_max)
+    insulation_temp_init  = clamp(init.insulation_temperature, skin_temperature_min, skin_temperature_max)
+
+    # The metabolic variable is stored as its log, so its bounds live in log-W space.
+    log_heat_flow_min = log(ustrip(u"W", heat_flow_min))
+    log_heat_flow_max = log(ustrip(u"W", heat_flow_max))
 
     lower_leaves = ntuple(_ -> _part_leaf(skin_temperature_min, skin_temperature_min, flesh_conductivity_min, skin_wetness_min), Val(N))
     upper_leaves = ntuple(_ -> _part_leaf(skin_temperature_max, skin_temperature_max, flesh_conductivity_max, skin_wetness_max), Val(N))
     init_leaves  = ntuple(_ -> _part_leaf(skin_temperature_init, insulation_temp_init, flesh_conductivity, skin_wetness), Val(N))
 
-    lower_structure = _variable_structure(packed.part_names, core_temperature_min, log(heat_flow_min_W), panting_rate_min, lower_leaves)
-    upper_structure = _variable_structure(packed.part_names, core_temperature_max, log(heat_flow_max_W), panting_rate_max, upper_leaves)
+    lower_structure = _variable_structure(packed.part_names, core_temperature_min, log_heat_flow_min, panting_rate_min, lower_leaves)
+    upper_structure = _variable_structure(packed.part_names, core_temperature_max, log_heat_flow_max, panting_rate_max, upper_leaves)
     init_structure  = _variable_structure(packed.part_names,
-        clamp(setpoint_temperature_K, core_temperature_min, core_temperature_max),
-        clamp(log(heat_flow_init), log(heat_flow_min_W), log(heat_flow_max_W)),
+        clamp(setpoint_temperature, core_temperature_min, core_temperature_max),
+        clamp(log(ustrip(u"W", heat_flow_init)), log_heat_flow_min, log_heat_flow_max),
         panting_rate_min, init_leaves)
 
     copyto!(lower_bounds,   Flatten.flatten(lower_structure, Real))
     copyto!(upper_bounds,   Flatten.flatten(upper_structure, Real))
     copyto!(initial_values, Flatten.flatten(init_structure, Real))
 
-    core_temperature_range = max(core_temperature_max - setpoint_temperature_K, limits.minimum_normalisation_range)
+    # `minimum_normalisation_range` is a dimensionless epsilon that `oneunit` gives
+    # the range's dimension.
+    core_span = core_temperature_max - setpoint_temperature
+    core_temperature_range = max(core_span, limits.minimum_normalisation_range * oneunit(core_span))
     objective_parameters = (;
-        setpoint_temperature_K   = Float64(setpoint_temperature_K),
-        heat_flow_min_W          = Float64(heat_flow_min_W),
+        setpoint_temperature     = setpoint_temperature,
+        minimum_heat_flow        = heat_flow_min,
         core_temperature_penalty = Float64(limits.core_temperature_penalty),
         metabolic_heat_penalty   = Float64(limits.metabolic_heat_penalty),
         panting_penalty          = Float64(limits.panting_penalty),
         skin_wetness_penalty     = Float64(limits.skin_wetness_penalty),
         gradient_penalty         = Float64(limits.gradient_penalty),
-        target_gradient          = Float64(limits.target_core_skin_gradient),
-        core_temperature_range   = Float64(core_temperature_range),
-        gradient_range           = Float64(core_temperature_range),
+        target_gradient          = limits.target_core_skin_gradient,
+        core_temperature_range   = core_temperature_range,
+        gradient_range           = core_temperature_range,
         panting_rate_min         = Float64(panting_rate_min),
         panting_rate_range       = max(panting_rate_max - panting_rate_min, 1e-6),
         skin_wetness_min         = Float64(skin_wetness_min),
         skin_wetness_range       = max(skin_wetness_max - skin_wetness_min, 1e-6),
-        heat_flow_range          = max(heat_flow_max_W - heat_flow_min_W, 1.0),
+        heat_flow_range          = max(heat_flow_max - heat_flow_min, oneunit(heat_flow_max)),
     )
     nlp_parameters = (;
         nlp_packed           = packed,
-        minimum_heat_flow    = Float64(heat_flow_min_W),
+        minimum_heat_flow    = heat_flow_min,
         q10                  = Float64(metab.q10),
-        setpoint_temperature = Float64(setpoint_temperature_K),
+        setpoint_temperature = setpoint_temperature,
     )
     return objective_parameters, nlp_parameters
 end

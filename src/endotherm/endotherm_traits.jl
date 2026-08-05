@@ -97,7 +97,9 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     panting_penalty::Float64           = 1.0
     skin_wetness_penalty::Float64      = 1.0
     gradient_penalty::Float64          = 0.0
-    target_core_skin_gradient::Float64 = 2.0
+    # A core→skin temperature difference: carries K, not a bare Float64 (so no
+    # consumer has to attach a unit to it).
+    target_core_skin_gradient::Tu      = 2.0u"K"
     # Named replacements for the inline NLP magic numbers (§3.7). Consumed by the
     # multi-part NLP template/objective builders (Phase 7.5).
     skin_temperature_undershoot::Tu        = 5.0u"K"
