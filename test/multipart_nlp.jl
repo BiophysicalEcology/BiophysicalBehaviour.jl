@@ -163,3 +163,27 @@ end
     @test maximum(abs, r[1:2N+1]) < 1e-1
     @test r[2N+2] > -1e-3
 end
+
+@testset "MultipartNLP — IPOPTSolverCache warm-start reproduces the fresh solve" begin
+    torso_shape = Cylinder(0.6u"kg", ρ, b)
+    head_shape  = Cylinder(0.4u"kg", ρ, b)
+    torso = Body(torso_shape, CompositeInsulation(fur, fat))
+    head  = Body(head_shape,  CompositeInsulation(fur, fat))
+    dog = CompositeBody(;
+        parts = (; torso, head),
+        joins = (Join(torso = Attachment(EndA(0.0u"m", 0.0), Disc(0.02u"m")),
+                      head  = Attachment(EndB(0.0u"m", 0.0), Disc(0.02u"m"))),),
+    )
+    phys = (; torso = heat_exchange_of(torso_shape), head = heat_exchange_of(head_shape))
+    org  = Organism(dog, OrganismTraits(Endotherm(), phys, behav; lung_part = :torso))
+    init = BB.initial_physiological_state(org, env_vars)
+
+    fresh = thermoregulate(Endotherm(), control, org, environment, init)
+    cache = IPOPTSolverCache(control, org, environment, init)
+    warm1 = thermoregulate(Endotherm(), control, org, environment, init; cache)  # cold in cache
+    warm2 = thermoregulate(Endotherm(), control, org, environment, init; cache)  # primal+dual warm-started
+
+    @test warm1.metabolic_heat_flow ≈ fresh.metabolic_heat_flow rtol = 1e-3
+    @test warm2.metabolic_heat_flow ≈ fresh.metabolic_heat_flow rtol = 1e-3
+    @test warm2.core_temperature ≈ fresh.core_temperature rtol = 1e-4
+end
