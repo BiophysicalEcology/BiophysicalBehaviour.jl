@@ -181,6 +181,38 @@ end
     @test limits.minimum_normalisation_range == 1e-6
 end
 
+@testset "shape cache: cached solve ≡ uncached, refresh dispatch (Phase 5)" begin
+    organism = two_part_organism()
+
+    cache = precompute_shape_cache(organism)
+    @test cache isa ShapeCache
+    @test keys(cache.parts) == (:torso, :head)
+    @test haskey(cache.parts.torso, :total_area)
+    @test haskey(cache.parts.torso, :silhouette_area)
+    @test haskey(cache.parts.torso, :characteristic_dim)
+
+    uncached = solve_multipart_metabolic_rate(organism, environment, skin0, insul0)
+    cached   = solve_multipart_metabolic_rate(organism, environment, skin0, insul0; cache)
+
+    # The cache holds exactly the values the on-the-fly path computes, so results
+    # are bitwise identical.
+    @test cached.metabolic_heat_flow == uncached.metabolic_heat_flow
+    @test cached.skin_temperature == uncached.skin_temperature
+    @test all(map((c, u) -> c.net_metabolic == u.net_metabolic, cached.parts, uncached.parts))
+
+    # Physiological effectors leave geometry untouched: refresh returns the same
+    # cache object (a no-op the compiler elides).
+    @test refresh(cache, organism, Vasodilate()) === cache
+    @test refresh(cache, organism, Hyperthermia()) === cache
+    @test refresh(cache, organism, Pant()) === cache
+    @test refresh(cache, organism, Sweat()) === cache
+
+    # Geometry effectors rebuild the cache (values equal here — geometry unchanged).
+    rebuilt = refresh(cache, organism, Piloerect())
+    @test rebuilt isa ShapeCache
+    @test rebuilt.parts.torso.total_area == cache.parts.torso.total_area
+end
+
 @testset "map_part_physiology selector: ByName touches only its target" begin
     organism = two_part_organism()
     before = physiology(organism)
