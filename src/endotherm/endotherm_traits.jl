@@ -80,8 +80,9 @@ tissue conductivity, core temperature, panting, and skin wetness.
   Zero (default) disables the term. Non-zero values bias the solution toward maintaining the
   specified core–skin temperature difference, which can activate vasodilation and evaporation
   before absolute core_temperature deviation becomes the primary signal.
-- `target_core_skin_gradient::Float64`: Target core_temperature − skin_temperature difference (K).
-  Only used when `gradient_penalty > 0`. Typical resting value is ~3 K. Default 2.0.
+- `target_core_skin_gradient`: Target core_temperature − skin_temperature difference,
+  a temperature `Quantity`. Only used when `gradient_penalty > 0`. Typical resting
+  value is ~3 K. Default `2.0u"K"`.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw,Tu} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
