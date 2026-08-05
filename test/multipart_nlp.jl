@@ -75,9 +75,9 @@ function residuals_at(out, organism)
     x = pack_solution(packed, out)
     _, ncon = BB._problem_size(packed)
     params = (; nlp_packed = packed,
-                minimum_heat_flow = ustrip(u"W", limits.minimum_heat_flow),
+                minimum_heat_flow = limits.minimum_heat_flow,
                 q10 = Float64(metab.q10),
-                setpoint_temperature = ustrip(u"K", core))
+                setpoint_temperature = core)
     r = zeros(ncon)
     BB._heat_balance_residuals!(packed, r, x, params)
     return r, params
@@ -99,8 +99,8 @@ end
                       internal.flesh_conductivity, Float64(evap.skin_wetness))
     end
     x = pack_variables(packed, core, ref.metabolic_heat_flow, resp.pant, part_leaves)
-    params = (; nlp_packed = packed, minimum_heat_flow = ustrip(u"W", metab.metabolic_heat_flow),
-                q10 = Float64(metab.q10), setpoint_temperature = ustrip(u"K", core))
+    params = (; nlp_packed = packed, minimum_heat_flow = metab.metabolic_heat_flow,
+                q10 = Float64(metab.q10), setpoint_temperature = core)
     r = zeros(ncon)
     BB._heat_balance_residuals!(packed, r, x, params)
 
