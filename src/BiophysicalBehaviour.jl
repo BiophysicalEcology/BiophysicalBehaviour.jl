@@ -2,6 +2,7 @@ module BiophysicalBehaviour
 
 import ConstructionBase
 import FluidProperties
+import Flatten
 
 using BiophysicalGeometry
 using HeatExchange

@@ -7,35 +7,40 @@
 # across all parts, per-part surface temperatures and effectors, and a single
 # whole-organism respiration balance closed at the lung.
 #
-# It reuses the *same* direct-Ipopt + Enzyme callback machinery as the single-body
-# strategies (ipopt.jl): `IPOPTSolverCache`, `_ipopt_solve!`, the five
-# `Evaluate*` functors, and `_lagrangian` are all generic over the packed type and
-# operate on a flat `Vector{Float64}`. This file only adds the `MultipartNLPPacked`
-# methods those functors dispatch to — `_heat_balance_residuals!`, `_objective_value`,
-# `_inputs!`, `_problem_size`, `_scaling`, `_assemble` — plus a `nlp_pack` method.
-# The physics is `HeatExchange.part_surface_residuals` per part (the non-iterative
-# twin of `solve_part_surface`), so zero physics is duplicated.
+# The decision-variable layout is NOT hand-indexed. It is a nested `NamedTuple`
+# *template* built from the organism's parts, and `Flatten.flatten` /
+# `Flatten.reconstruct` bridge between that named structure and the flat
+# `Vector{Float64}` Ipopt optimises. Variables, bounds, scaling, and residuals are
+# every one of them a template of the same shape flattened in the same order — so
+# a bound can never drift out of alignment with the variable it bounds, and adding
+# a part or a per-part effector is a change to the *structure*, never to a pile of
+# `x[3 + 4i]` offsets. Enzyme differentiates straight through `reconstruct`, so the
+# residual/objective read named fields off the reconstructed template.
 #
-# Decision-variable layout (regular per-part stride, `N` = number of parts):
-#   x[1]              core_temperature            (K)
-#   x[2]              log_metabolic_heat_flow     (log W — the log-transform invariant)
-#   x[3]              panting_rate                (dimensionless)
-#   per part i, base = 3 + 4(i-1):
-#     x[base+1]       skin_temperature            (K)
-#     x[base+2]       insulation_temperature      (K)
-#     x[base+3]       flesh_conductivity          (W/m/K)
-#     x[base+4]       skin_wetness                (dimensionless)
-# → 3 + 4N variables.
+# Variable template (`_variable_template`):
+#   core_temperature            (K)          whole-organism
+#   log_metabolic_heat_flow     (log W)      whole-organism (the log-transform invariant)
+#   panting_rate                (—)          whole-organism
+#   parts.<name>.skin_temperature        (K)
+#   parts.<name>.insulation_temperature  (K)
+#   parts.<name>.flesh_conductivity      (W/m/K)
+#   parts.<name>.skin_wetness            (—)
 #
-# Constraint layout:
-#   per part i:  residuals[2i-1] surface balance (W), residuals[2i] skin temp (K)
-#   residuals[2N+1]  whole-organism respiration balance (W)  [= 0]
-#   residuals[2N+2]  Q10 inequality                          [>= 0]
-# → 2N + 2 constraints (2N + 1 equality + 1 Q10 inequality).
+# Residual template (`_residual_template`): per part a `surface_balance` (W) and a
+# `skin_temperature` (K) residual, then the whole-organism respiration `balance`
+# (W), then the `q10` inequality slack (last leaf → the one `≥ 0` constraint; all
+# others are `= 0`).
 #
 # Geometry effectors (insulation_depth / axis_ratio) are deferred, exactly as the
 # multi-part rule-based ladder defers Piloerect / Uncurl: no per-part body rebuild
 # happens inside the residual, so the per-part `setups` are fixed across the solve.
+#
+# The multipart methods slot into the *same* direct-Ipopt + Enzyme callback
+# machinery as the single-body strategies (ipopt.jl): `IPOPTSolverCache`,
+# `_ipopt_solve!`, the five `Evaluate*` functors, and `_lagrangian` are all generic
+# over the packed type and operate on the flat vector. This file only adds the
+# `MultipartNLPPacked` methods those functors dispatch to. Physics is
+# `HeatExchange.part_surface_residuals` per part, so zero physics is duplicated.
 # =============================================================================
 
 """
@@ -48,27 +53,88 @@ Works for any `Organism` — a single `Body` is treated as the one-part case.
 """
 struct MultipartNLP <: HeatExchange.NLPStrategy end
 
+# --- Templates: one structural definition, flattened many ways ---------------
+#
+# Each helper builds the same nested shape with different leaf values. Because the
+# field structure and order are identical, `Flatten.flatten(_, Real)` yields
+# positionally-aligned vectors — the guarantee that bounds/scaling/initials line up
+# with the variables they describe.
+
+# Per-part leaf NamedTuple, four values in canonical order.
+@inline _part_leaf(skin_temperature, insulation_temperature, flesh_conductivity, skin_wetness) =
+    (; skin_temperature, insulation_temperature, flesh_conductivity, skin_wetness)
+
+# Whole-organism scalars + a per-part-name NamedTuple of leaves.
+@inline function _variable_structure(part_names::NTuple{N,Symbol}, core_temperature,
+        log_metabolic_heat_flow, panting_rate, part_leaves::NTuple{N}) where {N}
+    return (;
+        core_temperature,
+        log_metabolic_heat_flow,
+        panting_rate,
+        parts = NamedTuple{part_names}(part_leaves),
+    )
+end
+
+# The structural prototype for `reconstruct`. All leaves are `Float64`: the flat
+# optimiser vector Ipopt hands us is unitless (Float64 is the optimiser space), so
+# the reconstructed template is unitless too and stays homogeneous — which keeps
+# `reconstruct` type-stable (a heterogeneous `data[n]` would infer to a Union and
+# break Enzyme). Units are a physics-boundary concern, attached where each named
+# field enters the physics (`* u"K"`, `exp(_) * u"W"`, …), never carried in the
+# optimiser vector.
+function _variable_template(part_names::NTuple{N,Symbol}) where {N}
+    part_leaves = ntuple(_ -> _part_leaf(0.0, 0.0, 0.0, 0.0), Val(N))
+    return _variable_structure(part_names, 0.0, 0.0, 0.0, part_leaves)
+end
+
+# Residual structure: per-part surface + skin residuals, whole-organism balance,
+# and the Q10 slack LAST (so it is the single `≥ 0` constraint; see `_constraint_bounds`).
+# This defines the constraint order that `_heat_balance_residuals!` writes and that
+# `_problem_size` counts — one place, so the two cannot disagree.
+@inline function _residual_structure(part_names::NTuple{N,Symbol}, part_residuals::NTuple{N},
+        whole_organism_balance, q10) where {N}
+    return (;
+        parts = NamedTuple{part_names}(part_residuals),
+        whole_organism_balance,
+        q10,
+    )
+end
+
+# Zero-valued residual prototype, for counting constraints via Flatten.
+@inline _residual_template(part_names::NTuple{N,Symbol}) where {N} =
+    _residual_structure(part_names,
+        ntuple(_ -> (; surface_balance = 0.0, skin_temperature = 0.0), Val(N)), 0.0, 0.0)
+
 """
     MultipartNLPPacked
 
-Packed multi-part NLP problem: the fixed per-part `solve_part_surface`/`part_surface_residuals`
-setups plus the whole-organism respiration inputs. Decision variables (skin,
-insulation, flesh_conductivity, skin_wetness per part; core, log-metabolic, pant
-whole-organism) arrive as the Ipopt `x` vector at solve time, so nothing here
-depends on them — the pack is built once per organism + environment.
+Packed multi-part NLP problem: the fixed per-part `part_surface_residuals` setups,
+the whole-organism respiration inputs, and the variable template (a nested
+`NamedTuple` of `Float64` leaves) that maps Ipopt's flat vector to named per-part
+fields via `Flatten.reconstruct`. Built once per organism + environment; the
+decision variables arrive as the `x` vector at solve time.
 """
-struct MultipartNLPPacked{S<:Tuple,Names,W,SM}
-    setups::S               # per-part setup NamedTuples (fixed geometry/insulation/env)
-    part_names::Names       # NTuple{N,Symbol}, body order
-    whole::W                # whole-organism respiration inputs (resp_pars, lung_mass, atmos, …)
+struct MultipartNLPPacked{S<:Tuple,Names,W,SM,T}
+    setups::S               # per-part part_surface_residuals setup NamedTuples (fixed)
+    part_names::Names        # NTuple{N,Symbol}, body order
+    whole::W                 # whole-organism respiration inputs (resp_pars, lung_mass, atmos, …)
     smoothing::SM
+    variable_template::T     # nested NamedTuple prototype (Float64 leaves)
 end
 
 _number_of_parts(p::MultipartNLPPacked) = length(p.setups)
 
+# Reconstruct the named decision variables from Ipopt's flat Float64 vector. The
+# template's Float64 leaves make `data[n]` concrete, so `reconstruct` is
+# type-stable (and Enzyme-differentiable); `effectors` is indexed directly, so
+# nothing is dynamically built in the AD path. Units are attached at the point each
+# field enters the physics, not here.
+@inline _reconstruct_variables(packed::MultipartNLPPacked, effectors) =
+    Flatten.reconstruct(packed.variable_template, effectors, Real)
+
 # Build the packed problem from the organism + environment. Mirrors
 # `solve_multipart_metabolic_rate`'s setup construction (same `part_surface_setups`),
-# but keeps the whole-organism respiration inputs alongside for the NLP residual.
+# and keeps the whole-organism respiration inputs alongside for the NLP residual.
 function HeatExchange.nlp_pack(::MultipartNLP, organism::Organism, environment,
         initial_skin_temperature, initial_insulation_temperature;
         smoothing::HeatExchange.SmoothingStrategy = HeatExchange.HardBound())
@@ -91,46 +157,59 @@ function HeatExchange.nlp_pack(::MultipartNLP, organism::Organism, environment,
         minimum_metabolic_heat = metab_pars.metabolic_heat_flow,
         respire                = HeatExchange.options(organism).respire,
     )
-    return MultipartNLPPacked(setups, part_names(body), whole, smoothing)
+    names = part_names(body)
+    return MultipartNLPPacked(setups, names, whole, smoothing, _variable_template(names))
 end
 
-# 3 whole-organism variables + 4 per part; 2 residuals per part + whole-organism
-# balance + Q10 inequality.
-_problem_size(p::MultipartNLPPacked) = (3 + 4 * _number_of_parts(p), 2 * _number_of_parts(p) + 2)
+# Variable / constraint counts derived from the templates, never hand-counted.
+function _problem_size(p::MultipartNLPPacked)
+    nvar = length(Flatten.flatten(p.variable_template, Real))
+    ncon = length(Flatten.flatten(_residual_template(p.part_names), Real))
+    return nvar, ncon
+end
 
 # =============================================================================
-# Residuals — Float64 effectors in → Unitful physics → Float64 residuals out.
+# Residuals — Float64 effectors in → named Unitful variables (via reconstruct) →
+# physics → Float64 residuals out (flattened from the residual template).
 #
-# The single boundary crossing: units are attached at the top (decode `x`),
-# stripped at the bottom (`ustrip` each residual). Per-part surface balance and
+# The single unit boundary: `_reconstruct_variables` attaches units at the top;
+# each residual leaf is `ustrip`ped at the bottom. Per-part surface balance and
 # skin-temperature residuals come from `part_surface_residuals`; the whole-organism
 # respiration balance closes metabolic − respiration = Σ per-part internal heat,
 # exactly as `solve_coupled_metabolic_rate` does at its converged point.
 # =============================================================================
 function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effectors, p)
-    N = _number_of_parts(packed)
-    core_temperature    = effectors[1] * u"K"
-    metabolic_heat_flow = exp(effectors[2]) * u"W"
-    panting_rate        = effectors[3]
+    vars = _reconstruct_variables(packed, effectors)
+    # Attach units as each named Float64 field enters the physics.
+    core_temperature    = vars.core_temperature * u"K"
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
+    panting_rate        = vars.panting_rate
 
+    part_vars = values(vars.parts)
+    N = length(part_vars)
+
+    # Walk the parts with a plain `for` loop, accumulating Σ internal heat and Σ skin
+    # temperature in loop-local scalars and writing each part's two residuals in place
+    # via a running index. A plain loop (unlike a `map`/`ntuple` closure that
+    # reassigns a captured accumulator) creates no `Core.Box`: the accumulators are
+    # loop-carried SSA values, isbits, which Enzyme differentiates cleanly. Parts are
+    # homogeneous here, so `part_vars[i]` / `packed.setups[i]` are type-stable.
     net_internal_total = zero(metabolic_heat_flow)
     skin_sum           = zero(core_temperature)
+    k = 0
     @inbounds for i in 1:N
-        base = 3 + 4 * (i - 1)
-        skin_temperature       = effectors[base + 1] * u"K"
-        insulation_temperature = effectors[base + 2] * u"K"
-        flesh_conductivity     = effectors[base + 3] * u"W/m/K"
-        skin_wetness           = effectors[base + 4]
-
+        v = part_vars[i]
         r = part_surface_residuals(
-            packed.setups[i], core_temperature, skin_temperature, insulation_temperature, metabolic_heat_flow;
-            k_flesh = flesh_conductivity, pant = panting_rate, skin_wetness,
+            packed.setups[i], core_temperature, v.skin_temperature * u"K",
+            v.insulation_temperature * u"K", metabolic_heat_flow;
+            k_flesh = v.flesh_conductivity * u"W/m/K", pant = panting_rate,
+            skin_wetness = v.skin_wetness,
             resp_pars = packed.whole.resp_pars, smoothing = packed.smoothing,
         )
-        residuals[2 * (i - 1) + 1] = ustrip(u"W", r.surface_balance)
-        residuals[2 * (i - 1) + 2] = ustrip(u"K", r.residual_skin_temperature)
+        residuals[k += 1] = ustrip(u"W", r.surface_balance)
+        residuals[k += 1] = ustrip(u"K", r.residual_skin_temperature)
         net_internal_total += r.net_metabolic_heat_internal
-        skin_sum           += skin_temperature
+        skin_sum           += v.skin_temperature * u"K"
     end
 
     # Whole-organism respiration balance, closed at the lung (mean skin → lung temp).
@@ -145,30 +224,39 @@ function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effecto
         gas_fractions = packed.whole.gas_fractions, O2conversion = Kleiber1961(),
         smoothing = packed.smoothing,
     ).balance
-    residuals[2 * N + 1] = ustrip(u"W", balance)
-    # Q10: metabolic_heat_flow >= minimum_heat_flow · q10^((core − setpoint)/10)
-    residuals[2 * N + 2] = exp(effectors[2]) -
-        p.minimum_heat_flow * p.q10 ^ ((effectors[1] - p.setpoint_temperature) / 10.0)
+
+    # Q10: metabolic_heat_flow − minimum_heat_flow · q10^((core − setpoint)/10) ≥ 0.
+    q10_slack = exp(vars.log_metabolic_heat_flow) -
+        p.minimum_heat_flow * p.q10 ^ ((ustrip(u"K", core_temperature) - p.setpoint_temperature) / 10.0)
+
+    # The per-part residuals were written inside the fold above; the whole-organism
+    # balance and the Q10 slack come last (the single `≥ 0` constraint — see
+    # `_constraint_bounds`). This order matches `_residual_structure`, which
+    # `_problem_size` counts, so the write and the count cannot disagree.
+    @inbounds residuals[k += 1] = ustrip(u"W", balance)
+    @inbounds residuals[k += 1] = q10_slack
     return nothing
 end
 
 # =============================================================================
 # Objective — the same five-term quadratic-penalty objective as the single-body
 # strategies, over the whole-organism core / metabolic / panting decision variables
-# and the *mean* per-part skin temperature and skin wetness.
+# and the *mean* per-part skin temperature and skin wetness. Reads named fields off
+# the reconstructed template.
 # =============================================================================
 function _objective_value(packed::MultipartNLPPacked, effectors, opt)
-    N = _number_of_parts(packed)
-    core_temperature    = effectors[1]
-    metabolic_heat_flow = exp(effectors[2])
-    panting_rate        = effectors[3]
+    vars = _reconstruct_variables(packed, effectors)
+    core_temperature    = vars.core_temperature          # already a Float64 in K's numeric space
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow)
+    panting_rate        = vars.panting_rate
 
-    skin_sum = 0.0
-    wet_sum  = 0.0
+    part_vars = values(vars.parts)
+    N = length(part_vars)
+    skin_sum = zero(core_temperature)
+    wet_sum  = zero(panting_rate)
     @inbounds for i in 1:N
-        base = 3 + 4 * (i - 1)
-        skin_sum += effectors[base + 1]
-        wet_sum  += effectors[base + 4]
+        skin_sum += part_vars[i].skin_temperature
+        wet_sum  += part_vars[i].skin_wetness
     end
     skin_mean         = skin_sum / N
     skin_wetness_mean = wet_sum / N
@@ -180,31 +268,24 @@ function _objective_value(packed::MultipartNLPPacked, effectors, opt)
            opt.skin_wetness_penalty     * ((skin_wetness_mean - opt.skin_wetness_min) / opt.skin_wetness_range)^2
 end
 
-# Per-variable Ipopt scaling: temperatures ~300 K, log-metabolic/conductivity/pant
-# ~O(1), skin_wetness ~O(0.01).
-function _scaling(p::MultipartNLPPacked)
-    N = _number_of_parts(p)
-    x_scaling = ones(3 + 4 * N)
-    x_scaling[1] = 1 / 300.0                 # core_temperature
-    x_scaling[2] = 1.0                       # log_metabolic_heat_flow
-    x_scaling[3] = 1.0                       # panting_rate
-    @inbounds for i in 1:N
-        base = 3 + 4 * (i - 1)
-        x_scaling[base + 1] = 1 / 300.0      # skin_temperature
-        x_scaling[base + 2] = 1 / 300.0      # insulation_temperature
-        x_scaling[base + 3] = 1.0            # flesh_conductivity
-        x_scaling[base + 4] = 50.0           # skin_wetness
-    end
-    return x_scaling
+# Per-variable Ipopt scaling, authored in the variable structure and flattened:
+# temperatures ~300 K, log-metabolic/conductivity/pant ~O(1), skin_wetness ~O(0.01).
+function _scaling(packed::MultipartNLPPacked)
+    N = _number_of_parts(packed)
+    part_leaves = ntuple(_ -> _part_leaf(1 / 300.0, 1 / 300.0, 1.0, 50.0), Val(N))
+    scaling_structure = _variable_structure(packed.part_names, 1 / 300.0, 1.0, 1.0, part_leaves)
+    return collect(Float64, Flatten.flatten(scaling_structure, Real))
 end
 
 # =============================================================================
 # Per-call inputs (bounds, initial values, objective + NLP parameters).
 #
-# Whole-organism scalars come from `ThermoregulationLimits`; per-part bounds
-# broadcast those whole-organism limits to every part (the uniform-tuning default).
-# The objective_parameters / nlp_parameters NamedTuples are structurally identical
-# to the single-body path, so the shared Ipopt callbacks read them unchanged.
+# Bounds and initials are authored as templates of the variable structure and
+# flattened — guaranteeing alignment with the variables. Whole-organism scalars come
+# from `ThermoregulationLimits`; per-part bounds broadcast those whole-organism
+# limits to every part (the uniform-tuning default). The objective_parameters /
+# nlp_parameters NamedTuples are structurally identical to the single-body path, so
+# the shared Ipopt callbacks read them unchanged.
 # =============================================================================
 function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartNLPPacked,
                   organism, environment, init::NamedTuple)
@@ -229,31 +310,25 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     skin_wetness_min       = Float64(limits.skin_wetness.reference)
     skin_wetness_max       = Float64(limits.skin_wetness.max)
     heat_flow_init         = max(ustrip(u"W", init.metabolic_heat_flow), heat_flow_min_W)
-    flesh_conductivity     = ustrip(u"W/m/K", internal.flesh_conductivity)
-    skin_wetness           = Float64(evap.skin_wetness)
+    flesh_conductivity     = clamp(ustrip(u"W/m/K", internal.flesh_conductivity), flesh_conductivity_min, flesh_conductivity_max)
+    skin_wetness           = clamp(Float64(evap.skin_wetness), skin_wetness_min, skin_wetness_max)
     skin_temperature_init  = clamp(ustrip(u"K", init.skin_temperature), skin_temperature_min, skin_temperature_max)
     insulation_temp_init   = clamp(ustrip(u"K", init.insulation_temperature), skin_temperature_min, skin_temperature_max)
 
-    # Whole-organism variables.
-    lower_bounds[1] = core_temperature_min; upper_bounds[1] = core_temperature_max
-    lower_bounds[2] = log(heat_flow_min_W); upper_bounds[2] = log(heat_flow_max_W)
-    lower_bounds[3] = panting_rate_min;     upper_bounds[3] = panting_rate_max
-    initial_values[1] = clamp(setpoint_temperature_K, core_temperature_min, core_temperature_max)
-    initial_values[2] = clamp(log(heat_flow_init), lower_bounds[2], upper_bounds[2])
-    initial_values[3] = clamp(panting_rate_min, panting_rate_min, panting_rate_max)
+    lower_leaves = ntuple(_ -> _part_leaf(skin_temperature_min, skin_temperature_min, flesh_conductivity_min, skin_wetness_min), Val(N))
+    upper_leaves = ntuple(_ -> _part_leaf(skin_temperature_max, skin_temperature_max, flesh_conductivity_max, skin_wetness_max), Val(N))
+    init_leaves  = ntuple(_ -> _part_leaf(skin_temperature_init, insulation_temp_init, flesh_conductivity, skin_wetness), Val(N))
 
-    # Per-part variables (whole-organism limits broadcast to every part).
-    @inbounds for i in 1:N
-        base = 3 + 4 * (i - 1)
-        lower_bounds[base + 1] = skin_temperature_min;   upper_bounds[base + 1] = skin_temperature_max
-        lower_bounds[base + 2] = skin_temperature_min;   upper_bounds[base + 2] = skin_temperature_max
-        lower_bounds[base + 3] = flesh_conductivity_min; upper_bounds[base + 3] = flesh_conductivity_max
-        lower_bounds[base + 4] = skin_wetness_min;       upper_bounds[base + 4] = skin_wetness_max
-        initial_values[base + 1] = skin_temperature_init
-        initial_values[base + 2] = insulation_temp_init
-        initial_values[base + 3] = clamp(flesh_conductivity, flesh_conductivity_min, flesh_conductivity_max)
-        initial_values[base + 4] = clamp(skin_wetness, skin_wetness_min, skin_wetness_max)
-    end
+    lower_structure = _variable_structure(packed.part_names, core_temperature_min, log(heat_flow_min_W), panting_rate_min, lower_leaves)
+    upper_structure = _variable_structure(packed.part_names, core_temperature_max, log(heat_flow_max_W), panting_rate_max, upper_leaves)
+    init_structure  = _variable_structure(packed.part_names,
+        clamp(setpoint_temperature_K, core_temperature_min, core_temperature_max),
+        clamp(log(heat_flow_init), log(heat_flow_min_W), log(heat_flow_max_W)),
+        panting_rate_min, init_leaves)
+
+    copyto!(lower_bounds,   Flatten.flatten(lower_structure, Real))
+    copyto!(upper_bounds,   Flatten.flatten(upper_structure, Real))
+    copyto!(initial_values, Flatten.flatten(init_structure, Real))
 
     core_temperature_range = max(core_temperature_max - setpoint_temperature_K, limits.minimum_normalisation_range)
     objective_parameters = (;
@@ -283,28 +358,30 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
 end
 
 # =============================================================================
-# Output assembly — decode the converged `x` into a per-part NamedTuple plus the
-# whole-organism quantities, and evaluate the physics once at the solution for the
-# per-part heat flows. Shape mirrors `solve_multipart_metabolic_rate`'s output.
+# Output assembly — reconstruct the converged `x` into named per-part fields plus
+# the whole-organism quantities, and evaluate the physics once at the solution for
+# the per-part heat flows. Shape mirrors `solve_multipart_metabolic_rate`'s output.
 # =============================================================================
 function _assemble(packed::MultipartNLPPacked, organism, environment, x_sol)
-    N = _number_of_parts(packed)
-    core_temperature    = x_sol[1] * u"K"
-    metabolic_heat_flow = exp(x_sol[2]) * u"W"
-    panting_rate        = x_sol[3]
+    vars = _reconstruct_variables(packed, x_sol)
+    core_temperature    = vars.core_temperature * u"K"
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
+    panting_rate        = vars.panting_rate
 
+    part_vars = values(vars.parts)
+    N = length(part_vars)
     part_results = ntuple(N) do i
-        base = 3 + 4 * (i - 1)
-        skin_temperature       = x_sol[base + 1] * u"K"
-        insulation_temperature = x_sol[base + 2] * u"K"
-        flesh_conductivity     = x_sol[base + 3] * u"W/m/K"
-        skin_wetness           = x_sol[base + 4]
+        v = part_vars[i]
+        skin_temperature       = v.skin_temperature * u"K"
+        insulation_temperature = v.insulation_temperature * u"K"
+        flesh_conductivity     = v.flesh_conductivity * u"W/m/K"
         r = part_surface_residuals(
-            packed.setups[i], core_temperature, skin_temperature, insulation_temperature, metabolic_heat_flow;
-            k_flesh = flesh_conductivity, pant = panting_rate, skin_wetness,
+            packed.setups[i], core_temperature, skin_temperature, insulation_temperature,
+            metabolic_heat_flow;
+            k_flesh = flesh_conductivity, pant = panting_rate, skin_wetness = v.skin_wetness,
             resp_pars = packed.whole.resp_pars, smoothing = packed.smoothing,
         )
-        (; skin_temperature, insulation_temperature, flesh_conductivity, skin_wetness,
+        (; skin_temperature, insulation_temperature, flesh_conductivity, v.skin_wetness,
            net_metabolic = r.net_metabolic_heat_internal, flows = r.balance)
     end
     parts = NamedTuple{packed.part_names}(part_results)
