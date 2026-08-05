@@ -8,14 +8,19 @@
 # whole-organism respiration balance closed at the lung.
 #
 # The decision-variable layout is NOT hand-indexed. It is a nested `NamedTuple`
-# *template* built from the organism's parts, and `Flatten.flatten` /
-# `Flatten.reconstruct` bridge between that named structure and the flat
-# `Vector{Float64}` Ipopt optimises. Variables, bounds, scaling, and residuals are
-# every one of them a template of the same shape flattened in the same order — so
-# a bound can never drift out of alignment with the variable it bounds, and adding
-# a part or a per-part effector is a change to the *structure*, never to a pile of
-# `x[3 + 4i]` offsets. Enzyme differentiates straight through `reconstruct`, so the
-# residual/objective read named fields off the reconstructed template.
+# *template* built from the organism's parts, with `Unitful` leaves, and
+# `Flatten.flatten` / `Flatten.reconstruct` bridge between that named structure and
+# the flat `Vector{Float64}` Ipopt optimises. Units live in the leaves' `Quantity`
+# *types*: targeting `Real`, `flatten` rips out only each `Quantity`'s inner
+# `Float64` magnitude (so the optimiser vector is homogeneous `Float64`), and
+# `reconstruct` puts a `Float64` back into that typed slot — units round-trip
+# through the type, never stripped or reattached by hand. Variables, bounds,
+# scaling, and residuals are every one of them a template of the same shape
+# flattened in the same order — so a bound can never drift out of alignment with
+# the variable it bounds, and adding a part or a per-part effector is a change to
+# the *structure*, never to a pile of `x[3 + 4i]` offsets. Enzyme differentiates
+# straight through `reconstruct` (the reconstructed leaves are concretely typed),
+# so the residual/objective read Unitful named fields off it.
 #
 # Variable template (`_variable_template`):
 #   core_temperature            (K)          whole-organism
@@ -75,16 +80,20 @@ struct MultipartNLP <: HeatExchange.NLPStrategy end
     )
 end
 
-# The structural prototype for `reconstruct`. All leaves are `Float64`: the flat
-# optimiser vector Ipopt hands us is unitless (Float64 is the optimiser space), so
-# the reconstructed template is unitless too and stays homogeneous — which keeps
-# `reconstruct` type-stable (a heterogeneous `data[n]` would infer to a Union and
-# break Enzyme). Units are a physics-boundary concern, attached where each named
-# field enters the physics (`* u"K"`, `exp(_) * u"W"`, …), never carried in the
-# optimiser vector.
+# The unit-carrying prototype for `flatten`/`reconstruct`. Units live in the leaves'
+# `Quantity` *types*: targeting `Real`, `Flatten.flatten` recurses into each
+# `Quantity` and rips out only its inner `Float64` magnitude (so the flat optimiser
+# vector is homogeneous `Float64` — the type-stable, Enzyme-safe form), and
+# `Flatten.reconstruct` puts a `Float64` back into that typed slot, rebuilding the
+# `Quantity` with its unit intact. Units are never stripped or reattached by hand;
+# they round-trip through the type. The magnitudes are in the units declared here
+# (K, W/m/K), so this template also fixes the optimiser's canonical units — bounds
+# and initials must agree (they are `ustrip`ped to the *same* units in `_inputs!`).
+# `log_metabolic_heat_flow` / `panting_rate` / `skin_wetness` are genuinely
+# dimensionless (`Float64`).
 function _variable_template(part_names::NTuple{N,Symbol}) where {N}
-    part_leaves = ntuple(_ -> _part_leaf(0.0, 0.0, 0.0, 0.0), Val(N))
-    return _variable_structure(part_names, 0.0, 0.0, 0.0, part_leaves)
+    part_leaves = ntuple(_ -> _part_leaf(0.0u"K", 0.0u"K", 0.0u"W/m/K", 0.0), Val(N))
+    return _variable_structure(part_names, 0.0u"K", 0.0, 0.0, part_leaves)
 end
 
 # Residual structure: per-part surface + skin residuals, whole-organism balance,
@@ -119,16 +128,18 @@ struct MultipartNLPPacked{S<:Tuple,Names,W,SM,T}
     part_names::Names        # NTuple{N,Symbol}, body order
     whole::W                 # whole-organism respiration inputs (resp_pars, lung_mass, atmos, …)
     smoothing::SM
-    variable_template::T     # nested NamedTuple prototype (Float64 leaves)
+    variable_template::T     # nested NamedTuple prototype (Unitful leaves)
 end
 
 _number_of_parts(p::MultipartNLPPacked) = length(p.setups)
 
-# Reconstruct the named decision variables from Ipopt's flat Float64 vector. The
-# template's Float64 leaves make `data[n]` concrete, so `reconstruct` is
-# type-stable (and Enzyme-differentiable); `effectors` is indexed directly, so
-# nothing is dynamically built in the AD path. Units are attached at the point each
-# field enters the physics, not here.
+# Reconstruct the named, Unitful decision variables from Ipopt's flat Float64
+# vector. Targeting `Real`, `reconstruct` puts each `Float64` back into its
+# `Quantity`-typed slot, so units come straight off the template's types — no
+# manual reattachment. The reconstructed leaves are concretely typed (units are in
+# the type), so this is type-stable and Enzyme-differentiable, and `effectors` (the
+# raw `Vector{Float64}`) is indexed directly — nothing dynamically built in the AD
+# path.
 @inline _reconstruct_variables(packed::MultipartNLPPacked, effectors) =
     Flatten.reconstruct(packed.variable_template, effectors, Real)
 
@@ -180,8 +191,11 @@ end
 # =============================================================================
 function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effectors, p)
     vars = _reconstruct_variables(packed, effectors)
-    # Attach units as each named Float64 field enters the physics.
-    core_temperature    = vars.core_temperature * u"K"
+    # Fields arrive Unitful straight off the template — no manual unit attachment.
+    # (`metabolic_heat_flow` is the exception by construction: the optimiser carries
+    # its *log*, a genuinely dimensionless quantity, so `exp` then `u"W"` is the
+    # log-transform's inverse, not a unit reattachment.)
+    core_temperature    = vars.core_temperature
     metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
     panting_rate        = vars.panting_rate
 
@@ -200,16 +214,16 @@ function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effecto
     @inbounds for i in 1:N
         v = part_vars[i]
         r = part_surface_residuals(
-            packed.setups[i], core_temperature, v.skin_temperature * u"K",
-            v.insulation_temperature * u"K", metabolic_heat_flow;
-            k_flesh = v.flesh_conductivity * u"W/m/K", pant = panting_rate,
+            packed.setups[i], core_temperature, v.skin_temperature,
+            v.insulation_temperature, metabolic_heat_flow;
+            k_flesh = v.flesh_conductivity, pant = panting_rate,
             skin_wetness = v.skin_wetness,
             resp_pars = packed.whole.resp_pars, smoothing = packed.smoothing,
         )
         residuals[k += 1] = ustrip(u"W", r.surface_balance)
         residuals[k += 1] = ustrip(u"K", r.residual_skin_temperature)
         net_internal_total += r.net_metabolic_heat_internal
-        skin_sum           += v.skin_temperature * u"K"
+        skin_sum           += v.skin_temperature
     end
 
     # Whole-organism respiration balance, closed at the lung (mean skin → lung temp).
@@ -246,16 +260,18 @@ end
 # =============================================================================
 function _objective_value(packed::MultipartNLPPacked, effectors, opt)
     vars = _reconstruct_variables(packed, effectors)
-    core_temperature    = vars.core_temperature          # already a Float64 in K's numeric space
+    # The objective's penalties are dimensionless Float64 (`opt` holds K / W magnitudes),
+    # so cross into that space with *targeted* `ustrip`s to the objective's units.
+    core_temperature    = ustrip(u"K", vars.core_temperature)
     metabolic_heat_flow = exp(vars.log_metabolic_heat_flow)
     panting_rate        = vars.panting_rate
 
     part_vars = values(vars.parts)
     N = length(part_vars)
-    skin_sum = zero(core_temperature)
-    wet_sum  = zero(panting_rate)
+    skin_sum = 0.0
+    wet_sum  = 0.0
     @inbounds for i in 1:N
-        skin_sum += part_vars[i].skin_temperature
+        skin_sum += ustrip(u"K", part_vars[i].skin_temperature)
         wet_sum  += part_vars[i].skin_wetness
     end
     skin_mean         = skin_sum / N
@@ -364,7 +380,7 @@ end
 # =============================================================================
 function _assemble(packed::MultipartNLPPacked, organism, environment, x_sol)
     vars = _reconstruct_variables(packed, x_sol)
-    core_temperature    = vars.core_temperature * u"K"
+    core_temperature    = vars.core_temperature
     metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
     panting_rate        = vars.panting_rate
 
@@ -372,9 +388,9 @@ function _assemble(packed::MultipartNLPPacked, organism, environment, x_sol)
     N = length(part_vars)
     part_results = ntuple(N) do i
         v = part_vars[i]
-        skin_temperature       = v.skin_temperature * u"K"
-        insulation_temperature = v.insulation_temperature * u"K"
-        flesh_conductivity     = v.flesh_conductivity * u"W/m/K"
+        skin_temperature       = v.skin_temperature
+        insulation_temperature = v.insulation_temperature
+        flesh_conductivity     = v.flesh_conductivity
         r = part_surface_residuals(
             packed.setups[i], core_temperature, skin_temperature, insulation_temperature,
             metabolic_heat_flow;
