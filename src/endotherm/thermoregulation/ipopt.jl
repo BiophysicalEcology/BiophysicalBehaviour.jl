@@ -229,8 +229,16 @@ end
 
 function _lagrangian(nlp_packed, x, residual_buffer, p)
     _heat_balance_residuals!(nlp_packed, residual_buffer, x, p.ipopt_parameters.nlp_parameters)
+    # Hand-rolled λ·g rather than `LinearAlgebra.dot`: under the nested
+    # forward-over-reverse Enzyme pass, the BLAS `dot` dispatches to Enzyme's
+    # fallback BLAS replacement, which segfaults. A plain loop keeps the whole
+    # Lagrangian on the differentiable Julia path.
+    constraint_term = zero(eltype(residual_buffer))
+    @inbounds for i in eachindex(p.lambda, residual_buffer)
+        constraint_term += p.lambda[i] * residual_buffer[i]
+    end
     return p.sigma * _objective_value(nlp_packed, x, p.ipopt_parameters.objective_parameters) +
-           dot(p.lambda, residual_buffer)
+           constraint_term
 end
 
 # =============================================================================
@@ -604,7 +612,7 @@ end
 function (f::EvaluateObjectiveGradient)(x, grad_f)
     fill!(grad_f, 0)
     Enzyme.autodiff(
-        Enzyme.Reverse, _objective_value,
+        Enzyme.set_runtime_activity(Enzyme.Reverse), _objective_value,
         Enzyme.Active,
         Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
         Enzyme.Duplicated(x, grad_f),
@@ -630,7 +638,7 @@ function (f::EvaluateConstraintJacobian)(x, rows, cols, values)
         @inbounds for i in 1:f.n_constraints
             fill!(b.jacobian_residual, 0); fill!(b.jacobian_residual_seed, 0); fill!(b.jacobian_x_derivative, 0); b.jacobian_residual_seed[i] = 1.0
             Enzyme.autodiff(
-                Enzyme.Reverse, _heat_balance_residuals!,
+                Enzyme.set_runtime_activity(Enzyme.Reverse), _heat_balance_residuals!,
                 Enzyme.Const,
                 Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
                 Enzyme.Duplicated(b.jacobian_residual, b.jacobian_residual_seed),
@@ -656,7 +664,7 @@ function (f::LagrangianGradient)(g, x, residual_buffer, residual_adjoint, p)
     fill!(g, 0)
     fill!(residual_adjoint, 0)
     Enzyme.autodiff(
-        Enzyme.Reverse, _lagrangian,
+        Enzyme.set_runtime_activity(Enzyme.Reverse), _lagrangian,
         Enzyme.Active,
         Enzyme.Const(f.ipopt_parameters.nlp_parameters.nlp_packed),
         Enzyme.Duplicated(x, g),
@@ -695,7 +703,7 @@ function (f::EvaluateHessian)(x, rows, cols, sigma, lambda, values)
             # and `residual_adjoint` — so every mutable buffer needs its
             # forward dual here.
             Enzyme.autodiff(
-                Enzyme.Forward, f.lagrangian_gradient,
+                Enzyme.set_runtime_activity(Enzyme.Forward), Enzyme.Const(f.lagrangian_gradient),
                 Enzyme.Const,
                 Enzyme.Duplicated(b.hessian_gradient, b.hessian_gradient_tangent),
                 Enzyme.Duplicated(x, b.hessian_seed),

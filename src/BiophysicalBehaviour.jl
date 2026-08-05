@@ -52,8 +52,9 @@ export AbstractControlStrategy,
     IPOPTControl,
     IPOPTSolverCache
 
-# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy)
-export NLPStrategy, WeightedMeanNLP, MultiSidedNLP
+# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy);
+# MultipartNLP is defined in BB (multipart_nlp.jl) as a HeatExchange.NLPStrategy.
+export NLPStrategy, WeightedMeanNLP, MultiSidedNLP, MultipartNLP
 
 # Thermoregulation modes
 export AbstractThermoregulationMode,
@@ -169,6 +170,7 @@ include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
 include("endotherm/thermoregulation/multipart.jl")
 include("endotherm/thermoregulation/ipopt.jl")
+include("endotherm/thermoregulation/multipart_nlp.jl")
 include("endotherm/example_variables_and_parameters.jl")
 include("ectotherm/ectotherm_traits.jl")
 include("ectotherm/thermoregulation.jl")
