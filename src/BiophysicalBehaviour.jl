@@ -117,6 +117,11 @@ export solve_multipart_metabolic_rate,
     map_part_physiology,
     weight_for
 
+# Precomputed geometry cache (Phase 5)
+export ShapeCache,
+    precompute_shape_cache,
+    refresh
+
 # Thermoregulation limit structs (shared)
 export SteppedParameter,
     InsulationLimits,
@@ -158,6 +163,7 @@ export example_ectotherm_behavioral_limits,
 include("organism.jl")
 include("parts.jl")
 include("physiology.jl")
+include("cache.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")

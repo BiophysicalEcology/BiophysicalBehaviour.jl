@@ -45,6 +45,7 @@ function solve_multipart_metabolic_rate(
     skin_temperature,
     insulation_temperature;
     smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound(),
+    cache=nothing,
 )
     body = HeatExchange.body(organism)
     environment_pars = stripparams(environment.environment_pars)
@@ -54,7 +55,7 @@ function solve_multipart_metabolic_rate(
 
     setups = part_surface_setups(
         organism, environment_pars, environment_vars,
-        core_temperature, skin_temperature, insulation_temperature; smoothing,
+        core_temperature, skin_temperature, insulation_temperature; smoothing, cache,
     )
 
     # Respiration is a whole-organism balance closed at the lung surface: the
@@ -102,20 +103,22 @@ function part_surface_setups(
     skin_temperature,
     insulation_temperature;
     smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound(),
+    cache=nothing,
 )
     body = HeatExchange.body(organism)
     part_bodies = _parts(body)
     part_phys = physiology(organism)
     covered = _part_covered_areas(body)
+    cache_entries = _cache_entries(cache, part_names(body))
 
-    # `map` over the three same-ordered NamedTuples' values returns a Tuple —
+    # `map` over the same-ordered NamedTuples' values returns a Tuple —
     # type-stable, no runtime Symbol indexing.
     return map(
-        values(part_bodies), values(part_phys), values(covered),
-    ) do part_body, phys, covered_area
+        values(part_bodies), values(part_phys), values(covered), cache_entries,
+    ) do part_body, phys, covered_area, cache_entry
         _part_surface_setup(
             part_body, phys, environment_pars, environment_vars,
-            core_temperature, covered_area, skin_temperature, insulation_temperature; smoothing,
+            core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing,
         )
     end
 end
@@ -123,10 +126,11 @@ end
 # Build one part's `solve_part_surface` setup. Mirrors the per-side setup in
 # HeatExchange's `_pack_sides`, but for a genuine part: full (un-doubled)
 # hemisphere view factors, the part's own insulation/conduction/radiation
-# physiology, and the part's actual insulated `Body`.
+# physiology, and the part's actual insulated `Body`. `cache_entry` is a Tier-1
+# geometry entry (§3.5) or `nothing` to compute geometry on the fly.
 function _part_surface_setup(
     part_body, phys, environment_pars, environment_vars,
-    core_temperature, covered_area, skin_temperature, insulation_temperature; smoothing,
+    core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing,
 )
     ins_pars = HeatExchange.insulation_pars(phys)
     external = HeatExchange.conduction_pars_external(phys)
@@ -155,10 +159,10 @@ function _part_surface_setup(
     ground_factor = 1 - sky_factor - vegetation_factor
     bush_factor = rad_pars.bush_view_factor
 
-    # Solar absorbed by this part over its own silhouette.
-    total_area = BiophysicalGeometry.total_area(part_body)
+    # Solar absorbed by this part over its own silhouette. Geometry comes from the
+    # Tier-1 cache when supplied, else is computed on the fly (identical values).
+    total_area, silhouette, characteristic_dim = _part_geometry(part_body, rad_pars, cache_entry)
     conduction_area = total_area * external.conduction_fraction
-    silhouette = BiophysicalGeometry.silhouette_area(part_body, rad_pars.solar_orientation)
     absorptivities = Absorptivities(rad_pars, environment_pars)
     solar_view_factors = ViewFactors(sky_factor, ground_factor, 0.0, 0.0)
     solar_conditions = SolarConditions(environment_vars)
@@ -213,8 +217,20 @@ function _part_surface_setup(
         ventral_fraction=rad_pars.ventral_fraction,
         longwave_depth_fraction=ins_pars.longwave_depth_fraction,
         covered_area,
+        characteristic_dim,
     )
 end
+
+# Per-part geometry (total surface area, silhouette, characteristic dimension):
+# read straight from the Tier-1 cache entry, or compute from the body when no
+# cache is threaded through. Both paths return identical values.
+@inline _part_geometry(part_body, rad_pars, ::Nothing) = (
+    BiophysicalGeometry.total_area(part_body),
+    BiophysicalGeometry.silhouette_area(part_body, rad_pars.solar_orientation),
+    characteristic_dimension(VolumeCubeRoot(), part_body),
+)
+@inline _part_geometry(_, _rad_pars, cache_entry::NamedTuple) =
+    (cache_entry.total_area, cache_entry.silhouette_area, cache_entry.characteristic_dim)
 
 # Per-part covered join-patch area. A `CompositeBody` folds its joins into a
 # per-part area NamedTuple; a plain `Body` has no joins, hence zero covered area.
@@ -360,7 +376,13 @@ function thermoregulate(
     panting_limits            = limits.panting
     skin_wetness_limits       = limits.skin_wetness
 
-    out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature)
+    # Tier-1 geometry cache (§3.5): computed once, refreshed only when an effector
+    # reshapes the body. The ladder below is all physiological (Vasodilate,
+    # Hyperthermia, Pant, Sweat), so every `refresh` is a no-op and the cache
+    # survives the whole loop.
+    cache = precompute_shape_cache(o)
+
+    out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature; cache)
     skin_temperature       = out.skin_temperature
     insulation_temperature = out.insulation_temperature
     metabolic_heat_flow    = out.metabolic_heat_flow
@@ -376,12 +398,15 @@ function thermoregulate(
 
         if flesh_conductivity_limits.current < flesh_conductivity_limits.max
             flesh_conductivity_limits, o = _vasodilate_multipart(o, flesh_conductivity_limits)
+            cache = refresh(cache, o, Vasodilate())
 
         elseif core_temperature_limits.current < core_temperature_limits.max
             core_temperature_limits, minimum_heat_flow, o =
                 _hyperthermia_multipart(o, core_temperature_limits, panting_limits.cost)
+            cache = refresh(cache, o, Hyperthermia())
             if simultaneous_pant(mode) && panting_limits.pant.current < panting_limits.pant.max
                 panting_limits, minimum_heat_flow, o = _pant_multipart(o, panting_limits)
+                cache = refresh(cache, o, Pant())
             end
             if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) || (skin_wetness_limits.step <= 0)
@@ -389,16 +414,19 @@ function thermoregulate(
                     return out
                 end
                 skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+                cache = refresh(cache, o, Sweat())
             end
 
         elseif panting_limits.pant.current < panting_limits.pant.max
             panting_limits, minimum_heat_flow, o = _pant_multipart(o, panting_limits)
+            cache = refresh(cache, o, Pant())
             if simultaneous_sweat(mode)
                 if (skin_wetness_limits.current > skin_wetness_limits.max) || (skin_wetness_limits.step <= 0)
                     @warn "All thermoregulatory options exhausted"
                     return out
                 end
                 skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+                cache = refresh(cache, o, Sweat())
             end
 
         else
@@ -406,9 +434,10 @@ function thermoregulate(
                 return out
             end
             skin_wetness_limits, o = _sweat_multipart(o, skin_wetness_limits)
+            cache = refresh(cache, o, Sweat())
         end
 
-        out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature)
+        out = solve_multipart_metabolic_rate(o, environment, skin_temperature, insulation_temperature; cache)
         skin_temperature       = out.skin_temperature
         insulation_temperature = out.insulation_temperature
         metabolic_heat_flow    = out.metabolic_heat_flow
