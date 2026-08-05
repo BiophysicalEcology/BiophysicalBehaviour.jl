@@ -31,13 +31,23 @@ zero-allocation hot paths are.
   from a multi-part `Organism` and route through `lung_part`. Floating
   compartments (independent leg/head cores via `solve_core_temperatures`) not
   yet wired — current solve assumes one all-`SharedCore` compartment.
+- **Phase 5** — DONE (Tier-1). `ShapeCache` per-part geometry cache
+  (`total_area`, `silhouette_area`, `characteristic_dim`), built once by
+  `precompute_shape_cache` and invalidated by direct effector dispatch
+  (`refresh` — no-op for physiological effectors, rebuild for `Piloerect` /
+  `Uncurl`). Threaded through `solve_multipart_metabolic_rate` /
+  `part_surface_setups` (cached == uncached bitwise). Tier-2 radiation cache and
+  the formal JET/zero-allocation gate on the whole `thermoregulate` call remain
+  a later optimisation pass (the outer `physiology` broadcast still allocates).
 - **Phase 9** — Example (`examples/dog_thermoregulation.jl`) + multi-part tests
   (`test/multipart_solve.jl`) landed for the single-compartment path.
-- **Phase 5** (cache), **Phase 7.5** (multi-part NLP + `IPOPTControl`),
-  **Phase 8** (dorsal/ventral deletion), **Phase 10** (cleanup) — REMAINING.
-  Phase 8 is gated on migrating the 328-case endotherm regression off the
-  dorsal/ventral reference model; Phase 7.5 is a new Flatten-templated NLP
-  subsystem across both packages plus the Ipopt extension.
+- **Phase 7.5** (multi-part NLP + `IPOPTControl`), **Phase 8** (dorsal/ventral
+  deletion), **Phase 10** (cleanup) — REMAINING. Multi-part `Piloerect` /
+  `Uncurl` (which reshape geometry and drive the Phase 5 cache rebuild) land with
+  the per-part insulation-limits container in 7.5. Phase 8 is gated on migrating
+  the 328-case endotherm regression off the dorsal/ventral reference model;
+  Phase 7.5 is a new Flatten-templated NLP subsystem across both packages plus
+  the Ipopt extension.
 
 ## Naming conventions used throughout
 
