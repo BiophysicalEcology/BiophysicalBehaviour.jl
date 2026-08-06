@@ -86,9 +86,10 @@ equality constraints, with all physiological effectors (flesh_conductivity,
 pant, skin_wetness) as continuous decision variables.
 
 # Fields
-- `nlp_strategy`: NLP formulation — `WeightedMeanNLP()` (default, dorsal/ventral
-  weighted-mean single body, 9 variables, 4 constraints) or `MultiSidedNLP()`
-  (explicit per-side heat balance, 11 variables, 7 constraints).
+- `nlp_strategy`: NLP formulation. `MultipartNLP()` (default) solves a genuine
+  multi-part organism — one regulated core shared across all parts, per-part surface
+  temperatures and effectors, a single whole-organism respiration balance. A single
+  `Body` is handled as the one-part case.
 - `smoothing`: smoothing policy passed to the heat-balance physics so autodiff (AD)
   sees differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()`
   to match the rule-based path's exact `abs`/`max`/`step` behaviour.
@@ -96,7 +97,7 @@ pant, skin_wetness) as continuous decision variables.
 Requires `Ipopt.jl`.
 """
 Base.@kwdef struct IPOPTControl{S<:HeatExchange.SmoothingStrategy} <: AbstractControlStrategy
-    nlp_strategy::HeatExchange.NLPStrategy = HeatExchange.WeightedMeanNLP()
+    nlp_strategy::HeatExchange.NLPStrategy = MultipartNLP()
     smoothing::S = HeatExchange.SmoothBound(1.0e-5)
 end
 
@@ -294,9 +295,13 @@ end
 # physiology of the sole `:body` part, which hosts the lung (§3.9). Multi-part
 # organisms pass a per-part physiology NamedTuple as `heat_exchange` and name the
 # lung part explicitly.
+# The lung part name is stored as a `Val` (its type parameter `L === Val{name}`), so
+# the name lives in the *type*, not as a runtime `Symbol` field. Physiology routing
+# (`_wrap_lung`, `pant_selector`, `_lung_mass`) then infers concretely — the sole
+# runtime→type step is this one `Val(lung_part)` at construction.
 OrganismTraits(thermal_strategy::AbstractThermalStrategy, heat_exchange, behavior::BehavioralTraits;
                lung_part::Symbol=SINGLE_PART_NAME) =
-    OrganismTraits(thermal_strategy, heat_exchange, behavior, lung_part)
+    OrganismTraits(thermal_strategy, heat_exchange, behavior, Val(lung_part))
 
 # =============================================================================
 # Forwarding methods for physiology accessors
@@ -306,7 +311,7 @@ OrganismTraits(thermal_strategy::AbstractThermalStrategy, heat_exchange, behavio
 # lumped `HeatExchangeTraits` is returned directly (single-body path — the common,
 # hot case, fully type-stable). When per-part physiology is stored, whole-organism
 # queries (metabolism, respiration, options) resolve through the lung part.
-_whole_physiology(t::OrganismTraits) = _whole_physiology(t.heat_exchange, t.lung_part)
+_whole_physiology(t::OrganismTraits) = _whole_physiology(t.heat_exchange, lung_part(t))
 _whole_physiology(heat_exchange, lung_part) = heat_exchange
 _whole_physiology(heat_exchange::NamedTuple, lung_part) = unwrap_physiology(heat_exchange[lung_part])
 

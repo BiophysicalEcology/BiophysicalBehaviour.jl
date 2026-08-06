@@ -97,6 +97,9 @@ end
 
     @test lung_part(organism) == :torso
     @test keys(physiology(organism)) == (:torso, :head)
+    # The lung wrap is type-stable: `_wrap_lung` routes the lung via a `Val`, so the
+    # per-part physiology NamedTuple infers concretely rather than as `Union{LungPart,_}`.
+    @inferred physiology(organism)
     @test is_lung_part(part_physiology(organism, :torso))
     @test !is_lung_part(part_physiology(organism, :head))
     # Pant is routed to the lung part only

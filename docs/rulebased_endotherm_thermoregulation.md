@@ -301,7 +301,7 @@ PantingLimits(;
 ### `ThermoregulationLimits`
 
 The top-level struct aggregating all effector limits plus the control strategy and IPOPT
-penalty weights. Stored at `organism.traits.behavioral_traits.thermoregulation`.
+objective weights. Stored at `organism.traits.behavioral_traits.thermoregulation`.
 
 ```julia
 ThermoregulationLimits(;
@@ -313,12 +313,12 @@ ThermoregulationLimits(;
     core_temperature,           # SteppedParameter (hyperthermia)
     panting,                    # PantingLimits
     skin_wetness,               # SteppedParameter (sweating)
-    # IPOPT penalty weights (ignored by RuleBasedSequentialControl):
-    core_temperature_penalty  = 1.0,
-    metabolic_heat_penalty    = 0.1,
-    panting_penalty           = 1.0,
-    skin_wetness_penalty      = 1.0,
-    gradient_penalty          = 0.0,
+    # IPOPT objective weights (ignored by RuleBasedSequentialControl):
+    core_temperature_weight  = 1.0,
+    metabolic_heat_weight    = 0.1,
+    panting_weight           = 1.0,
+    skin_wetness_weight      = 1.0,
+    gradient_weight          = 0.0,
     target_core_skin_gradient = 2.0,
 )
 ```
@@ -400,9 +400,9 @@ See `examples/budgerigar.jl` for a complete worked example including observed da
 |---|---|---|
 | **Philosophy** | Fixed priority order; one effector at a time | Simultaneous optimisation across all effectors |
 | **Cold response** | Implicit: start at max insulation; solver computes metabolic rate | Explicit: all effectors jointly adjusted to minimise objective |
-| **Hot response** | Sequential: piloerect → uncurl → vasodilate → hyperthermia → pant → sweat | Order emerges from penalty weights |
-| **Mode control** | `CoreFirst`, `CoreAndPantingFirst`, `CorePantingSweatingFirst` | Relative penalty weights (`panting_penalty` vs `skin_wetness_penalty`) |
-| **Tuning** | Step sizes and iteration order | Five scalar penalty weights |
+| **Hot response** | Sequential: piloerect → uncurl → vasodilate → hyperthermia → pant → sweat | Order emerges from objective weights |
+| **Mode control** | `CoreFirst`, `CoreAndPantingFirst`, `CorePantingSweatingFirst` | Relative objective weights (`panting_weight` vs `skin_wetness_weight`) |
+| **Tuning** | Step sizes and iteration order | Five scalar objective weights |
 | **Speed** | Fast (deterministic iterations) | Comparable; exact Hessian via Enzyme reduces IPOPT iterations |
 | **Guarantee** | Always converges; may not be globally optimal | NLP optimum within bounds; may not converge in extreme cases |
 | **Warm-starting** | Partial: caller sets `current` on each `SteppedParameter` and passes previous `skin_temperature` / `insulation_temperature` via `init` | `IPOPTSolverCache` enables automatic primal+dual warm-start across a sweep |

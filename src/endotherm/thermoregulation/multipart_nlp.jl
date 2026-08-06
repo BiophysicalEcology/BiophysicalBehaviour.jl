@@ -1,11 +1,10 @@
 # =============================================================================
-# Multi-part NLP formulation for `IPOPTControl` (Phase 7.5).
+# Multi-part NLP formulation for `IPOPTControl` — the sole NLP strategy.
 #
-# The dorsal/ventral `WeightedMeanNLP` / `MultiSidedNLP` strategies (ipopt.jl)
-# each hardcode a fixed variable layout for one lumped body. `MultipartNLP`
-# generalises the NLP to a genuine multi-part organism: one regulated core shared
+# `MultipartNLP` solves a genuine multi-part organism: one regulated core shared
 # across all parts, per-part surface temperatures and effectors, and a single
-# whole-organism respiration balance closed at the lung.
+# whole-organism respiration balance closed at the lung. A single `Body` is the
+# one-part case, so there is no separate single-body formulation.
 #
 # The decision-variable layout is NOT hand-indexed. It is a nested `NamedTuple`
 # *template* built from the organism's parts, with `Unitful` leaves, and
@@ -86,14 +85,20 @@ end
 # vector is homogeneous `Float64` — the type-stable, Enzyme-safe form), and
 # `Flatten.reconstruct` puts a `Float64` back into that typed slot, rebuilding the
 # `Quantity` with its unit intact. Units are never stripped or reattached by hand;
-# they round-trip through the type. The magnitudes are in the units declared here
-# (K, W/m/K), so this template also fixes the optimiser's canonical units — bounds
-# and initials must agree (they are `ustrip`ped to the *same* units in `_inputs!`).
+# they round-trip through the type. Critically, the leaf units come from the *model's
+# own quantities* (`temperature` and `conductivity` prototypes pulled from the
+# organism), not hardcoded literals: whatever units the model uses become the
+# optimiser's canonical units, and because the bounds/initial structures in
+# `_inputs!` are built from those same model quantities, a bound can never be
+# flattened in a different unit than the template reconstructs against — there is no
+# canonical unit to drift out of, so nothing needs an `ustrip` to a fixed unit.
 # `log_metabolic_heat_flow` / `panting_rate` / `skin_wetness` are genuinely
 # dimensionless (`Float64`).
-function _variable_template(part_names::NTuple{N,Symbol}) where {N}
-    part_leaves = ntuple(_ -> _part_leaf(0.0u"K", 0.0u"K", 0.0u"W/m/K", 0.0), Val(N))
-    return _variable_structure(part_names, 0.0u"K", 0.0, 0.0, part_leaves)
+function _variable_template(part_names::NTuple{N,Symbol}, temperature, conductivity) where {N}
+    t0 = zero(temperature)
+    k0 = zero(conductivity)
+    part_leaves = ntuple(_ -> _part_leaf(t0, t0, k0, 0.0), Val(N))
+    return _variable_structure(part_names, t0, 0.0, 0.0, part_leaves)
 end
 
 # Residual structure: per-part surface + skin residuals, whole-organism balance,
@@ -159,6 +164,7 @@ function HeatExchange.nlp_pack(::MultipartNLP, organism::Organism, environment,
         core_temperature, initial_skin_temperature, initial_insulation_temperature; smoothing,
     )
     metab_pars = HeatExchange.metabolism_pars(organism)
+    flesh_conductivity = HeatExchange.conduction_pars_internal(organism).flesh_conductivity
     whole = (;
         resp_pars              = HeatExchange.respiration_pars(organism),
         lung_mass              = _lung_mass(body, lung_part(organism)),
@@ -167,9 +173,14 @@ function HeatExchange.nlp_pack(::MultipartNLP, organism::Organism, environment,
         air_temperature        = environment_vars.air_temperature,
         minimum_metabolic_heat = metab_pars.metabolic_heat_flow,
         respire                = HeatExchange.options(organism).respire,
+        # The unit the log-metabolic variable reattaches to on the way out — pulled
+        # from the model, so `exp(log_metabolic_heat_flow) * heat_flow_unit` inverts
+        # the log-transform without hardcoding `u"W"`.
+        heat_flow_unit         = oneunit(metab_pars.metabolic_heat_flow),
     )
     names = part_names(body)
-    return MultipartNLPPacked(setups, names, whole, smoothing, _variable_template(names))
+    template = _variable_template(names, core_temperature, flesh_conductivity)
+    return MultipartNLPPacked(setups, names, whole, smoothing, template)
 end
 
 # Variable / constraint counts derived from the templates, never hand-counted.
@@ -184,7 +195,7 @@ end
 # physics → Float64 residuals out (flattened from the residual template).
 #
 # The single unit boundary: `_reconstruct_variables` attaches units at the top;
-# each residual leaf is `ustrip`ped at the bottom. Per-part surface balance and
+# each residual leaf is dimensionless-ised by its own `oneunit` at the bottom. Per-part surface balance and
 # skin-temperature residuals come from `part_surface_residuals`; the whole-organism
 # respiration balance closes metabolic − respiration = Σ per-part internal heat,
 # exactly as `solve_coupled_metabolic_rate` does at its converged point.
@@ -193,10 +204,10 @@ function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effecto
     vars = _reconstruct_variables(packed, effectors)
     # Fields arrive Unitful straight off the template — no manual unit attachment.
     # (`metabolic_heat_flow` is the exception by construction: the optimiser carries
-    # its *log*, a genuinely dimensionless quantity, so `exp` then `u"W"` is the
-    # log-transform's inverse, not a unit reattachment.)
+    # its *log*, a genuinely dimensionless quantity, so `exp` then a model-derived
+    # `heat_flow_unit` is the log-transform's inverse, not a hardcoded reattachment.)
     core_temperature    = vars.core_temperature
-    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * packed.whole.heat_flow_unit
     panting_rate        = vars.panting_rate
 
     part_vars = values(vars.parts)
@@ -220,68 +231,133 @@ function _heat_balance_residuals!(packed::MultipartNLPPacked, residuals, effecto
             skin_wetness = v.skin_wetness,
             resp_pars = packed.whole.resp_pars, smoothing = packed.smoothing,
         )
-        residuals[k += 1] = ustrip(u"W", r.surface_balance)
-        residuals[k += 1] = ustrip(u"K", r.residual_skin_temperature)
+        # Each residual is dimensionless-ised by its *own* unit (`x / oneunit(x)`),
+        # not stripped to a hardcoded one: the physics fixes each residual's unit
+        # (W, K) deterministically across the solve, so this is the same number a
+        # canonical `ustrip` would give but carries no unit literal.
+        residuals[k += 1] = r.surface_balance / oneunit(r.surface_balance)
+        residuals[k += 1] = r.residual_skin_temperature / oneunit(r.residual_skin_temperature)
         net_internal_total += r.net_metabolic_heat_internal
         skin_sum           += v.skin_temperature
     end
 
-    # Whole-organism respiration balance, closed at the lung (mean skin → lung temp).
+    # Whole-organism balance, closed at the lung. With respiration (the default) the
+    # metabolic rate must close the respiration balance; without it the organism just
+    # produces its internal heat directly — mirroring `solve_coupled_metabolic_rate`'s
+    # `respire` branch so the NLP and the iterative solver constrain the same thing.
     skin_mean        = skin_sum / N
     lung_temperature = (core_temperature + skin_mean) / 2
-    resp_pars_panted = setproperties(packed.whole.resp_pars, (; pant = panting_rate))
-    balance = respiration(
-        MetabolicRates(; metabolic = metabolic_heat_flow, sum = net_internal_total,
-                        minimum = packed.whole.minimum_metabolic_heat),
-        resp_pars_panted, packed.whole.atmos, packed.whole.lung_mass,
-        lung_temperature, packed.whole.air_temperature;
-        gas_fractions = packed.whole.gas_fractions, O2conversion = Kleiber1961(),
-        smoothing = packed.smoothing,
-    ).balance
+    balance = if packed.whole.respire
+        resp_pars_panted = setproperties(packed.whole.resp_pars, (; pant = panting_rate))
+        respiration(
+            MetabolicRates(; metabolic = metabolic_heat_flow, sum = net_internal_total,
+                            minimum = packed.whole.minimum_metabolic_heat),
+            resp_pars_panted, packed.whole.atmos, packed.whole.lung_mass,
+            lung_temperature, packed.whole.air_temperature;
+            gas_fractions = packed.whole.gas_fractions, O2conversion = Kleiber1961(),
+            smoothing = packed.smoothing,
+        ).balance
+    else
+        metabolic_heat_flow - net_internal_total
+    end
 
-    # Q10: metabolic_heat_flow − minimum_heat_flow · q10^((core − setpoint)/10) ≥ 0.
-    # The Q10 exponent is an empirical correlation over a bare temperature difference.
+    # Q10: metabolic_heat_flow − minimum_heat_flow · q10^((core − setpoint)/10 K) ≥ 0.
+    # The Q10 exponent is an empirical correlation over a temperature difference: the
+    # 10-degree reference interval is `10 * oneunit(ΔT)`, so the exponent is
+    # dimensionless without stripping the difference to a hardcoded unit.
+    ΔT_core = core_temperature - p.setpoint_temperature
     q10_slack = metabolic_heat_flow -
-        p.minimum_heat_flow * p.q10 ^ (ustrip(u"K", core_temperature - p.setpoint_temperature) / 10.0)
+        p.minimum_heat_flow * p.q10 ^ (ΔT_core / (10 * oneunit(ΔT_core)))
 
     # The per-part residuals were written inside the fold above; the whole-organism
     # balance and the Q10 slack come last (the single `≥ 0` constraint — see
     # `_constraint_bounds`). This order matches `_residual_structure`, which
     # `_problem_size` counts, so the write and the count cannot disagree.
-    @inbounds residuals[k += 1] = ustrip(u"W", balance)
-    @inbounds residuals[k += 1] = ustrip(u"W", q10_slack)
+    @inbounds residuals[k += 1] = balance / oneunit(balance)
+    @inbounds residuals[k += 1] = q10_slack / oneunit(q10_slack)
     return nothing
 end
 
 # =============================================================================
-# Objective — the same five-term quadratic-penalty objective as the single-body
-# strategies, over the whole-organism core / metabolic / panting decision variables
-# and the *mean* per-part skin temperature and skin wetness. Reads named fields off
-# the reconstructed template.
+# Objective — a weighted sum of squared, normalised deviations (Tikhonov-style
+# regularisation pulling each regulated quantity toward a reference). The objective
+# is a sum of *terms*, one per *regulation target*: a target is the recipe (which
+# quantity, toward what reference, at what scale and weight); the term is the number
+# it contributes. The set of targets is *data*, not code: `_inputs!` authors a tuple
+# of `RegulationTarget`s and the objective folds over it, naming no variable of its
+# own. Each target co-locates its value-selector, reference, normalisation scale, and
+# weight, so the three can never drift out of step with the quantity they regularise
+# (the old failure mode: a flat `objective_parameters` bag whose fields had to be
+# kept in lockstep with a separate hardcoded sum), and adding or dropping a regulated
+# quantity is an edit to that one tuple.
 # =============================================================================
+
+"""
+    RegulationTarget(select, reference, scale, weight)
+
+One soft target of the NLP objective: hold `select(vars)` near `reference`,
+measured in units of `scale`, weighted by `weight`. Its contribution — the
+objective *term* — is `weight · ((select(vars) − reference) / scale)²`. `select`
+maps the reconstructed decision variables to the regulated quantity — a top-level
+function, hence a singleton that captures nothing, so a tuple of targets is
+`isbits` and differentiates cleanly under Enzyme. `reference` and `scale` are
+`Unitful` (or dimensionless) and share a dimension, so the ratio is dimensionless
+and the term evaluates to a plain `Float64`.
+"""
+struct RegulationTarget{Select,Reference,Scale}
+    select::Select
+    reference::Reference
+    scale::Scale
+    weight::Float64
+end
+
+# The objective term this target contributes.
+@inline _term(target::RegulationTarget, vars) =
+    target.weight * ((target.select(vars) - target.reference) / target.scale)^2
+
+# Unrolled, type-stable fold over the (heterogeneous) tuple of targets — a hand-
+# written recursion rather than `sum(f, targets)` so the whole reduction stays on the
+# plain-`+` Julia path Enzyme differentiates through: no `mapreduce` machinery, no
+# dynamically built values. Bottoms out at the empty tuple.
+@inline _sum_terms(::Tuple{}, vars) = 0.0
+@inline _sum_terms(targets::Tuple, vars) =
+    _term(first(targets), vars) + _sum_terms(Base.tail(targets), vars)
+
+# Value-selectors: decode one regulated quantity from the reconstructed variables.
+# Each is a top-level function (a singleton), so the targets tuple stays isbits.
+# `metabolic_heat_flow` regulates in the log-variable's own dimensionless space:
+# `exp(log_metabolic_heat_flow)` is the metabolic magnitude in the model's heat-flow
+# unit, so its target's reference/scale are the matching dimensionless magnitudes and
+# no unit is reattached here. The gradient and skin-wetness targets regulate the
+# whole-organism mean over parts.
+_regulated_core_temperature(vars) = vars.core_temperature
+_regulated_metabolic_heat_flow(vars) = exp(vars.log_metabolic_heat_flow)
+_regulated_panting_rate(vars) = vars.panting_rate
+_regulated_core_skin_gradient(vars) = vars.core_temperature - _mean_skin_temperature(vars)
+_regulated_skin_wetness(vars) = _mean_skin_wetness(vars)
+
+# Whole-organism means over the per-part leaves. Plain loop with a loop-carried
+# isbits accumulator (parts are homogeneous) — Enzyme-safe, nothing dynamically built.
+@inline function _mean_skin_temperature(vars)
+    parts = values(vars.parts)
+    total = parts[1].skin_temperature
+    @inbounds for i in 2:length(parts)
+        total += parts[i].skin_temperature
+    end
+    return total / length(parts)
+end
+@inline function _mean_skin_wetness(vars)
+    parts = values(vars.parts)
+    total = parts[1].skin_wetness
+    @inbounds for i in 2:length(parts)
+        total += parts[i].skin_wetness
+    end
+    return total / length(parts)
+end
+
 function _objective_value(packed::MultipartNLPPacked, effectors, opt)
     vars = _reconstruct_variables(packed, effectors)
-    # Each penalty term is a ratio of like-dimensioned quantities, hence dimensionless.
-    core_temperature    = vars.core_temperature
-    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
-    panting_rate        = vars.panting_rate
-
-    part_vars = values(vars.parts)
-    N = length(part_vars)
-    skin_sum = zero(core_temperature)
-    wet_sum  = 0.0
-    @inbounds for i in 1:N
-        skin_sum += part_vars[i].skin_temperature
-        wet_sum  += part_vars[i].skin_wetness
-    end
-    skin_mean         = skin_sum / N
-    skin_wetness_mean = wet_sum / N
-
-    return opt.core_temperature_penalty * ((core_temperature - opt.setpoint_temperature) / opt.core_temperature_range)^2 +
-           opt.metabolic_heat_penalty   * ((metabolic_heat_flow - opt.minimum_heat_flow) / opt.heat_flow_range)^2 +
-           opt.gradient_penalty         * ((core_temperature - skin_mean - opt.target_gradient) / opt.gradient_range)^2 +
-           opt.panting_penalty          * ((panting_rate - opt.panting_rate_min) / opt.panting_rate_range)^2 +
-           opt.skin_wetness_penalty     * ((skin_wetness_mean - opt.skin_wetness_min) / opt.skin_wetness_range)^2
+    return _sum_terms(opt.targets, vars)
 end
 
 # Per-variable Ipopt scaling, authored in the variable structure and flattened:
@@ -299,10 +375,11 @@ end
 # Bounds and initials are authored as templates of the variable structure and
 # flattened — guaranteeing alignment with the variables. Whole-organism scalars come
 # from `ThermoregulationLimits`; per-part bounds broadcast those whole-organism
-# limits to every part (the uniform-tuning default). The objective_parameters /
-# nlp_parameters NamedTuples keep their temperature fields Unitful (the objective and
-# Q10 do dimensioned arithmetic and strip only at the empirical boundary); the shared
-# Ipopt callbacks pass them through opaquely, so nothing downstream needs to change.
+# limits to every part (the uniform-tuning default). The objective is authored as a
+# tuple of `RegulationTarget`s (references/scales Unitful — the objective folds over
+# them doing dimensioned arithmetic, stripping only at the empirical boundary); the shared
+# Ipopt callbacks pass `objective_parameters` / `nlp_parameters` through opaquely, so
+# nothing downstream needs to change.
 # =============================================================================
 function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartNLPPacked,
                   organism, environment, init::NamedTuple)
@@ -312,8 +389,11 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     internal = conduction_pars_internal(organism)
     evap     = evaporation_pars(organism)
 
-    # Quantities stay Unitful; the bound/initial structures are built Unitful and
-    # `flatten(Real)` rips out the magnitudes (in the template's canonical units).
+    # Quantities stay Unitful; the bound/initial structures are built Unitful from the
+    # model's own limits and `flatten(Real)` rips out the magnitudes. Because the
+    # variable template's leaf units come from the same model quantities (see
+    # `_variable_template`), these magnitudes reconstruct back into the identical
+    # units — no unit is fixed by hand here.
     air_temperature      = environment.environment_vars.air_temperature
     setpoint_temperature = metab.core_temperature
     core_temperature_min = limits.core_temperature.reference
@@ -334,9 +414,13 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     skin_temperature_init = clamp(init.skin_temperature, skin_temperature_min, skin_temperature_max)
     insulation_temp_init  = clamp(init.insulation_temperature, skin_temperature_min, skin_temperature_max)
 
-    # The metabolic variable is stored as its log, so its bounds live in log-W space.
-    log_heat_flow_min = log(ustrip(u"W", heat_flow_min))
-    log_heat_flow_max = log(ustrip(u"W", heat_flow_max))
+    # The metabolic variable is stored as its log, so its bounds live in log space:
+    # `log(heat_flow / oneunit(heat_flow))` is the log of the magnitude in the model's
+    # own heat-flow unit — the same space `_regulated_metabolic_heat_flow` decodes into
+    # and `packed.whole.heat_flow_unit` reattaches from, with no unit literal.
+    heat_flow_unit    = oneunit(heat_flow_min)
+    log_heat_flow_min = log(heat_flow_min / heat_flow_unit)
+    log_heat_flow_max = log(heat_flow_max / heat_flow_unit)
 
     lower_leaves = ntuple(_ -> _part_leaf(skin_temperature_min, skin_temperature_min, flesh_conductivity_min, skin_wetness_min), Val(N))
     upper_leaves = ntuple(_ -> _part_leaf(skin_temperature_max, skin_temperature_max, flesh_conductivity_max, skin_wetness_max), Val(N))
@@ -346,34 +430,41 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     upper_structure = _variable_structure(packed.part_names, core_temperature_max, log_heat_flow_max, panting_rate_max, upper_leaves)
     init_structure  = _variable_structure(packed.part_names,
         clamp(setpoint_temperature, core_temperature_min, core_temperature_max),
-        clamp(log(ustrip(u"W", heat_flow_init)), log_heat_flow_min, log_heat_flow_max),
+        clamp(log(heat_flow_init / heat_flow_unit), log_heat_flow_min, log_heat_flow_max),
         panting_rate_min, init_leaves)
 
     copyto!(lower_bounds,   Flatten.flatten(lower_structure, Real))
     copyto!(upper_bounds,   Flatten.flatten(upper_structure, Real))
     copyto!(initial_values, Flatten.flatten(init_structure, Real))
 
-    # `minimum_normalisation_range` is a dimensionless epsilon that `oneunit` gives
-    # the range's dimension.
-    core_span = core_temperature_max - setpoint_temperature
-    core_temperature_range = max(core_span, limits.minimum_normalisation_range * oneunit(core_span))
-    objective_parameters = (;
-        setpoint_temperature     = setpoint_temperature,
-        minimum_heat_flow        = heat_flow_min,
-        core_temperature_penalty = Float64(limits.core_temperature_penalty),
-        metabolic_heat_penalty   = Float64(limits.metabolic_heat_penalty),
-        panting_penalty          = Float64(limits.panting_penalty),
-        skin_wetness_penalty     = Float64(limits.skin_wetness_penalty),
-        gradient_penalty         = Float64(limits.gradient_penalty),
-        target_gradient          = limits.target_core_skin_gradient,
-        core_temperature_range   = core_temperature_range,
-        gradient_range           = core_temperature_range,
-        panting_rate_min         = Float64(panting_rate_min),
-        panting_rate_range       = max(panting_rate_max - panting_rate_min, 1e-6),
-        skin_wetness_min         = Float64(skin_wetness_min),
-        skin_wetness_range       = max(skin_wetness_max - skin_wetness_min, 1e-6),
-        heat_flow_range          = max(heat_flow_max - heat_flow_min, oneunit(heat_flow_max)),
+    # Objective normalisation scales. `minimum_normalisation_range` is a dimensionless
+    # epsilon that `oneunit` gives each range's dimension, so a degenerate (zero-span)
+    # limit never divides by zero.
+    range_floor(span) = max(span, limits.minimum_normalisation_range * oneunit(span))
+    core_temperature_range = range_floor(core_temperature_max - setpoint_temperature)
+    heat_flow_range        = range_floor(heat_flow_max - heat_flow_min)
+    panting_rate_range     = range_floor(panting_rate_max - panting_rate_min)
+    skin_wetness_range     = range_floor(skin_wetness_max - skin_wetness_min)
+
+    # The objective as data: one `RegulationTarget` per regulated quantity, each pairing
+    # a value-selector with its reference, normalisation scale, and weight. `_objective_value`
+    # folds over this tuple naming nothing — adding or dropping a regulated quantity is an
+    # edit here alone. Selectors are top-level singletons, references/scales Unitful, so
+    # the tuple is isbits and each target's term folds to a dimensionless Float64.
+    targets = (
+        RegulationTarget(_regulated_core_temperature,    setpoint_temperature, core_temperature_range,
+                         Float64(limits.core_temperature_weight)),
+        RegulationTarget(_regulated_metabolic_heat_flow, heat_flow_min / heat_flow_unit,
+                         heat_flow_range / heat_flow_unit,
+                         Float64(limits.metabolic_heat_weight)),
+        RegulationTarget(_regulated_core_skin_gradient,  limits.target_core_skin_gradient, core_temperature_range,
+                         Float64(limits.gradient_weight)),
+        RegulationTarget(_regulated_panting_rate,        panting_rate_min,     panting_rate_range,
+                         Float64(limits.panting_weight)),
+        RegulationTarget(_regulated_skin_wetness,        skin_wetness_min,     skin_wetness_range,
+                         Float64(limits.skin_wetness_weight)),
     )
+    objective_parameters = (; targets)
     nlp_parameters = (;
         nlp_packed           = packed,
         minimum_heat_flow    = heat_flow_min,
@@ -391,7 +482,7 @@ end
 function _assemble(packed::MultipartNLPPacked, organism, environment, x_sol)
     vars = _reconstruct_variables(packed, x_sol)
     core_temperature    = vars.core_temperature
-    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * u"W"
+    metabolic_heat_flow = exp(vars.log_metabolic_heat_flow) * packed.whole.heat_flow_unit
     panting_rate        = vars.panting_rate
 
     part_vars = values(vars.parts)

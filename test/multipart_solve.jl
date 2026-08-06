@@ -167,12 +167,7 @@ end
     @test all(part -> part.success, result.parts)
 end
 
-@testset "weight_for: scalar broadcasts, NamedTuple overrides per part" begin
-    @test weight_for(1.5, :torso) == 1.5
-    @test weight_for(1.5, :head) == 1.5
-    @test weight_for((; torso = 2.0, head = 0.5), :torso) == 2.0
-    @test weight_for((; torso = 2.0, head = 0.5), :head) == 0.5
-
+@testset "ThermoregulationLimits: magic-number replacement fields default" begin
     # The four magic-number replacement fields default on ThermoregulationLimits.
     limits = example_thermoregulation_limits()
     @test limits.skin_temperature_undershoot == 5.0u"K"

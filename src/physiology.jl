@@ -82,9 +82,19 @@ Either way the `lung_part` entry is wrapped in `LungPart` (carrying
 function broadcast_physiology(body, physiology;
                               lung_part::Symbol=SINGLE_PART_NAME,
                               panting_capacity=nothing)
+    # The public keyword API takes a runtime `Symbol`; `Val(lung_part)` is the one
+    # barrier that lifts it into the type for external callers. The organism path
+    # instead calls `_broadcast_physiology` with the traits' stored `Val` directly.
+    return _broadcast_physiology(body, physiology, Val(lung_part), panting_capacity)
+end
+
+# Lung part as a `Val` (name in the type), threaded straight to `_wrap_lung` with no
+# runtime Symbol — so when the organism path passes the traits' stored `Val`, the
+# whole physiology NamedTuple infers concretely.
+@inline function _broadcast_physiology(body, physiology, lung::Val, panting_capacity)
     names = part_names(body)
     per_part = _per_part_values(names, physiology)
-    return _wrap_lung(names, per_part, lung_part, panting_capacity)
+    return _wrap_lung(per_part, lung, panting_capacity)
 end
 
 # Broadcast a lumped physiology across the part names, or pass a per-part NamedTuple through.
@@ -93,14 +103,14 @@ end
 @inline _per_part_values(names::Tuple, physiology) =
     NamedTuple{names}(ntuple(_ -> physiology, Val(length(names))))
 
-# Wrap only the lung part in LungPart, leaving the rest as plain physiology.
-@inline function _wrap_lung(names::Tuple, per_part::NamedTuple, lung_part::Symbol, panting_capacity)
-    wrapped = ntuple(Val(length(names))) do i
-        name = names[i]
-        part = per_part[i]
-        name === lung_part ? LungPart(part, panting_capacity) : part
-    end
-    return NamedTuple{names}(wrapped)
+# Wrap only the lung part in LungPart, leaving the rest as plain physiology. The lung
+# name is a `Val` type parameter (not a runtime Symbol), so `getfield` and `merge`
+# specialise to the known field and the result is a concretely-typed NamedTuple. The
+# earlier per-element `name === lung ? ...` compare branched on a runtime Symbol and
+# so inferred `Union{LungPart{P},P}` in every slot.
+@inline function _wrap_lung(per_part::NamedTuple, ::Val{lung}, panting_capacity) where {lung}
+    lung_physiology = LungPart(getfield(per_part, lung), panting_capacity)
+    return merge(per_part, NamedTuple{(lung,)}((lung_physiology,)))
 end
 
 # ── Accessors on an organism / OrganismTraits ───────────────────────────────
@@ -114,14 +124,12 @@ directly when per-part physiology was supplied at construction.
 """
 physiology(o::Organism) = physiology(HeatExchange.traits(o), HeatExchange.body(o))
 function physiology(t::OrganismTraits, body)
-    return _organism_physiology(t.heat_exchange, body, lung_part(t))
+    # Pass the stored `Val` lung part straight through — no Symbol round-trip — so the
+    # result infers. `_broadcast_physiology` dispatches on the stored physiology: a
+    # per-part `NamedTuple` (multi-part) is used as-is, a single lumped
+    # `HeatExchangeTraits` (single-body) is broadcast across the parts.
+    return _broadcast_physiology(body, t.heat_exchange, t.lung_part, nothing)
 end
-# Per-part physiology already stored (multi-part construction): use as-is.
-_organism_physiology(physiology::NamedTuple, body, lung) =
-    broadcast_physiology(body, physiology; lung_part=lung)
-# Single lumped physiology (single-body construction): broadcast across parts.
-_organism_physiology(physiology, body, lung) =
-    broadcast_physiology(body, physiology; lung_part=lung)
 
 """
     part_physiology(organism, name) -> physiology
@@ -135,9 +143,12 @@ part_physiology(o::Organism, name::Symbol) = physiology(o)[name]
     lung_part(organism) -> Symbol
     lung_part(traits::OrganismTraits) -> Symbol
 
-The name of the lung-hosting part.
+The name of the lung-hosting part. Stored as a `Val` in the traits (the name is a
+type parameter), so this returns a compile-time-constant `Symbol` and the routing
+built on it stays type-stable.
 """
-lung_part(t::OrganismTraits) = t.lung_part
+@inline _lung_symbol(::Val{N}) where {N} = N
+lung_part(t::OrganismTraits) = _lung_symbol(t.lung_part)
 lung_part(o::Organism) = lung_part(HeatExchange.traits(o))
 
 """

@@ -53,9 +53,9 @@ export AbstractControlStrategy,
     IPOPTControl,
     IPOPTSolverCache
 
-# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy);
-# MultipartNLP is defined in BB (multipart_nlp.jl) as a HeatExchange.NLPStrategy.
-export NLPStrategy, WeightedMeanNLP, MultiSidedNLP, MultipartNLP
+# NLP strategy types. `NLPStrategy` is the HeatExchange abstract type; `MultipartNLP`
+# is defined in BB (multipart_nlp.jl) as its sole concrete strategy.
+export NLPStrategy, MultipartNLP
 
 # Thermoregulation modes
 export AbstractThermoregulationMode,
@@ -116,8 +116,7 @@ export thermoregulate
 # Multi-part coupled metabolic-rate solve (Phase 4 / 6-7 integration)
 export solve_multipart_metabolic_rate,
     part_surface_setups,
-    map_part_physiology,
-    weight_for
+    map_part_physiology
 
 # Precomputed geometry cache (Phase 5)
 export ShapeCache,

@@ -65,23 +65,26 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `core_temperature::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
-- `core_temperature_penalty::Float64`: IPOPT objective penalty for core temperature deviation from setpoint. Default 1.0.
-- `metabolic_heat_penalty::Float64`: Regularisation weight on metabolic heat generation. A small value
+The `*_weight` fields are the weights of the IPOPT objective's `RegulationTarget` terms
+(one weighted squared normalised deviation each); their *relative* magnitudes set which
+effectors the solver reaches for first.
+- `core_temperature_weight::Float64`: weight on the core-temperature-toward-setpoint term. Default 1.0.
+- `metabolic_heat_weight::Float64`: weight on the metabolic-heat-toward-minimum term. A small value
   (default 0.1) prevents high-panting/high-metabolic_heat_flow degeneracy in cold conditions. In hot
   conditions the Q10 inequality constraint overrides this and forces metabolic_heat_flow up with
   core_temperature, so this value does not impede thermogenesis.
-- `panting_penalty::Float64`: IPOPT objective penalty for panting (normalised to [0,1] range).
-  Relative to `skin_wetness_penalty` this controls which activates first. Default 1.0.
-- `skin_wetness_penalty::Float64`: IPOPT objective penalty for skin wetness (normalised to [0,1] range).
-  Set `skin_wetness_penalty > panting_penalty` for panting-first (rabbits, birds);
-  `skin_wetness_penalty < panting_penalty` for sweating-first (humans);
+- `panting_weight::Float64`: weight on the panting term (normalised to [0,1] range).
+  Relative to `skin_wetness_weight` this controls which activates first. Default 1.0.
+- `skin_wetness_weight::Float64`: weight on the skin-wetness term (normalised to [0,1] range).
+  Set `skin_wetness_weight > panting_weight` for panting-first (rabbits, birds);
+  `skin_wetness_weight < panting_weight` for sweating-first (humans);
   equal for parallel activation. Default 1.0.
-- `gradient_penalty::Float64`: IPOPT objective penalty for deviation from `target_core_skin_gradient`.
+- `gradient_weight::Float64`: weight on the core–skin gradient term (deviation from `target_core_skin_gradient`).
   Zero (default) disables the term. Non-zero values bias the solution toward maintaining the
   specified core–skin temperature difference, which can activate vasodilation and evaporation
   before absolute core_temperature deviation becomes the primary signal.
 - `target_core_skin_gradient`: Target core_temperature − skin_temperature difference,
-  a temperature `Quantity`. Only used when `gradient_penalty > 0`. Typical resting
+  a temperature `Quantity`. Only used when `gradient_weight > 0`. Typical resting
   value is ~3 K. Default `2.0u"K"`.
 """
 Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw,Tu} <: AbstractBehaviourParameters
@@ -93,11 +96,11 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     core_temperature::Tc
     panting::P
     skin_wetness::Sw
-    core_temperature_penalty::Float64  = 1.0
-    metabolic_heat_penalty::Float64    = 0.1
-    panting_penalty::Float64           = 1.0
-    skin_wetness_penalty::Float64      = 1.0
-    gradient_penalty::Float64          = 0.0
+    core_temperature_weight::Float64  = 1.0
+    metabolic_heat_weight::Float64    = 0.1
+    panting_weight::Float64           = 1.0
+    skin_wetness_weight::Float64      = 1.0
+    gradient_weight::Float64          = 0.0
     # A core→skin temperature difference: carries K, not a bare Float64 (so no
     # consumer has to attach a unit to it).
     target_core_skin_gradient::Tu      = 2.0u"K"
@@ -109,14 +112,3 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     minimum_normalisation_range::Float64        = 1e-6
 end
 
-"""
-    weight_for(weight, part::Symbol) -> weight
-
-Resolve a penalty-weight coefficient for a specific `part`. A scalar `weight`
-broadcasts to every part; a `NamedTuple{PartNames}` selects the per-part
-override (§3.7 "Per-part variation is opt-in"). This is how the multi-part NLP
-objective (Phase 7.5) reads whole-organism-or-per-part penalty fields off
-`ThermoregulationLimits` without the caller distinguishing the two forms.
-"""
-weight_for(weight::Real, ::Symbol) = weight
-weight_for(weight::NamedTuple, part::Symbol) = getfield(weight, part)
