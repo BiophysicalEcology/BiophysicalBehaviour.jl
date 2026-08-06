@@ -153,10 +153,10 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
             max=0.05,
             step=0.0025,
         ),
-        core_temperature_penalty = 0.1,   # allow T_core to rise before exhausting effectors
-        panting_penalty          = 5.0,
-        skin_wetness_penalty     = 0.1,
-        metabolic_heat_penalty = 10.0,
+        core_temperature_weight = 0.1,   # allow T_core to rise before exhausting effectors
+        panting_weight          = 5.0,
+        skin_wetness_weight     = 0.1,
+        metabolic_heat_weight = 10.0,
     )
 
     behavioral_traits = BehavioralTraits(;

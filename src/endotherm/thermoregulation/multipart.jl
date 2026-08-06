@@ -279,11 +279,12 @@ end
     return NamedTuple{names}(newvals)
 end
 
-# Whole-organism metabolic heat flow is produced at the lung; store it there.
-_set_lung_metabolic_heat_flow(o::Organism, flow) =
-    map_part_physiology(pant_selector(o), o) do physiology
-        @set physiology.metabolism_pars.metabolic_heat_flow = flow
-    end
+# A single `Body` stores one lumped physiology (not a per-part NamedTuple); its sole
+# part is `SINGLE_PART_NAME`, so apply `f` when that part is selected. Mirrors
+# `broadcast_physiology`'s single-body handling so `map_part_physiology` works on a
+# plain `Body` organism, not only a `CompositeBody`.
+@inline _map_physiology(f, sel::Tuple, heat_exchange) =
+    _member(SINGLE_PART_NAME, sel) ? f(heat_exchange) : heat_exchange
 
 # Vasodilation — raise tissue conductivity across every part (per-part effector).
 function _vasodilate_multipart(o::Organism, flesh_conductivity_limits::SteppedParameter)
