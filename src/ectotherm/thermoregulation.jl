@@ -65,10 +65,10 @@ _underground_blend_factor(::MaxShadeOnly, limits, min_shade, max_shade, step) = 
 
 function _underground_blend_factor(::AdaptiveBurrowShade, limits, min_shade, max_shade, step)
     n_nodes          = size(min_shade.soil_temperature, 2)
-    min_node         = clamp(limits.depth_min_underground, 1, n_nodes)
+    min_node         = clamp(limits.depth.min, 1, n_nodes)
     soil_temperature = min_shade.soil_temperature[step, min_node]
     too_hot          = soil_temperature > limits.active_temperature_max
-    too_cold         = soil_temperature < limits.critical_temperature_min
+    too_cold         = soil_temperature < limits.escape_temperature_min
     return (too_hot || too_cold) ? 1.0 : 0.0
 end
 
@@ -317,9 +317,9 @@ end
 
 Find the shallowest accessible soil node with a tolerable temperature (SELDEP.f).
 
-Iterates from `limits.depth_min_underground` to `limits.depth.max`, selecting the first
-node where the blended soil temperature lies between `critical_temperature_min` and a
-mid-point threshold between `active_temperature_max` and `critical_temperature_max`. Falls back to
+Iterates from `limits.depth.min` to `limits.depth.max` (the retreat range, independent of the
+foraging depth `limits.depth.reference`), selecting the first node where the blended soil
+temperature lies between `escape_temperature_min` and `escape_temperature_max`. Falls back to
 the deepest node if no node is within tolerance.
 
 # Arguments
@@ -330,12 +330,11 @@ the deepest node if no node is within tolerance.
 - `underground_shade_factor`: Blend factor (0=min-shade, 1=max-shade) for soil temperatures
 """
 function select_depth(limits::EctothermBehavioralLimits, min_shade, max_shade, step, underground_shade_factor)
-    depth_selection_threshold = limits.critical_temperature_max -
-        (limits.critical_temperature_max - limits.active_temperature_max) / 2
+    depth_selection_threshold = limits.escape_temperature_max
 
     n_nodes   = size(min_shade.soil_temperature, 2)
-    depth_min = clamp(limits.depth_min_underground, 1, n_nodes)
-    depth_max = clamp(limits.depth.max,             1, n_nodes)
+    depth_min = clamp(limits.depth.min, 1, n_nodes)
+    depth_max = clamp(limits.depth.max, 1, n_nodes)
 
     for node in depth_min:depth_max
         soil_temperature = _blend(
@@ -343,7 +342,7 @@ function select_depth(limits::EctothermBehavioralLimits, min_shade, max_shade, s
             max_shade.soil_temperature[step, node],
             underground_shade_factor,
         )
-        if limits.critical_temperature_min < soil_temperature < depth_selection_threshold
+        if limits.escape_temperature_min < soil_temperature < depth_selection_threshold
             return @set limits.depth.current = node
         end
     end

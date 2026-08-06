@@ -4,8 +4,10 @@ import ConstructionBase
 import FluidProperties
 
 using BiophysicalGeometry
+using DataInterpolations
 using HeatExchange
 using ModelParameters
+import OrdinaryDiffEqTsit5
 using Unitful
 using UnitfulMoles
 
@@ -16,7 +18,8 @@ import Ipopt
 using LinearAlgebra: dot
 
 using ConstructionBase: getproperties, setproperties
-using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0, SmoothingStrategy
+using HeatExchange: heat_balance, zbrent, zbrac, find_zero, Bisection, A42, AlefeldPotraShi, FalsePosition, Order0,
+    SmoothingStrategy, SurfaceSolveStrategy
 using Setfield: @set
 
 # Organism and traits
@@ -116,6 +119,13 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_behavioral_traits,
     example_ectotherm_organism_traits
 
+# Transient (lumped-capacitance) body-temperature simulation
+export EnvironmentForcing, simulate_onelump, simulate_twolump
+export TransientBehavioralPhase, SleepPhase, BaskPhase, ForagePhase, CoolPhase, ClimbPhase, BurrowPhase, RefugePhase
+export phase_forcing, phase_posture, phase_state, phase_key, phase_condition, next_phase
+export simulate_transient_behavior
+export simulate_endotherm_activity_cycle
+
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
@@ -127,5 +137,9 @@ include("ectotherm/thermoregulation.jl")
 include("ectotherm/ectothermy.jl")
 include("ectotherm/example_variables_and_parameters.jl")
 include("endotherm/thermoregulation/behavioural.jl")
+include("transient/forcing.jl")
+include("transient/simulate.jl")
+include("transient/ectotherm/behavioral_driver.jl")
+include("transient/endotherm/behavioral_driver.jl")
 
 end # module BiophysicalBehaviour

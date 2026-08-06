@@ -38,7 +38,7 @@ temperature of a passive body in the current environment) is compared to
 
 *Too cold*:
 `darken` → `orient_perpendicular` → `press_to_ground` → `avoid_shade` →
-`retreat_underground` (only if `Te < critical_temperature_min`)
+`retreat_underground` (only if `Te < escape_temperature_min`)
 
 ## After the behavioural loop
 
@@ -188,7 +188,7 @@ function thermoregulate(
             elseif behavioral_limits.shade.current > behavioral_limits.shade.reference
                 behavioral_limits = avoid_shade(behavioral_limits)
 
-            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.critical_temperature_min
+            elseif behavioral_limits.can_retreat_underground && Te < behavioral_limits.escape_temperature_min
                 underground_shade_factor = underground_shade_factor_for(behavioral_limits.shade.current)
                 behavioral_limits = select_depth(behavioral_limits, min_shade, max_shade, step,
                                                  underground_shade_factor)
