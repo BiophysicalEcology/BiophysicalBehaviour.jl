@@ -335,6 +335,7 @@ _regulated_metabolic_heat_flow(vars) = exp(vars.log_metabolic_heat_flow)
 _regulated_panting_rate(vars) = vars.panting_rate
 _regulated_core_skin_gradient(vars) = vars.core_temperature - _mean_skin_temperature(vars)
 _regulated_skin_wetness(vars) = _mean_skin_wetness(vars)
+_regulated_flesh_conductivity(vars) = _mean_flesh_conductivity(vars)
 
 # Whole-organism means over the per-part leaves. Plain loop with a loop-carried
 # isbits accumulator (parts are homogeneous) — Enzyme-safe, nothing dynamically built.
@@ -351,6 +352,14 @@ end
     total = parts[1].skin_wetness
     @inbounds for i in 2:length(parts)
         total += parts[i].skin_wetness
+    end
+    return total / length(parts)
+end
+@inline function _mean_flesh_conductivity(vars)
+    parts = values(vars.parts)
+    total = parts[1].flesh_conductivity
+    @inbounds for i in 2:length(parts)
+        total += parts[i].flesh_conductivity
     end
     return total / length(parts)
 end
@@ -441,10 +450,11 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
     # epsilon that `oneunit` gives each range's dimension, so a degenerate (zero-span)
     # limit never divides by zero.
     range_floor(span) = max(span, limits.minimum_normalisation_range * oneunit(span))
-    core_temperature_range = range_floor(core_temperature_max - setpoint_temperature)
-    heat_flow_range        = range_floor(heat_flow_max - heat_flow_min)
-    panting_rate_range     = range_floor(panting_rate_max - panting_rate_min)
-    skin_wetness_range     = range_floor(skin_wetness_max - skin_wetness_min)
+    core_temperature_range   = range_floor(core_temperature_max - setpoint_temperature)
+    heat_flow_range          = range_floor(heat_flow_max - heat_flow_min)
+    panting_rate_range       = range_floor(panting_rate_max - panting_rate_min)
+    skin_wetness_range       = range_floor(skin_wetness_max - skin_wetness_min)
+    flesh_conductivity_range = range_floor(flesh_conductivity_max - flesh_conductivity_min)
 
     # The objective as data: one `RegulationTarget` per regulated quantity, each pairing
     # a value-selector with its reference, normalisation scale, and weight. `_objective_value`
@@ -463,6 +473,8 @@ function _inputs!(lower_bounds, upper_bounds, initial_values, packed::MultipartN
                          Float64(limits.panting_weight)),
         RegulationTarget(_regulated_skin_wetness,        skin_wetness_min,     skin_wetness_range,
                          Float64(limits.skin_wetness_weight)),
+        RegulationTarget(_regulated_flesh_conductivity,  flesh_conductivity_min, flesh_conductivity_range,
+                         Float64(limits.flesh_conductivity_weight)),
     )
     objective_parameters = (; targets)
     nlp_parameters = (;

@@ -156,6 +156,7 @@ function create_organism(shape_pars, insulation_pars, conduction_pars_internal, 
         core_temperature_weight = 0.1,   # allow T_core to rise before exhausting effectors
         panting_weight          = 5.0,
         skin_wetness_weight     = 0.1,
+        flesh_conductivity_weight = 0.05,
         metabolic_heat_weight = 10.0,
     )
 

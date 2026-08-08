@@ -79,6 +79,8 @@ effectors the solver reaches for first.
   Set `skin_wetness_weight > panting_weight` for panting-first (rabbits, birds);
   `skin_wetness_weight < panting_weight` for sweating-first (humans);
   equal for parallel activation. Default 1.0.
+- `flesh_conductivity_weight::Float64`: weight on the flesh-conductivity-toward-reference term
+  (vasodilation), normalised to the `[reference, max]` range. Default 0.0.
 - `gradient_weight::Float64`: weight on the core–skin gradient term (deviation from `target_core_skin_gradient`).
   Zero (default) disables the term. Non-zero values bias the solution toward maintaining the
   specified core–skin temperature difference, which can activate vasodilation and evaporation
@@ -100,6 +102,7 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     metabolic_heat_weight::Float64    = 0.1
     panting_weight::Float64           = 1.0
     skin_wetness_weight::Float64      = 1.0
+    flesh_conductivity_weight::Float64 = 0.0
     gradient_weight::Float64          = 0.0
     # A core→skin temperature difference: carries K, not a bare Float64 (so no
     # consumer has to attach a unit to it).
