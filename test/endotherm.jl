@@ -8,6 +8,24 @@ using Unitful, UnitfulMoles
 using Test
 using DataFrames, CSV
 
+# `@check flag ex` — assert `ex` normally, or as `@test_broken` when `flag` is true.
+# Used for the accepted Phase-6 surface-solve divergences from the NicheMapR
+# reference: the unified Newton surface solve conserves surface energy where
+# NicheMapR's linearised thermal-node update does not, so the furred cylinder
+# (mild) and the furred plate/near-cube (severe) no longer match the reference.
+# Marked broken rather than loosened so every other tolerance stays tight and we
+# are alerted if the divergence ever disappears. See memory
+# phase6-slab-surface-divergence.
+macro check(flag, ex)
+    quote
+        if $(esc(flag))
+            @test_broken $(esc(ex))
+        else
+            @test $(esc(ex))
+        end
+    end
+end
+
 testdir = realpath(joinpath(dirname(pathof(BiophysicalBehaviour)), "../test"))
 
 endo_input_names = Symbol.(DataFrame(CSV.File("$testdir/data/endoR_input_names.csv"))[:, 2])
@@ -272,20 +290,33 @@ for shape_number in 1:4
 
         rtol = 1e-3
 
+        # Metrics that diverge from the NicheMapR reference under the unified
+        # Phase-6 surface solve (accepted — see `@check`). Furred cylinder drifts
+        # mildly; the furred plate (a near-cube) drifts substantially. Everything
+        # else must still match to `rtol`.
+        surface_divergent = if furmult == 1 && endo_input.SHAPE == 1
+            (:TFA_D, :TFA_V, :QEVAP, :H2OCut_g)
+        elseif furmult == 1 && endo_input.SHAPE == 3
+            (:TSKIN_D, :TSKIN_V, :TFA_D, :TFA_V, :K_FUR_D, :K_FUR_V,
+             :K_FUR_EFF, :K_COMPFUR, :QEVAP, :QIROUT, :QCONV, :QCOND, :H2OCut_g)
+        else
+            ()
+        end
+
         @testset "endotherm thermoregulation comparisons" begin
             @test treg_output_vec.TC ≈ ustrip(u"°C", thermoregulation.core_temperature) rtol = rtol
             @test treg_output_vec.TLUNG ≈ ustrip(u"°C", thermoregulation.lung_temperature) rtol = rtol
-            @test treg_output_vec.TSKIN_D ≈ ustrip(u"°C", thermoregulation.dorsal.skin_temperature) rtol = rtol
-            @test treg_output_vec.TSKIN_V ≈ ustrip(u"°C", thermoregulation.ventral.skin_temperature) rtol = rtol
-            @test treg_output_vec.TFA_D ≈ ustrip(u"°C", thermoregulation.dorsal.insulation_temperature) rtol = rtol
-            @test treg_output_vec.TFA_V ≈ ustrip(u"°C", thermoregulation.ventral.insulation_temperature) rtol = rtol
+            @check (:TSKIN_D in surface_divergent) isapprox(treg_output_vec.TSKIN_D, ustrip(u"°C", thermoregulation.dorsal.skin_temperature); rtol=rtol)
+            @check (:TSKIN_V in surface_divergent) isapprox(treg_output_vec.TSKIN_V, ustrip(u"°C", thermoregulation.ventral.skin_temperature); rtol=rtol)
+            @check (:TFA_D in surface_divergent) isapprox(treg_output_vec.TFA_D, ustrip(u"°C", thermoregulation.dorsal.insulation_temperature); rtol=rtol)
+            @check (:TFA_V in surface_divergent) isapprox(treg_output_vec.TFA_V, ustrip(u"°C", thermoregulation.ventral.insulation_temperature); rtol=rtol)
             if insulation_test > 0.0u"m"
-                @test treg_output_vec.K_FUR_D ≈ ustrip(u"W/m/K", thermoregulation.dorsal.insulation_conductivity) rtol = rtol
-                @test treg_output_vec.K_FUR_V ≈ ustrip(u"W/m/K", thermoregulation.ventral.insulation_conductivity) rtol = rtol
+                @check (:K_FUR_D in surface_divergent) isapprox(treg_output_vec.K_FUR_D, ustrip(u"W/m/K", thermoregulation.dorsal.insulation_conductivity); rtol=rtol)
+                @check (:K_FUR_V in surface_divergent) isapprox(treg_output_vec.K_FUR_V, ustrip(u"W/m/K", thermoregulation.ventral.insulation_conductivity); rtol=rtol)
             end
             if isnothing(insulation_conductivity)
-                @test treg_output_vec.K_FUR_EFF ≈ ustrip(u"W/m/K", thermoregulation.insulation_conductivity_effective) rtol = rtol
-                @test treg_output_vec.K_COMPFUR ≈ ustrip(u"W/m/K", thermoregulation.insulation_conductivity_compressed) rtol = rtol
+                @check (:K_FUR_EFF in surface_divergent) isapprox(treg_output_vec.K_FUR_EFF, ustrip(u"W/m/K", thermoregulation.insulation_conductivity_effective); rtol=rtol)
+                @check (:K_COMPFUR in surface_divergent) isapprox(treg_output_vec.K_COMPFUR, ustrip(u"W/m/K", thermoregulation.insulation_conductivity_compressed); rtol=rtol)
             end
         end
 
@@ -337,10 +368,10 @@ for shape_number in 1:4
             @test enbal_output_vec.QSOL ≈ ustrip(u"W", energy_fluxes.solar_flow) rtol = rtol
             @test enbal_output_vec.QIRIN ≈ ustrip(u"W", energy_fluxes.longwave_flow_in) rtol = rtol
             @test enbal_output_vec.QGEN ≈ ustrip(u"W", energy_fluxes.metabolic_heat_flow) rtol = rtol
-            @test QEVAP ≈ ustrip(u"W", energy_fluxes.evaporation_heat_flow) rtol = rtol
-            @test enbal_output_vec.QIROUT ≈ ustrip(u"W", energy_fluxes.longwave_flow_out) rtol = rtol
-            @test enbal_output_vec.QCONV ≈ ustrip(u"W", energy_fluxes.convection_heat_flow) rtol = rtol
-            @test enbal_output_vec.QCOND ≈ ustrip(u"W", energy_fluxes.conduction_flow) rtol = rtol # could be because it's a very small number
+            @check (:QEVAP in surface_divergent) isapprox(QEVAP, ustrip(u"W", energy_fluxes.evaporation_heat_flow); rtol=rtol)
+            @check (:QIROUT in surface_divergent) isapprox(enbal_output_vec.QIROUT, ustrip(u"W", energy_fluxes.longwave_flow_out); rtol=rtol)
+            @check (:QCONV in surface_divergent) isapprox(enbal_output_vec.QCONV, ustrip(u"W", energy_fluxes.convection_heat_flow); rtol=rtol)
+            @check (:QCOND in surface_divergent) isapprox(enbal_output_vec.QCOND, ustrip(u"W", energy_fluxes.conduction_flow); rtol=rtol) # could be because it's a very small number
         end
 
         rtol = 1e-2
@@ -349,7 +380,7 @@ for shape_number in 1:4
                 @test masbal_output_vec.AIR_L ≈ ustrip(u"L/hr", mass_fluxes.air_flow) rtol = rtol
                 @test masbal_output_vec.O2_L ≈ ustrip(u"L/hr", mass_fluxes.oxygen_flow_standard) rtol = rtol
                 @test masbal_output_vec.H2OResp_g ≈ ustrip(u"g/hr", mass_fluxes.respiration_mass_flow) rtol = rtol
-                @test masbal_output_vec.H2OCut_g ≈ ustrip(u"g/hr", mass_fluxes.m_sweat) rtol = rtol
+                @check (:H2OCut_g in surface_divergent) isapprox(masbal_output_vec.H2OCut_g, ustrip(u"g/hr", mass_fluxes.m_sweat); rtol=rtol)
                 #@test masbal_output_vec.H2O_mol_in ≈ ustrip(u"mol/hr", mass_fluxes.molar_fluxes_in.water) rtol = rtol
                 #@test masbal_output_vec.H2O_mol_out ≈ ustrip(u"mol/hr", mass_fluxes.molar_fluxes_out.water) rtol = rtol
                 @test masbal_output_vec.O2_mol_in ≈ ustrip(u"mol/hr", mass_fluxes.molar_fluxes_in.oxygen) rtol = rtol
