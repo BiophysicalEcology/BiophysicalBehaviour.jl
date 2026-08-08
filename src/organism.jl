@@ -268,6 +268,11 @@ in a single traits object.
 - `thermal_strategy::S`: Thermal strategy (Endotherm, Ectotherm, Heterotherm)
 - `heat_exchange::P`: Heat exchange traits (HeatExchangeTraits) — morphology and physiology
 - `behavior::B`: Behavioral traits (BehavioralTraits)
+- `lung_part::L`: `Val` of the lung-hosting part name (§3.9)
+- `couplings::C`: per-join heat couplings, a tuple parallel to `body.joins`
+  (values `<: HeatExchange.HeatCoupling`). An empty tuple (the default) means
+  every join is a `SharedCore` — all parts share one regulated core, reproducing
+  the single-body / dorsal-ventral behaviour.
 
 # Example
 ```julia
@@ -284,11 +289,13 @@ struct OrganismTraits{
     P,
     B<:BehavioralTraits,
     L,
+    C<:Tuple,
 } <: HeatExchange.AbstractFunctionalTraits
     thermal_strategy::S
     heat_exchange::P
     behavior::B
     lung_part::L
+    couplings::C
 end
 
 # Backwards-compatible constructor: a single lumped `HeatExchangeTraits` is the
@@ -299,9 +306,11 @@ end
 # the name lives in the *type*, not as a runtime `Symbol` field. Physiology routing
 # (`_wrap_lung`, `pant_selector`, `_lung_mass`) then infers concretely — the sole
 # runtime→type step is this one `Val(lung_part)` at construction.
+# `couplings` is a tuple parallel to `body.joins`; the default `()` resolves to
+# all-`SharedCore` at compartment-graph construction (see `organism_compartment_graph`).
 OrganismTraits(thermal_strategy::AbstractThermalStrategy, heat_exchange, behavior::BehavioralTraits;
-               lung_part::Symbol=SINGLE_PART_NAME) =
-    OrganismTraits(thermal_strategy, heat_exchange, behavior, Val(lung_part))
+               lung_part::Symbol=SINGLE_PART_NAME, couplings::Tuple=()) =
+    OrganismTraits(thermal_strategy, heat_exchange, behavior, Val(lung_part), couplings)
 
 # =============================================================================
 # Forwarding methods for physiology accessors
@@ -362,6 +371,17 @@ Get the `HeatExchangeTraits` (morphology + physiology) from an OrganismTraits or
 """
 heat_exchange(t::OrganismTraits) = t.heat_exchange
 heat_exchange(o::Organism) = heat_exchange(HeatExchange.traits(o))
+
+"""
+    couplings(t::OrganismTraits)
+    couplings(o::Organism)
+
+Get the per-join heat couplings — a tuple parallel to `body.joins`. An empty
+tuple (the default) means every join is a `SharedCore` (all parts share one
+regulated core). See [`organism_compartment_graph`](@ref).
+"""
+couplings(t::OrganismTraits) = t.couplings
+couplings(o::Organism) = couplings(HeatExchange.traits(o))
 
 # =============================================================================
 # BehavioralTraits accessors

@@ -226,6 +226,41 @@ end
     @test keys(physiology(bumped)) == (:torso, :head)
 end
 
+@testset "compartment graph: SharedCore contracts, ConductiveCoupling splits" begin
+    # Single Body → one compartment (the regulated core).
+    shape = Cylinder(1.0u"kg", ρ, b)
+    body  = Body(shape, CompositeInsulation(fur, fat))
+    single = Organism(body, OrganismTraits(Endotherm(), heat_exchange_of(shape), behav))
+    @test couplings(single) == ()
+    @test HeatExchange.num_compartments(organism_compartment_graph(single)) == 1
+
+    # Two parts, default couplings → all SharedCore → one shared core.
+    shared = two_part_organism()
+    @test couplings(shared) == ()
+    gshared = organism_compartment_graph(shared)
+    @test HeatExchange.num_compartments(gshared) == 1
+    @test HeatExchange.compartment_of(gshared, :torso) == HeatExchange.compartment_of(gshared, :head)
+
+    # Two parts joined by a ConductiveCoupling → head floats in its own compartment.
+    torso_shape = Cylinder(0.6u"kg", ρ, b)
+    head_shape  = Cylinder(0.4u"kg", ρ, b)
+    torso = Body(torso_shape, CompositeInsulation(fur, fat))
+    head  = Body(head_shape,  CompositeInsulation(fur, fat))
+    r_join = 0.02u"m"
+    dog = CompositeBody(;
+        parts = (; torso, head),
+        joins = (Join(torso = Attachment(EndA(0.0u"m", 0.0), Disc(r_join)),
+                      head  = Attachment(EndB(0.0u"m", 0.0), Disc(r_join))),),
+    )
+    phys = (; torso = heat_exchange_of(torso_shape), head = heat_exchange_of(head_shape))
+    conductive = Organism(dog, OrganismTraits(Endotherm(), phys, behav;
+        lung_part = :torso, couplings = (ConductiveCoupling(),)))
+    @test couplings(conductive) == (ConductiveCoupling(),)
+    gcond = organism_compartment_graph(conductive)
+    @test HeatExchange.num_compartments(gcond) == 2
+    @test HeatExchange.compartment_of(gcond, :torso) != HeatExchange.compartment_of(gcond, :head)
+end
+
 @testset "six-part dog: many-part solve + thermoregulation ladder" begin
     torso_shape = Cylinder(18.0u"kg", ρ, b)
     head_shape  = Cylinder(2.0u"kg", ρ, 1.5)
