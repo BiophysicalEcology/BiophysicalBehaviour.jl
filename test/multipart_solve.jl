@@ -261,6 +261,48 @@ end
     @test HeatExchange.compartment_of(gcond, :torso) != HeatExchange.compartment_of(gcond, :head)
 end
 
+@testset "ConductiveCoupling: floating compartment + coupling limits" begin
+    torso_shape = Cylinder(0.6u"kg", ρ, b)
+    head_shape  = Cylinder(0.4u"kg", ρ, b)
+    r_join = 0.02u"m"
+    mkdog() = CompositeBody(;
+        parts = (; torso = Body(torso_shape, CompositeInsulation(fur, fat)),
+                   head  = Body(head_shape,  CompositeInsulation(fur, fat))),
+        joins = (Join(torso = Attachment(EndA(0.0u"m", 0.0), Disc(r_join)),
+                      head  = Attachment(EndB(0.0u"m", 0.0), Disc(r_join))),),
+    )
+    phys = (; torso = heat_exchange_of(torso_shape), head = heat_exchange_of(head_shape))
+    solve_with(coupling) = begin
+        o = Organism(mkdog(), OrganismTraits(Endotherm(), phys, behav;
+            lung_part = :torso, couplings = (coupling,)))
+        (o, solve_multipart_metabolic_rate(o, environment, skin0, insul0))
+    end
+
+    # Derived series-resistance coupling: the head floats in its own compartment.
+    o_d, res_d = solve_with(ConductiveCoupling())
+    reg = HeatExchange.compartment_of(organism_compartment_graph(o_d), :torso)
+    flo = HeatExchange.compartment_of(organism_compartment_graph(o_d), :head)
+
+    @test length(res_d.compartment_core_temperatures) == 2
+    @test res_d.parts[2].success
+    # The regulated (torso) compartment is pinned at the setpoint core.
+    @test res_d.compartment_core_temperatures[reg] ≈ core
+    # The floating head core sits above its own skin (it is still a heat source into
+    # its surface) — a genuine intermediate node, not pinned.
+    head_core_d = res_d.compartment_core_temperatures[flo]
+    @test res_d.parts[2].skin_temperature < head_core_d
+
+    # Limit 1 — a very tight interface drags the head core to the regulated core
+    # (approaching a SharedCore contraction).
+    _, res_tight = solve_with(ConductiveCoupling(1.0e6u"W/m^2/K"))
+    @test res_tight.compartment_core_temperatures[flo] ≈ core rtol = 1e-3
+
+    # Limit 2 — a very loose interface leaves the head at its isolated equilibrium,
+    # further from the setpoint than the derived coupling.
+    _, res_loose = solve_with(ConductiveCoupling(1.0e-4u"W/m^2/K"))
+    @test abs(res_loose.compartment_core_temperatures[flo] - core) ≥ abs(head_core_d - core)
+end
+
 @testset "six-part dog: many-part solve + thermoregulation ladder" begin
     torso_shape = Cylinder(18.0u"kg", ρ, b)
     head_shape  = Cylinder(2.0u"kg", ρ, 1.5)
