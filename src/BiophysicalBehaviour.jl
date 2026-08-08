@@ -84,7 +84,13 @@ export PartSelector,
     select_names,
     map_parts,
     foldl_parts,
-    set_part
+    set_part,
+    couplings,
+    organism_compartment_graph
+
+# Heat couplings between joined parts (defined in HeatExchange; re-exported so a
+# `using BiophysicalBehaviour` user can build `couplings = (ConductiveCoupling(),)`).
+export HeatCoupling, SharedCore, ConductiveCoupling
 
 # Per-part physiology + lung part (§3.9, §4)
 export LungPart,

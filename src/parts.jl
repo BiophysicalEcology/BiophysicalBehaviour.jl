@@ -198,3 +198,44 @@ set_part(b::AbstractBody, name::Symbol, new_part::AbstractBody) =
 end
 # A plain `Body` has one part (`:body`); replacing it yields the new body.
 @inline set_part(::Body, ::Val{SINGLE_PART_NAME}, new_part::AbstractBody) = new_part
+
+# ── Compartment graph ───────────────────────────────────────────────────────
+
+"""
+    organism_compartment_graph(o::Organism) -> HeatExchange.CompartmentGraph
+
+Build the thermal-compartment partition for `o` from its body topology and
+`couplings(o)`. Parts joined by a `SharedCore` coupling equilibrate into one
+compartment (sharing a single `core_temperature`); every other part is its own
+compartment.
+
+A plain `Body`, or a `CompositeBody` whose joins are all `SharedCore` (the
+default when `couplings(o)` is empty), yields a single compartment — the one
+regulated core that reproduces the single-body / dorsal-ventral behaviour.
+"""
+organism_compartment_graph(o::Organism) = _compartment_graph(HeatExchange.body(o), couplings(o))
+
+# A plain `Body` is one part, one compartment, regardless of couplings.
+_compartment_graph(::Body, ::Tuple) =
+    HeatExchange.compartment_graph((SINGLE_PART_NAME,), ())
+
+function _compartment_graph(body::CompositeBody, couplings::Tuple)
+    resolved = _resolve_couplings(body.joins, couplings)
+    return HeatExchange.compartment_graph(part_names(body), _shared_core_pairs(body.joins, resolved))
+end
+
+# Resolve the stored couplings against a body's joins: an empty tuple (the
+# default) means "every join is SharedCore"; otherwise it is parallel to `joins`.
+_resolve_couplings(joins::Tuple, ::Tuple{}) = map(_ -> HeatExchange.SharedCore(), joins)
+_resolve_couplings(::Tuple, couplings::Tuple) = couplings
+
+# The (parent, child) part-name pairs of the joins whose coupling contracts the
+# two parts into one compartment (`SharedCore`). Runs once at graph construction,
+# so a small mutable scratch vector is fine.
+function _shared_core_pairs(joins::Tuple, couplings::Tuple)
+    pairs = Tuple{Symbol,Symbol}[]
+    for (join, coupling) in zip(joins, couplings)
+        coupling isa HeatExchange.SharedCore && push!(pairs, join_partners(join))
+    end
+    return pairs
+end
