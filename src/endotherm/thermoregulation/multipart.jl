@@ -47,6 +47,36 @@ function solve_multipart_metabolic_rate(
     smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound(),
     cache=nothing,
 )
+    # Dispatch on the couplings *type*: the default empty tuple (every organism that
+    # doesn't opt in) is all-`SharedCore` — one regulated core — and goes straight to
+    # the single-compartment path with its concrete return type, no graph built. Only
+    # organisms with explicit couplings pay for the graph and the multi-compartment
+    # branch.
+    return _solve_multipart(couplings(organism), organism, environment,
+        skin_temperature, insulation_temperature; smoothing, cache)
+end
+
+# Default (empty couplings) → single regulated compartment shared by all parts.
+_solve_multipart(::Tuple{}, organism, environment, skin_temperature, insulation_temperature; smoothing, cache) =
+    _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+
+# Explicit couplings → build the compartment graph and branch on its compartment
+# count. All-`SharedCore` still collapses to the single-compartment path.
+function _solve_multipart(::Tuple, organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+    graph = organism_compartment_graph(organism)
+    if HeatExchange.num_compartments(graph) == 1
+        return _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+    else
+        return _solve_multicompartment(graph, organism, environment,
+            skin_temperature, insulation_temperature; smoothing, cache)
+    end
+end
+
+# One regulated compartment: every part shares the setpoint core (single `Body`, or a
+# composite whose joins are all `SharedCore`). The dorsal/ventral-equivalent path.
+function _solve_single_compartment(
+    organism::Organism, environment, skin_temperature, insulation_temperature; smoothing, cache,
+)
     body = HeatExchange.body(organism)
     environment_pars = stripparams(environment.environment_pars)
     environment_vars = environment.environment_vars
@@ -82,6 +112,189 @@ function solve_multipart_metabolic_rate(
         resp_tolerance=opts.resp_tolerance,
         smoothing,
     )
+end
+
+# =============================================================================
+# Multi-compartment solve (floating ConductiveCoupling compartments).
+#
+# The regulated compartment (hosting the lung / metabolism setpoint) is pinned at
+# the setpoint core; its metabolic heat is the free output closed by respiration.
+# Every other compartment "floats": it produces its parts' basal metabolic heat and
+# its core settles wherever conduction to its own skins and to its neighbours
+# (across `ConductiveCoupling` joins, including the pinned regulated core) balances.
+#
+# Outer fixed point: solve each part's surface at its compartment's current core →
+# aggregate per compartment → `solve_regulated_core_temperatures` for the floating
+# cores → repeat until the cores stop moving. Then the regulated compartment's
+# metabolic heat is closed by `solve_coupled_metabolic_rate`, with the conductive
+# heat it sheds to floating neighbours passed as `extra_net_metabolic`.
+# =============================================================================
+function _solve_multicompartment(
+    graph::HeatExchange.CompartmentGraph{P,N,K}, organism::Organism, environment,
+    skin_temperature, insulation_temperature; smoothing, cache,
+) where {P,N,K}
+    body = HeatExchange.body(organism)
+    environment_pars = stripparams(environment.environment_pars)
+    environment_vars = environment.environment_vars
+    setpoint = HeatExchange.metabolism_pars(organism).core_temperature
+    opts = HeatExchange.options(organism)
+    metab_pars = HeatExchange.metabolism_pars(organism)
+    resp_pars = HeatExchange.respiration_pars(organism)
+    lung_mass = _lung_mass(body, lung_part(organism))
+    tol = opts.temperature_error_tolerance
+
+    setups = part_surface_setups(
+        organism, environment_pars, environment_vars,
+        setpoint, skin_temperature, insulation_temperature; smoothing, cache,
+    )
+
+    part_phys = physiology(organism)
+    part_compartment = graph.part_compartment                                   # NTuple{N,Int}
+    basal = map(phys -> HeatExchange.metabolism_pars(phys).metabolic_heat_flow, values(part_phys))
+    k_by_name = map(phys -> HeatExchange.conduction_pars_internal(phys).flesh_conductivity, part_phys)
+    regulated = HeatExchange.compartment_of(graph, lung_part(organism))
+    entries = _conductance_entries(body, organism, graph, k_by_name)
+
+    # Fixed-point iteration over the floating compartment cores (regulated pinned).
+    cores = ntuple(_ -> setpoint, Val(K))
+    parts = _solve_parts_at_cores(setups, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
+    for _ in 1:100
+        agg = _compartment_aggregates(Val(K), part_compartment, parts, basal)
+        new_vec = HeatExchange.solve_regulated_core_temperatures(
+            graph, regulated, entries, agg.net_generation,
+            agg.flesh_conductance, agg.flesh_weighted_skin, setpoint)
+        new_cores = ntuple(i -> new_vec[i], Val(K))
+        Δ = maximum(ntuple(i -> abs(new_cores[i] - cores[i]), Val(K)))
+        cores = new_cores
+        parts = _solve_parts_at_cores(setups, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
+        Δ < tol && break
+    end
+
+    # Close the regulated compartment's metabolic heat via respiration, charging it
+    # the conductive heat it sheds to the floating compartments.
+    coupling_loss = _regulated_coupling_loss(entries, cores, regulated)
+    reg_setups = _select_compartment_setups(setups, part_compartment, regulated)
+    reg_out = solve_coupled_metabolic_rate(;
+        part_surface_setups=reg_setups,
+        core_temperature=setpoint,
+        skin_temperature,
+        insulation_temperature,
+        temperature_tolerance=tol,
+        respire=opts.respire,
+        respiration_pars=resp_pars,
+        lung_mass,
+        air_temperature=environment_vars.air_temperature,
+        atmos=AtmosphericConditions(environment_vars),
+        gas_fractions=environment_pars.gas_fractions,
+        metabolic_heat_flow_setpoint=metab_pars.metabolic_heat_flow,
+        resp_tolerance=opts.resp_tolerance,
+        extra_net_metabolic=coupling_loss,
+        smoothing,
+    )
+
+    number_of_parts = length(parts)
+    skin_mean = sum(p -> p.skin_temperature, parts) / number_of_parts
+    insulation_mean = sum(p -> p.insulation_temperature, parts) / number_of_parts
+
+    return (;
+        metabolic_heat_flow=reg_out.metabolic_heat_flow,
+        parts,
+        net_metabolic_total=reg_out.net_metabolic_total,
+        skin_temperature=skin_mean,
+        insulation_temperature=insulation_mean,
+        lung_temperature=reg_out.lung_temperature,
+        respiration_out=reg_out.respiration_out,
+        compartment_core_temperatures=cores,
+    )
+end
+
+# Solve every part's surface at its compartment's current core temperature.
+function _solve_parts_at_cores(setups, part_compartment, cores, skin, insul, tol, smoothing)
+    return map(setups, part_compartment) do setup, c
+        _solve_part_at_core(setup, cores[c], skin, insul, tol, smoothing)
+    end
+end
+
+# One part's surface solve at an imposed core (overriding the setpoint baked into
+# the setup's traits).
+function _solve_part_at_core(setup, core, skin, insul, tol, smoothing)
+    traits = merge(setup.traits, (; core_temperature=core))
+    return solve_part_surface(;
+        merge(setup, (; traits))...,
+        skin_temperature=skin,
+        insulation_temperature=insul,
+        temperature_tolerance=tol,
+        smoothing,
+    )
+end
+
+# Per-compartment aggregates the compartment core solve needs: total core→skin flesh
+# conductance, flesh-conductance-weighted skin temperature, and basal generation.
+function _compartment_aggregates(::Val{K}, part_compartment, parts, basal) where {K}
+    fc0 = zero(first(parts).flesh_conductance)
+    fws0 = zero(first(parts).flesh_conductance * first(parts).skin_temperature)
+    ng0 = zero(first(basal))
+    flesh_conductance = ntuple(Val(K)) do k
+        s = fc0
+        for i in eachindex(parts)
+            part_compartment[i] == k && (s += parts[i].flesh_conductance)
+        end
+        s
+    end
+    flesh_weighted_skin = ntuple(Val(K)) do k
+        s = fws0
+        for i in eachindex(parts)
+            part_compartment[i] == k && (s += parts[i].flesh_conductance * parts[i].skin_temperature)
+        end
+        s
+    end
+    net_generation = ntuple(Val(K)) do k
+        s = ng0
+        for i in eachindex(basal)
+            part_compartment[i] == k && (s += basal[i])
+        end
+        s
+    end
+    return (; flesh_conductance, flesh_weighted_skin, net_generation)
+end
+
+# Inter-compartment conductance triples `(compartment_i, compartment_j, G)`, one per
+# join whose coupling conducts across a compartment boundary. `SharedCore` joins (both
+# parts in one compartment) contribute nothing and are skipped.
+function _conductance_entries(body::CompositeBody, organism, graph, k_by_name)
+    resolved = _resolve_couplings(body.joins, couplings(organism))
+    entries = Tuple{Int,Int,typeof(1.0u"W/K")}[]
+    for (join, coupling) in zip(body.joins, resolved)
+        parent, child = join_partners(join)
+        ci = HeatExchange.compartment_of(graph, parent)
+        cj = HeatExchange.compartment_of(graph, child)
+        ci == cj && continue
+        area = BiophysicalGeometry.join_area(join, body)
+        dist = BiophysicalGeometry.internal_distance(join, body)
+        G = HeatExchange.contribution_to_conductance(
+            coupling, area, dist.parent, dist.child, k_by_name[parent], k_by_name[child])
+        G === nothing && continue
+        push!(entries, (ci, cj, G))
+    end
+    return entries
+end
+
+# The setups of the parts in `target` compartment (a runtime-length tuple).
+_select_compartment_setups(setups, part_compartment, target) =
+    Tuple(setups[i] for i in eachindex(setups) if part_compartment[i] == target)
+
+# Conductive heat the regulated compartment sheds to its floating neighbours:
+# Σ G·(core_regulated − core_neighbour) over the joins touching `regulated`.
+function _regulated_coupling_loss(entries, cores, regulated)
+    loss = 0.0u"W"
+    for (i, j, G) in entries
+        if i == regulated
+            loss += G * (cores[i] - cores[j])
+        elseif j == regulated
+            loss += G * (cores[j] - cores[i])
+        end
+    end
+    return loss
 end
 
 """
