@@ -217,12 +217,29 @@ Applies thermoregulation behaviors in order:
 
 Returns the final `endotherm_out` result from `solve_metabolic_rate`.
 """
+# Uniform inner-solve adapters for the rule-based loop. Each returns the three
+# scalars the ladder iterates on plus the full `output` it returns at convergence.
+# `_multisided_inner` is the legacy dorsal/ventral path; `_multipart_inner` is the
+# genuine per-part path (Phase 8). The loop is identical either way.
+_multisided_inner(o, e, skin, insul) = begin
+    out = solve_metabolic_rate(o, e, skin, insul)
+    (; skin_temperature = out.thermoregulation.skin_temperature,
+       insulation_temperature = out.thermoregulation.insulation_temperature,
+       metabolic_heat_flow = out.energy_flows.metabolic_heat_flow,
+       output = out)
+end
+_multipart_inner(o, e, skin, insul) = begin
+    out = solve_multipart_metabolic_rate(o, e, skin, insul)
+    (; out.skin_temperature, out.insulation_temperature, out.metabolic_heat_flow, output = out)
+end
+
 function thermoregulate(
     ::Endotherm,
     ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
-    init::NamedTuple,
+    init::NamedTuple;
+    inner_solve = _multisided_inner,
 )
     (; skin_temperature, insulation_temperature) = init
 
@@ -253,10 +270,11 @@ function thermoregulate(
         insulation_limits = @set insulation_limits.ventral.step = limits.insulation.ventral.step
     end
 
-    endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
-    skin_temperature = endotherm_out.thermoregulation.skin_temperature
-    insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-    metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+    r = inner_solve(organism, environment, skin_temperature, insulation_temperature)
+    endotherm_out    = r.output
+    skin_temperature = r.skin_temperature
+    insulation_temperature = r.insulation_temperature
+    metabolic_heat_flow = r.metabolic_heat_flow
 
     minimum_heat_flow = limits.minimum_heat_flow
 
@@ -315,10 +333,11 @@ function thermoregulate(
             skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
         end
 
-        endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
-        skin_temperature = endotherm_out.thermoregulation.skin_temperature
-        insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-        metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+        r = inner_solve(organism, environment, skin_temperature, insulation_temperature)
+        endotherm_out    = r.output
+        skin_temperature = r.skin_temperature
+        insulation_temperature = r.insulation_temperature
+        metabolic_heat_flow = r.metabolic_heat_flow
     end
 
     return endotherm_out
