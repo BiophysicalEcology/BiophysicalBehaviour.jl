@@ -261,6 +261,36 @@ end
     @test HeatExchange.compartment_of(gcond, :torso) != HeatExchange.compartment_of(gcond, :head)
 end
 
+@testset "two HalfCylinders + SharedCore ≡ dorsal/ventral (Phase 7 gate)" begin
+    M = 1.0u"kg"
+    full_shape = Cylinder(M, ρ, b)
+    full = Body(full_shape, CompositeInsulation(fur, fat))
+    baseline = solve_metabolic_rate(
+        Organism(full, OrganismTraits(Endotherm(), heat_exchange_of(full_shape), behav)),
+        environment, skin0, insul0)
+
+    # Two equal-mass half-cylinders joined flat-to-flat reconstruct the full cylinder;
+    # SharedCore (the default empty couplings) contracts them into one regulated core.
+    hshape = HalfCylinder(M / 2, ρ, b)
+    dv = CompositeBody(;
+        parts = (; dorsal = Body(hshape, CompositeInsulation(fur, fat)),
+                   ventral = Body(hshape, CompositeInsulation(fur, fat))),
+        joins = (Join(dorsal  = Attachment(Flat(), FullCover()),
+                      ventral = Attachment(Flat(), FullCover())),))
+    phys = (; dorsal = heat_exchange_of(hshape), ventral = heat_exchange_of(hshape))
+    org = Organism(dv, OrganismTraits(Endotherm(), phys, behav; lung_part = :dorsal))
+    @test HeatExchange.num_compartments(organism_compartment_graph(org)) == 1
+
+    result = solve_multipart_metabolic_rate(org, environment, skin0, insul0)
+
+    # The two halves reconstruct the full cylinder's exposed surface exactly; the only
+    # residual is the half-cylinder characteristic dimension (2^(1/3) smaller than the
+    # full cylinder's) feeding convection, so agreement is ~0.5%, not bitwise.
+    @test result.metabolic_heat_flow ≈ baseline.energy_flows.metabolic_heat_flow rtol = 1e-2
+    @test result.skin_temperature ≈ baseline.thermoregulation.skin_temperature rtol = 1e-3
+    @test result.insulation_temperature ≈ baseline.thermoregulation.insulation_temperature rtol = 1e-3
+end
+
 @testset "ConductiveCoupling: floating compartment + coupling limits" begin
     torso_shape = Cylinder(0.6u"kg", ρ, b)
     head_shape  = Cylinder(0.4u"kg", ρ, b)
