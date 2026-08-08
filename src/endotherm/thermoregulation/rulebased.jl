@@ -230,7 +230,8 @@ _multisided_inner(o, e, skin, insul) = begin
 end
 _multipart_inner(o, e, skin, insul) = begin
     out = solve_multipart_metabolic_rate(o, e, skin, insul)
-    (; out.skin_temperature, out.insulation_temperature, out.metabolic_heat_flow, output = out)
+    output = _assemble_endotherm_output(o, e, out)
+    (; out.skin_temperature, out.insulation_temperature, out.metabolic_heat_flow, output)
 end
 
 function thermoregulate(

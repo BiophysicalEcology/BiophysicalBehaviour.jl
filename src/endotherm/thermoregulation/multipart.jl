@@ -659,3 +659,143 @@ function thermoregulate(
 
     return out
 end
+
+# =============================================================================
+# Single-part endotherm output assembler (Phase 8).
+#
+# Produces the full `ThermoregulationOutput` (thermoregulation / morphology /
+# energy_flows / mass_flows) that downstream consumers read, from a *single-part*
+# multipart solve (a single `Body` → one part = the whole animal). Morphology is a
+# pure function of the body, computed with the same expressions the legacy
+# dorsal/ventral assembler used, so it matches to numerical tolerance. Energy and
+# mass flows come from the one part's `flows` + the whole-organism respiration; the
+# genuine per-part flows already integrate the part's actual view factors, so
+# longwave in/out read straight off them (longwave_in = Σ incoming radiation,
+# longwave_out = longwave_in + net longwave) with no dorsal/ventral reweighting.
+# For a single body there are no sides, so the `dorsal`/`ventral` sub-tuples both
+# report the one part (kept for output-shape compatibility until callers migrate).
+# =============================================================================
+function _assemble_endotherm_output(organism::Organism, environment, out;
+                                    smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound())
+    body = HeatExchange.body(organism)
+    environment_pars = stripparams(environment.environment_pars)
+    environment_vars = environment.environment_vars
+    ins_pars = HeatExchange.insulation_pars(organism)
+    rad_pars = HeatExchange.radiation_pars(organism)
+    evap_pars = HeatExchange.evaporation_pars(organism)
+    resp_pars = HeatExchange.respiration_pars(organism)
+    metab_pars = HeatExchange.metabolism_pars(organism)
+    external = HeatExchange.conduction_pars_external(organism)
+    internal = HeatExchange.conduction_pars_internal(organism)
+
+    p = out.parts[1]
+    resp = out.respiration_out
+    core_temperature = metab_pars.core_temperature
+    skin_temperature = out.skin_temperature
+    insulation_temperature = out.insulation_temperature
+
+    # --- morphology (body-only; same expressions as the legacy assembler) ---
+    cond_frac = external.conduction_fraction
+    total_area = BiophysicalGeometry.total_area(body)
+    area_convection = total_area * (1 - cond_frac)
+    vegetation_factor = rad_pars.sky_view_factor * environment_vars.shade
+    sky_factor = rad_pars.sky_view_factor - vegetation_factor
+    ground_factor = 1 - sky_factor - vegetation_factor
+    fat = FatLayer(internal.fat_fraction, internal.fat_density)
+    morphology = (;
+        total_area,
+        area_skin = BiophysicalGeometry.skin_area(body),
+        area_evaporation = BiophysicalGeometry.evaporation_area(body),
+        area_convection,
+        area_conduction = total_area * cond_frac,
+        area_silhouette = HeatExchange.silhouette_area(body, rad_pars.solar_orientation),
+        sky_view_factor = sky_factor,
+        ground_view_factor = ground_factor,
+        volume = body.geometry.volume,
+        volume_flesh = BiophysicalGeometry.flesh_volume(body),
+        characteristic_dimension = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), body),
+        fat_mass = body.shape.mass * fat.fraction,
+        body.geometry.length...,
+    )
+
+    # --- energy flows (one part's flows + respiration) ---
+    # Gross outgoing longwave = ε·σ·A·T⁴ over the radiating surface (the part sees the
+    # full hemisphere, so its view factors sum to one — no dorsal/ventral doubling).
+    # Gross incoming = gross outgoing − net longwave (`flows.longwave` is the net loss).
+    σ = Unitful.uconvert(u"W/m^2/K^4", Unitful.σ)
+    insulation_test = insulation_properties(
+        ins_pars, insulation_temperature * 0.7 + skin_temperature * 0.3, rad_pars.ventral_fraction; smoothing
+    ).insulation_test
+    has_insulation = insulation_test > 0.0u"m"
+    radiating_surface_temperature = has_insulation ? p.insulation_temperature : p.skin_temperature
+    radiating_area = has_insulation ? total_area : BiophysicalGeometry.skin_area(body)
+    longwave_flow_out = rad_pars.body_emissivity_dorsal * σ * radiating_area *
+                        radiating_surface_temperature^4
+    longwave_flow_in = longwave_flow_out - p.flows.longwave
+    respiration_heat_flow = resp === nothing ? zero(out.metabolic_heat_flow) : resp.respiration_heat_flow
+    evaporation_heat_flow = p.flows.skin_evaporation + p.flows.insulation_evaporation + respiration_heat_flow
+    metabolic_heat_flow = out.metabolic_heat_flow
+    heat_balance_val = p.flows.solar + longwave_flow_in + metabolic_heat_flow -
+                       longwave_flow_out - p.flows.convection - evaporation_heat_flow - p.flows.conduction
+    side_flows = (;
+        solar = p.flows.solar, convection = p.flows.convection, conduction = p.flows.conduction,
+        net_metabolic = p.flows.net_metabolic,
+        skin_evaporation = p.flows.skin_evaporation,
+        insulation_evaporation = p.flows.insulation_evaporation,
+        longwave = p.flows.longwave, sky_radiation = p.flows.sky_radiation,
+        bush_radiation = p.flows.bush_radiation,
+        vegetation_radiation = p.flows.vegetation_radiation,
+        ground_radiation = p.flows.ground_radiation,
+    )
+    energy_flows = (;
+        solar_flow = p.flows.solar, longwave_flow_in, metabolic_heat_flow,
+        evaporation_heat_flow, respiration_heat_flow, longwave_flow_out,
+        convection_heat_flow = p.flows.convection, conduction_flow = p.flows.conduction,
+        heat_balance = heat_balance_val, balance = heat_balance_val,
+        ntry = p.ntry, success = p.success,
+        dorsal = side_flows, ventral = side_flows,
+    )
+
+    # --- mass flows ---
+    latent_heat = HeatExchange.enthalpy_of_vaporisation(environment_vars.air_temperature)
+    m_sweat = u"g/hr"(p.flows.skin_evaporation / latent_heat)
+    respiration_mass_flow = resp === nothing ? nothing : resp.respiration_mass_flow
+    m_evap = respiration_mass_flow !== nothing ? u"g/hr"(respiration_mass_flow + m_sweat) : u"g/hr"(m_sweat)
+    mass_flows = (;
+        air_flow = resp === nothing ? missing : resp.air_flow,
+        oxygen_flow_standard = resp === nothing ? missing : resp.oxygen_flow_standard,
+        m_evap, respiration_mass_flow, m_sweat,
+        molar_fluxes_in = resp === nothing ? missing : resp.molar_fluxes_in,
+        molar_fluxes_out = resp === nothing ? missing : resp.molar_fluxes_out,
+    )
+
+    # --- thermoregulation ---
+    insulation_final = insulation_properties(
+        ins_pars, insulation_temperature * 0.7 + skin_temperature * 0.3, rad_pars.ventral_fraction; smoothing)
+    insulation_depth = ins_pars.dorsal.depth * (1 - rad_pars.ventral_fraction) +
+                       ins_pars.ventral.depth * rad_pars.ventral_fraction
+    axis_ratio_b = body.shape isa Sphere ? 1.0 : body.shape.axis_ratio_b
+    side_treg = (;
+        skin_temperature = p.skin_temperature,
+        insulation_temperature = p.insulation_temperature,
+        insulation_conductivity = p.insulation_conductivity,
+        insulation_depth,
+    )
+    thermoregulation = (;
+        core_temperature, skin_temperature, insulation_temperature,
+        lung_temperature = out.lung_temperature, insulation_depth, axis_ratio_b,
+        pant = resp_pars.pant, skin_wetness = evap_pars.skin_wetness,
+        flesh_conductivity = internal.flesh_conductivity,
+        insulation_conductivity_effective = insulation_final.conductivities.average,
+        insulation_conductivity_compressed = insulation_final.conductivity_compressed,
+        q10 = metab_pars.q10,
+        dorsal = side_treg, ventral = side_treg,
+    )
+
+    return ThermoregulationOutput(
+        ThermoregulationState(thermoregulation),
+        MorphologyState(morphology),
+        EnergyFlowState(energy_flows),
+        MassFlowState(mass_flows),
+    )
+end
