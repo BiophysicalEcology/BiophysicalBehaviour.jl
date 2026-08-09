@@ -88,6 +88,7 @@ function _solve_single_compartment(
         organism, environment_pars, environment_vars,
         core_temperature, skin_temperature, insulation_temperature; smoothing, cache, view,
     )
+    neighbour_topology = _neighbour_topology(view, _parts(body))
 
     # Respiration is a whole-organism balance closed at the lung surface: the
     # forwarding accessors resolve respiration/metabolism/options through the
@@ -111,6 +112,7 @@ function _solve_single_compartment(
         gas_fractions=environment_pars.gas_fractions,
         metabolic_heat_flow_setpoint=metab_pars.metabolic_heat_flow,
         resp_tolerance=opts.resp_tolerance,
+        neighbour_topology,
         smoothing,
     )
 end
@@ -330,6 +332,26 @@ function precompute_view_partition(organism::Organism, environment_vars;
         (; partition[n].sky, partition[n].ground, partition[n].neighbours, lit_silhouette = lit[n])
     end)
 end
+
+# Per-part neighbour topology for the inter-part surface coupling. One entry per part
+# (in `part_bodies` order), each a tuple of `(; index, fraction)` naming the sibling
+# parts that occlude it — by position in `part_bodies` — and the view fraction of each,
+# read straight from the precomputed `view`'s per-part `neighbours`. `nothing` (a single
+# `Body`, or no precomputed view) means no coupling and the solve keeps its independent
+# per-part path. Built once per solve outside the surface hot loop; the small runtime
+# NamedTuple lookups here never touch the differentiated NLP path.
+function _neighbour_topology(view, part_bodies)
+    view === nothing && return nothing
+    names = keys(part_bodies)
+    return map(names) do n
+        nbrs = view[n].neighbours
+        map(keys(nbrs)) do m
+            (; index = _name_index(names, m), fraction = nbrs[m])
+        end
+    end
+end
+
+@inline _name_index(names::NTuple{N,Symbol}, m::Symbol) where {N} = findfirst(==(m), names)::Int
 
 """
     part_surface_setups(organism, environment_pars, environment_vars,

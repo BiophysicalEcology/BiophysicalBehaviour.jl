@@ -155,6 +155,32 @@ end
     # occlusion removes the ventral half's phantom direct beam
     @test occl.parts[2].flows.solar < naive.parts[2].flows.solar
     @test all(p -> p.success, occl.parts)
+
+    # Inter-part surface exchange (Phase 8, step 3). Each half's occluded solid angle
+    # exchanges longwave with the *other* half's surface (the reciprocal neighbour
+    # fractions) rather than the sky/ground behind it, so the view partitions each sum
+    # to one — no solid angle, hence no energy, is lost — and the two halves' surface
+    # temperatures are coupled.
+    @test view.dorsal.sky  + view.dorsal.ground  + view.dorsal.neighbours.ventral ≈ 1 atol = 1e-6
+    @test view.ventral.sky + view.ventral.ground + view.ventral.neighbours.dorsal ≈ 1 atol = 1e-6
+    @test view.dorsal.neighbours.ventral ≈ view.ventral.neighbours.dorsal rtol = 0.05
+
+    # An otherwise-identical view with the neighbour term stripped (same sky/ground/lit)
+    # isolates the coupling: `occl` has it, `decoupled` does not.
+    view0 = NamedTuple{keys(view)}(map(keys(view)) do n
+        (; view[n].sky, view[n].ground, neighbours = NamedTuple(), view[n].lit_silhouette)
+    end)
+    decoupled = solve_multipart_metabolic_rate(org, sun_env, skin0, insul0; view = view0)
+
+    gap(out) = out.parts[1].insulation_temperature - out.parts[2].insulation_temperature
+    # Coupling shrinks the warm-dorsal ↔ cool-ventral surface-temperature gap: the warm
+    # half sheds heat to the cool half (dorsal cools, ventral warms).
+    @test gap(occl) < gap(decoupled)
+    @test occl.parts[1].insulation_temperature < decoupled.parts[1].insulation_temperature
+    @test occl.parts[2].insulation_temperature > decoupled.parts[2].insulation_temperature
+    # The warm half now radiates more (also to the cool sibling); the cool half less.
+    @test occl.parts[1].flows.longwave > decoupled.parts[1].flows.longwave
+    @test occl.parts[2].flows.longwave < decoupled.parts[2].flows.longwave
 end
 
 @testset "two-part organism solves, lung routed to torso" begin
