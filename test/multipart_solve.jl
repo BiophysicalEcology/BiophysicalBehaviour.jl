@@ -115,6 +115,48 @@ end
     @test abs(ustrip(u"W", old.energy_flows.heat_balance)) < 1e-3
 end
 
+@testset "occlusion view partition wired through the solve (Phase 8)" begin
+    # A dorsal-up two-half body under an overhead sun: the ventral (belly) half is
+    # shadowed by the dorsal half. With the precomputed occlusion view the ventral half
+    # receives no direct beam and its sky/ground split emerges from geometry; the naive
+    # per-part path double-counts the sun on both halves. `precompute_view_partition`
+    # reads the body's (biological, dorsal-up) pose — the modeller orients it.
+    M = 1.0u"kg"
+    sun_vars = @set env_vars.global_radiation = 500.0u"W/m^2"
+    sun_vars = @set sun_vars.zenith_angle = 0.0u"°"
+    sun_env  = (; environment_pars = env_pars, environment_vars = sun_vars)
+    root = BiophysicalGeometry.Pose((0.0u"m", 0.0u"m", 0.0u"m"),
+                                    BiophysicalGeometry.rotation_axis_angle((1.0, 0.0, 0.0), π / 2))
+    dv = CompositeBody(;
+        parts = (; dorsal  = Body(HalfCylinder(M / 2, ρ, b), CompositeInsulation(fur, fat)),
+                   ventral = Body(HalfCylinder(M / 2, ρ, b), CompositeInsulation(fur, fat))),
+        joins = (Join(dorsal  = Attachment(Flat(), FullCover()),
+                      ventral = Attachment(Flat(), FullCover())),),
+        root_pose = root)
+    half_metab = @set metab.metabolic_heat_flow = metab.metabolic_heat_flow / 2
+    mkp(sky, cf) = example_heat_exchange_traits(; shape_pars = HalfCylinder(M / 2, ρ, b),
+        insulation_pars = ins_pars,
+        conduction_pars_external = example_conduction_pars_external(; conduction_fraction = cf),
+        conduction_pars_internal = internal,
+        radiation_pars = example_radiation_pars(; sky_view_factor = sky),
+        evaporation_pars = evap, respiration_pars = resp, metabolism_pars = half_metab)
+    org = Organism(dv, OrganismTraits(Endotherm(),
+        (; dorsal = mkp(1.0, 0.0), ventral = mkp(0.0, 0.4)), behav; lung_part = :dorsal))
+
+    view = precompute_view_partition(org, sun_vars; ndirections = 200, resolution = 64)
+
+    # The view sees the dorsal/ventral split and the ventral shadow (no direct beam).
+    @test view.dorsal.sky > view.dorsal.ground
+    @test view.ventral.ground > view.ventral.sky
+    @test view.ventral.lit_silhouette < 0.05 * view.dorsal.lit_silhouette
+
+    naive = solve_multipart_metabolic_rate(org, sun_env, skin0, insul0)
+    occl  = solve_multipart_metabolic_rate(org, sun_env, skin0, insul0; view)
+    # occlusion removes the ventral half's phantom direct beam
+    @test occl.parts[2].flows.solar < naive.parts[2].flows.solar
+    @test all(p -> p.success, occl.parts)
+end
+
 @testset "two-part organism solves, lung routed to torso" begin
     torso_shape = Cylinder(0.6u"kg", ρ, b)
     head_shape  = Cylinder(0.4u"kg", ρ, b)
