@@ -46,6 +46,7 @@ function solve_multipart_metabolic_rate(
     insulation_temperature;
     smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound(),
     cache=nothing,
+    view=nothing,
 )
     # Dispatch on the couplings *type*: the default empty tuple (every organism that
     # doesn't opt in) is all-`SharedCore` — one regulated core — and goes straight to
@@ -53,29 +54,29 @@ function solve_multipart_metabolic_rate(
     # organisms with explicit couplings pay for the graph and the multi-compartment
     # branch.
     return _solve_multipart(couplings(organism), organism, environment,
-        skin_temperature, insulation_temperature; smoothing, cache)
+        skin_temperature, insulation_temperature; smoothing, cache, view)
 end
 
 # Default (empty couplings) → single regulated compartment shared by all parts.
-_solve_multipart(::Tuple{}, organism, environment, skin_temperature, insulation_temperature; smoothing, cache) =
-    _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+_solve_multipart(::Tuple{}, organism, environment, skin_temperature, insulation_temperature; smoothing, cache, view) =
+    _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache, view)
 
 # Explicit couplings → build the compartment graph and branch on its compartment
 # count. All-`SharedCore` still collapses to the single-compartment path.
-function _solve_multipart(::Tuple, organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+function _solve_multipart(::Tuple, organism, environment, skin_temperature, insulation_temperature; smoothing, cache, view)
     graph = organism_compartment_graph(organism)
     if HeatExchange.num_compartments(graph) == 1
-        return _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache)
+        return _solve_single_compartment(organism, environment, skin_temperature, insulation_temperature; smoothing, cache, view)
     else
         return _solve_multicompartment(graph, organism, environment,
-            skin_temperature, insulation_temperature; smoothing, cache)
+            skin_temperature, insulation_temperature; smoothing, cache, view)
     end
 end
 
 # One regulated compartment: every part shares the setpoint core (single `Body`, or a
 # composite whose joins are all `SharedCore`). The dorsal/ventral-equivalent path.
 function _solve_single_compartment(
-    organism::Organism, environment, skin_temperature, insulation_temperature; smoothing, cache,
+    organism::Organism, environment, skin_temperature, insulation_temperature; smoothing, cache, view=nothing,
 )
     body = HeatExchange.body(organism)
     environment_pars = stripparams(environment.environment_pars)
@@ -85,7 +86,7 @@ function _solve_single_compartment(
 
     setups = part_surface_setups(
         organism, environment_pars, environment_vars,
-        core_temperature, skin_temperature, insulation_temperature; smoothing, cache,
+        core_temperature, skin_temperature, insulation_temperature; smoothing, cache, view,
     )
 
     # Respiration is a whole-organism balance closed at the lung surface: the
@@ -131,7 +132,7 @@ end
 # =============================================================================
 function _solve_multicompartment(
     graph::HeatExchange.CompartmentGraph{P,N,K}, organism::Organism, environment,
-    skin_temperature, insulation_temperature; smoothing, cache,
+    skin_temperature, insulation_temperature; smoothing, cache, view=nothing,
 ) where {P,N,K}
     body = HeatExchange.body(organism)
     environment_pars = stripparams(environment.environment_pars)
@@ -145,7 +146,7 @@ function _solve_multicompartment(
 
     setups = part_surface_setups(
         organism, environment_pars, environment_vars,
-        setpoint, skin_temperature, insulation_temperature; smoothing, cache,
+        setpoint, skin_temperature, insulation_temperature; smoothing, cache, view,
     )
 
     part_phys = physiology(organism)
@@ -297,6 +298,39 @@ function _regulated_coupling_loss(entries, cores, regulated)
     return loss
 end
 
+# Unit direction toward the sun from the zenith angle, azimuth 0 (sun in the x–z
+# plane). `+z` is up, so an overhead sun (zenith 0) is `(0,0,1)`. The environment
+# carries only a zenith angle; a full azimuth would rotate this in the x–y plane.
+_sun_direction(zenith_angle) = (sin(zenith_angle), 0.0, cos(zenith_angle))
+
+"""
+    precompute_view_partition(organism, environment_vars; ndirections=256, resolution=96)
+        -> NamedTuple or nothing
+
+The `init!` step for multi-part surface radiation: bake the geometry-dependent,
+occlusion-aware view of each part for the organism's current pose and sun position.
+Returns a `NamedTuple` keyed like the parts, each `(; sky, ground, neighbours,
+lit_silhouette)` — the sky/ground view fractions and per-neighbour occlusion from
+`view_partition`, plus the direct-beam lit silhouette from `silhouette_area_per_part`.
+
+`solve` then consumes these numbers unchanged (via `part_surface_setups(...; view=…)`);
+they are a pure function of pose + sun, so they are computed once per configuration,
+not per solve. A single `Body` has no parts to occlude, so this returns `nothing` and
+the solve keeps its per-part naive view factors.
+"""
+function precompute_view_partition(organism::Organism, environment_vars;
+                                   ndirections::Integer=256, resolution::Integer=96)
+    body = HeatExchange.body(organism)
+    body isa BiophysicalGeometry.CompositeBody || return nothing
+    sun = _sun_direction(environment_vars.zenith_angle)
+    partition = BiophysicalGeometry.view_partition(body; ndirections, resolution)
+    lit = BiophysicalGeometry.silhouette_area_per_part(body, sun; resolution)
+    names = keys(partition)
+    return NamedTuple{names}(map(names) do n
+        (; partition[n].sky, partition[n].ground, partition[n].neighbours, lit_silhouette = lit[n])
+    end)
+end
+
 """
     part_surface_setups(organism, environment_pars, environment_vars,
                         core_temperature, skin_temperature, insulation_temperature;
@@ -317,21 +351,26 @@ function part_surface_setups(
     insulation_temperature;
     smoothing::HeatExchange.SmoothingStrategy=HeatExchange.HardBound(),
     cache=nothing,
+    view=nothing,
 )
     body = HeatExchange.body(organism)
     part_bodies = _parts(body)
     part_phys = physiology(organism)
     covered = _part_covered_areas(body)
     cache_entries = _cache_entries(cache, part_names(body))
+    # Per-part occlusion-aware view (sky/ground/neighbours + lit silhouette) from
+    # `precompute_view_partition`, or `nothing` per part when not supplied — in which
+    # case each part falls back to its own naive view factors / silhouette.
+    view_entries = view === nothing ? ntuple(_ -> nothing, length(part_bodies)) : values(view)
 
     # `map` over the same-ordered NamedTuples' values returns a Tuple —
     # type-stable, no runtime Symbol indexing.
     return map(
-        values(part_bodies), values(part_phys), values(covered), cache_entries,
-    ) do part_body, phys, covered_area, cache_entry
+        values(part_bodies), values(part_phys), values(covered), cache_entries, view_entries,
+    ) do part_body, phys, covered_area, cache_entry, view_entry
         _part_surface_setup(
             part_body, phys, environment_pars, environment_vars,
-            core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing,
+            core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing, view_entry,
         )
     end
 end
@@ -344,6 +383,7 @@ end
 function _part_surface_setup(
     part_body, phys, environment_pars, environment_vars,
     core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing,
+    view_entry=nothing,
 )
     ins_pars = HeatExchange.insulation_pars(phys)
     external = HeatExchange.conduction_pars_external(phys)
@@ -365,16 +405,28 @@ function _part_surface_setup(
         )
     end
 
-    # Hemisphere decomposition seen by this part (un-doubled — a genuine part
-    # sees sky and ground at once, unlike a dorsal/ventral pseudo-side).
-    vegetation_factor = rad_pars.sky_view_factor * environment_vars.shade
-    sky_factor = rad_pars.sky_view_factor - vegetation_factor
-    ground_factor = 1 - sky_factor - vegetation_factor
+    # Hemisphere decomposition seen by this part. Without a precomputed view, a part
+    # naively sees the full sky/ground hemisphere through its own `sky_view_factor`
+    # (no inter-part occlusion). With one, `sky`/`ground` are the occlusion-aware
+    # fractions from `view_partition` — reduced by whatever neighbours block — and the
+    # remainder (the neighbour term) is handled by the inter-part surface exchange.
+    if view_entry === nothing
+        vegetation_factor = rad_pars.sky_view_factor * environment_vars.shade
+        sky_factor = rad_pars.sky_view_factor - vegetation_factor
+        ground_factor = 1 - sky_factor - vegetation_factor
+    else
+        vegetation_factor = view_entry.sky * environment_vars.shade
+        sky_factor = view_entry.sky - vegetation_factor
+        ground_factor = view_entry.ground
+    end
     bush_factor = rad_pars.bush_view_factor
 
     # Solar absorbed by this part over its own silhouette. Geometry comes from the
-    # Tier-1 cache when supplied, else is computed on the fly (identical values).
-    total_area, silhouette, characteristic_dim = _part_geometry(part_body, rad_pars, cache_entry)
+    # Tier-1 cache when supplied, else is computed on the fly (identical values). With
+    # a precomputed view the silhouette is the occlusion-aware lit area toward the sun
+    # (a shadowed part gets zero direct beam), not the part's own full silhouette.
+    total_area, part_silhouette, characteristic_dim = _part_geometry(part_body, rad_pars, cache_entry)
+    silhouette = view_entry === nothing ? part_silhouette : view_entry.lit_silhouette
     conduction_area = total_area * external.conduction_fraction
     absorptivities = Absorptivities(rad_pars, environment_pars)
     solar_view_factors = ViewFactors(sky_factor, ground_factor, 0.0, 0.0)

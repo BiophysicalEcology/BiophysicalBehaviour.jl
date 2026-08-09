@@ -127,7 +127,8 @@ export solve_multipart_metabolic_rate,
 # Precomputed geometry cache (Phase 5)
 export ShapeCache,
     precompute_shape_cache,
-    refresh
+    refresh,
+    precompute_view_partition
 
 # Thermoregulation limit structs (shared)
 export SteppedParameter,
