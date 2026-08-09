@@ -159,9 +159,17 @@ function _solve_multicompartment(
     entries = _conductance_entries(body, organism, graph, k_by_name)
 
     # Fixed-point iteration over the floating compartment cores (regulated pinned).
+    # Inter-part surface exchange rides along: each iteration bakes the parts' current
+    # outer surface temperatures into their neighbours' exchange terms, so the cores and
+    # the neighbour surface temperatures co-converge. With no precomputed view, the
+    # topology is `nothing` and the baking is a no-op — identical to the uncoupled path.
+    neighbour_topology = _neighbour_topology(view, _parts(body))
+    neighbour_temps = map(_ -> insulation_temperature, setups)
     cores = ntuple(_ -> setpoint, Val(K))
-    parts = _solve_parts_at_cores(setups, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
+    baked = _bake_neighbours(setups, neighbour_topology, neighbour_temps)
+    parts = _solve_parts_at_cores(baked, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
     for _ in 1:100
+        neighbour_temps = map(p -> p.insulation_temperature, parts)
         agg = _compartment_aggregates(Val(K), part_compartment, parts, basal)
         new_vec = HeatExchange.solve_regulated_core_temperatures(
             graph, regulated, entries, agg.net_generation,
@@ -169,14 +177,19 @@ function _solve_multicompartment(
         new_cores = ntuple(i -> new_vec[i], Val(K))
         Δ = maximum(ntuple(i -> abs(new_cores[i] - cores[i]), Val(K)))
         cores = new_cores
-        parts = _solve_parts_at_cores(setups, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
+        baked = _bake_neighbours(setups, neighbour_topology, neighbour_temps)
+        parts = _solve_parts_at_cores(baked, part_compartment, cores, skin_temperature, insulation_temperature, tol, smoothing)
         Δ < tol && break
     end
 
     # Close the regulated compartment's metabolic heat via respiration, charging it
-    # the conductive heat it sheds to the floating compartments.
+    # the conductive heat it sheds to the floating compartments. The neighbour surface
+    # temperatures are now converged, so they enter the regulated parts' setups as a
+    # fixed exchange (baked in) — no further neighbour iteration is needed here.
     coupling_loss = _regulated_coupling_loss(entries, cores, regulated)
-    reg_setups = _select_compartment_setups(setups, part_compartment, regulated)
+    final_temps = map(p -> p.insulation_temperature, parts)
+    baked_final = _bake_neighbours(setups, neighbour_topology, final_temps)
+    reg_setups = _select_compartment_setups(baked_final, part_compartment, regulated)
     reg_out = solve_coupled_metabolic_rate(;
         part_surface_setups=reg_setups,
         core_temperature=setpoint,
@@ -210,6 +223,19 @@ function _solve_multicompartment(
         compartment_core_temperatures=cores,
     )
 end
+
+# Bake the current neighbour surface temperatures into each part's packed
+# `environment_vars.neighbours`, so the surface solve exchanges longwave with its
+# siblings (the inter-part term). `nothing` topology (single `Body` or no precomputed
+# view) returns the setups untouched — the multicompartment path is then bit-identical
+# to its pre-coupling form. Used by `_solve_multicompartment`, where the neighbour temps
+# are relaxed alongside the compartment cores rather than in a nested fixed point.
+_bake_neighbours(setups, ::Nothing, temps) = setups
+_bake_neighbours(setups, neighbour_topology::Tuple, temps) =
+    map(setups, neighbour_topology) do setup, topo
+        neighbours = map(e -> (; e.fraction, temperature = temps[e.index]), topo)
+        merge(setup, (; environment_vars = merge(setup.environment_vars, (; neighbours))))
+    end
 
 # Solve every part's surface at its compartment's current core temperature.
 function _solve_parts_at_cores(setups, part_compartment, cores, skin, insul, tol, smoothing)

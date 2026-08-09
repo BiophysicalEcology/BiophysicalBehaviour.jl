@@ -532,3 +532,34 @@ end
     @test length(regulated.parts) == 6
     @test regulated.metabolic_heat_flow > 0.0u"W"
 end
+
+@testset "multicompartment path bakes the inter-part neighbour term (Phase 8)" begin
+    # The floating-core fixed point (`_solve_multicompartment`) rides the inter-part
+    # surface exchange by baking each part's neighbours — view fraction + the sibling's
+    # current outer surface temperature — into its packed `environment_vars`, then solving
+    # from those. It is the same longwave term the single-compartment path applies and the
+    # HeatExchange `part_surface` tests exercise directly; here we pin down the baking that
+    # feeds it through the multicompartment iteration. No topology (single `Body` / no
+    # precomputed view) passes the setups through untouched, so that path stays identical.
+    h = HalfCylinder(0.5u"kg", ρ, b)
+    two = CompositeBody(;
+        parts = (; dorsal  = Body(h, CompositeInsulation(fur, fat)),
+                   ventral = Body(h, CompositeInsulation(fur, fat))),
+        joins = (Join(dorsal  = Attachment(Flat(), FullCover()),
+                      ventral = Attachment(Flat(), FullCover())),))
+    org = Organism(two, OrganismTraits(Endotherm(),
+        (; dorsal = heat_exchange_of(h), ventral = heat_exchange_of(h)), behav; lung_part = :dorsal))
+    setups = part_surface_setups(org, env_pars, env_vars, core, skin0, insul0)
+
+    # No topology → the setups are returned unchanged (bit-identical pre-coupling path).
+    @test BiophysicalBehaviour._bake_neighbours(setups, nothing, (insul0, insul0)) === setups
+
+    # With a topology, each part's environment carries its neighbour's fraction and the
+    # sibling's current surface temperature (dorsal↔ventral, reciprocal).
+    topo = (((; index = 2, fraction = 0.3),), ((; index = 1, fraction = 0.3),))
+    baked = BiophysicalBehaviour._bake_neighbours(setups, topo, (300.0u"K", 315.0u"K"))
+    @test baked[1].environment_vars.neighbours == ((; fraction = 0.3, temperature = 315.0u"K"),)
+    @test baked[2].environment_vars.neighbours == ((; fraction = 0.3, temperature = 300.0u"K"),)
+    # The baked setups still solve (the surface solve reads and applies the neighbour term).
+    @test all(p -> p.success, solve_multipart_metabolic_rate(org, environment, skin0, insul0).parts)
+end
