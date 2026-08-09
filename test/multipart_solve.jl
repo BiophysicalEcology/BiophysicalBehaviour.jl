@@ -67,6 +67,54 @@ insul0 = env_vars.air_temperature + 2u"K"
     @test multipart.insulation_temperature ≈ baseline.thermoregulation.insulation_temperature rtol = 1e-4
 end
 
+@testset "genuine per-part ≡ dorsal/ventral at the idealised point (Phase 8 gate)" begin
+    # The one point where the dorsal/ventral model and the genuine per-part model must
+    # coincide: an animal standing upright at midday in symmetric surroundings — sun
+    # overhead (zenith 0), uniform radiant environment, symmetric insulation and view
+    # factors (ventral_fraction = 0.5, sky = ground = 0.5, dorsal == ventral), and
+    # *no ground contact* (conduction_fraction = 0, i.e. upright, not lying down).
+    # There the two paths agree on the regulated quantities to numerical tolerance and
+    # both conserve energy. Ground contact is deliberately excluded: it is exactly
+    # where the old model's conflation bites (ventral solar carries a (1 − 2·cond)
+    # factor, ground conduction is weighted by the ground *view factor*), so the two
+    # models diverge there by design — that divergence is the reason dorsal/ventral is
+    # being retired, not a regression. See memory phase7-done-phase8-scope.
+    shape = Cylinder(1.0u"kg", ρ, b)
+    body  = Body(shape, CompositeInsulation(fur, fat))
+
+    ideal_env_vars = @set env_vars.zenith_angle = 0.0u"°"          # sun overhead
+    ideal_env_vars = @set ideal_env_vars.global_radiation = 500.0u"W/m^2"
+    heat_exchange = example_heat_exchange_traits(;
+        shape_pars               = shape,
+        insulation_pars          = ins_pars,
+        conduction_pars_external = external,          # conduction_fraction = 0 (upright)
+        conduction_pars_internal = internal,
+        radiation_pars           = rad_pars,
+        evaporation_pars         = evap,
+        respiration_pars         = resp,
+        metabolism_pars          = metab,
+    )
+    org = Organism(body, OrganismTraits(Endotherm(), heat_exchange, behav))
+    ideal_env = (; environment_pars = env_pars, environment_vars = ideal_env_vars)
+    init = (; metabolic_heat_flow = 0.0u"W", skin_temperature = skin0, insulation_temperature = insul0)
+    ctrl = control_strategy(org)
+
+    old = thermoregulate(Endotherm(), ctrl, org, ideal_env, init;
+                         inner_solve = BiophysicalBehaviour._multisided_inner)
+    new = thermoregulate(Endotherm(), ctrl, org, ideal_env, init;
+                         inner_solve = BiophysicalBehaviour._multipart_inner)
+
+    # Regulated quantities agree at the assumption point (essentially exact).
+    @test new.energy_flows.metabolic_heat_flow ≈ old.energy_flows.metabolic_heat_flow rtol = 1e-3
+    @test new.thermoregulation.core_temperature ≈ old.thermoregulation.core_temperature rtol = 1e-4
+    @test new.thermoregulation.skin_temperature ≈ old.thermoregulation.skin_temperature rtol = 1e-4
+    @test new.thermoregulation.insulation_temperature ≈ old.thermoregulation.insulation_temperature rtol = 1e-4
+
+    # Both paths conserve energy at the converged state (net balance ≈ 0).
+    @test abs(ustrip(u"W", new.energy_flows.heat_balance)) < 1e-3
+    @test abs(ustrip(u"W", old.energy_flows.heat_balance)) < 1e-3
+end
+
 @testset "two-part organism solves, lung routed to torso" begin
     torso_shape = Cylinder(0.6u"kg", ρ, b)
     head_shape  = Cylinder(0.4u"kg", ρ, b)
