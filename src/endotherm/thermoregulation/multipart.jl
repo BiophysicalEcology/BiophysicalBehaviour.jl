@@ -384,6 +384,10 @@ function part_surface_setups(
     # `precompute_view_partition`, or `nothing` per part when not supplied — in which
     # case each part falls back to its own naive view factors / silhouette.
     view_entries = view === nothing ? ntuple(_ -> nothing, length(part_bodies)) : values(view)
+    # Convection characteristic dimension shared across the composite: sibling parts of
+    # one body sit in one boundary layer, so convection uses the reconstructed whole's
+    # V^(1/3), not each part's (V_part)^(1/3). `nothing` for a single `Body` (its own).
+    parent_characteristic_dim = _parent_characteristic_dim(body)
 
     # `map` over the same-ordered NamedTuples' values returns a Tuple —
     # type-stable, no runtime Symbol indexing.
@@ -392,7 +396,8 @@ function part_surface_setups(
     ) do part_body, phys, covered_area, cache_entry, view_entry
         _part_surface_setup(
             part_body, phys, environment_pars, environment_vars,
-            core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing, view_entry,
+            core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry;
+            smoothing, view_entry, parent_characteristic_dim,
         )
     end
 end
@@ -406,6 +411,7 @@ function _part_surface_setup(
     part_body, phys, environment_pars, environment_vars,
     core_temperature, covered_area, skin_temperature, insulation_temperature, cache_entry; smoothing,
     view_entry=nothing,
+    parent_characteristic_dim=nothing,
 )
     ins_pars = HeatExchange.insulation_pars(phys)
     external = HeatExchange.conduction_pars_external(phys)
@@ -447,7 +453,10 @@ function _part_surface_setup(
     # Tier-1 cache when supplied, else is computed on the fly (identical values). With
     # a precomputed view the silhouette is the occlusion-aware lit area toward the sun
     # (a shadowed part gets zero direct beam), not the part's own full silhouette.
-    total_area, part_silhouette, characteristic_dim = _part_geometry(part_body, rad_pars, cache_entry)
+    total_area, part_silhouette, part_characteristic_dim = _part_geometry(part_body, rad_pars, cache_entry)
+    # A part of a composite convects at the whole body's characteristic length (shared
+    # boundary layer); a lone `Body` uses its own (`parent_characteristic_dim` is nothing).
+    characteristic_dim = parent_characteristic_dim === nothing ? part_characteristic_dim : parent_characteristic_dim
     silhouette = view_entry === nothing ? part_silhouette : view_entry.lit_silhouette
     conduction_area = total_area * external.conduction_fraction
     absorptivities = Absorptivities(rad_pars, environment_pars)
@@ -518,6 +527,22 @@ end
 )
 @inline _part_geometry(_, _rad_pars, cache_entry::NamedTuple) =
     (cache_entry.total_area, cache_entry.silhouette_area, cache_entry.characteristic_dim)
+
+# The characteristic dimension the whole composite presents to the airflow. Splitting a
+# body into parts must not shrink the convective length scale: the two halves of a
+# cylinder sit in the same boundary layer, so each convects at the reconstructed whole's
+# V^(1/3) (+ fur), not its own (V_part)^(1/3) — a factor 2^(1/3) too small. Total volume
+# is the sum of the parts' (the join patches are internal, not volume); the fur thickness
+# added to V^(1/3) is taken from a representative part (siblings of one surface share it).
+# A single `Body` is its own parent, so its parts (just itself) keep their own dimension.
+_parent_characteristic_dim(::Body) = nothing
+function _parent_characteristic_dim(body::CompositeBody)
+    parts = values(_parts(body))
+    total_volume = sum(p -> p.geometry.volume, parts)
+    rep = first(parts)
+    fur_thickness = characteristic_dimension(VolumeCubeRoot(), rep) - cbrt(rep.geometry.volume)
+    return cbrt(total_volume) + fur_thickness
+end
 
 # Per-part covered join-patch area. A `CompositeBody` folds its joins into a
 # per-part area NamedTuple; a plain `Body` has no joins, hence zero covered area.

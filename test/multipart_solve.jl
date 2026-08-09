@@ -183,6 +183,37 @@ end
     @test occl.parts[2].flows.longwave < decoupled.parts[2].flows.longwave
 end
 
+@testset "co-surface parts share the whole-body convection scale (Phase 8 step 4)" begin
+    # Splitting a cylinder into two half-cylinders must not shrink the convective length
+    # scale: both halves sit in one boundary layer, so each convects at the reconstructed
+    # whole cylinder's characteristic dimension, not its own (V/2)^(1/3) — a factor
+    # ~2^(1/3) too small, which was a standing source of two-half ≠ dorsal/ventral.
+    M = 1.0u"kg"
+    whole   = Body(Cylinder(M, ρ, b), CompositeInsulation(fur, fat))
+    whole_cd = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), whole)
+    half     = Body(HalfCylinder(M / 2, ρ, b), CompositeInsulation(fur, fat))
+    half_cd  = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), half)
+
+    dv = CompositeBody(;
+        parts = (; dorsal  = Body(HalfCylinder(M / 2, ρ, b), CompositeInsulation(fur, fat)),
+                   ventral = Body(HalfCylinder(M / 2, ρ, b), CompositeInsulation(fur, fat))),
+        joins = (Join(dorsal  = Attachment(Flat(), FullCover()),
+                      ventral = Attachment(Flat(), FullCover())),))
+    org = Organism(dv, OrganismTraits(Endotherm(),
+        (; dorsal  = heat_exchange_of(HalfCylinder(M / 2, ρ, b)),
+           ventral = heat_exchange_of(HalfCylinder(M / 2, ρ, b))), behav; lung_part = :dorsal))
+    setups = part_surface_setups(org, env_pars, env_vars, core, skin0, insul0)
+
+    @test half_cd < whole_cd                              # a lone half really is smaller
+    @test setups[1].characteristic_dim ≈ whole_cd         # but in the composite each half…
+    @test setups[2].characteristic_dim ≈ whole_cd         # …convects at the whole-body scale
+    # A single `Body` keeps its own dimension (no parent to share): the plain cylinder's
+    # setup uses the cylinder's own characteristic dimension.
+    solo = Organism(whole, OrganismTraits(Endotherm(), heat_exchange_of(Cylinder(M, ρ, b)), behav))
+    solo_setups = part_surface_setups(solo, env_pars, env_vars, core, skin0, insul0)
+    @test solo_setups[1].characteristic_dim ≈ whole_cd
+end
+
 @testset "two-part organism solves, lung routed to torso" begin
     torso_shape = Cylinder(0.6u"kg", ρ, b)
     head_shape  = Cylinder(0.4u"kg", ρ, b)
@@ -399,12 +430,14 @@ end
 
     result = solve_multipart_metabolic_rate(org, environment, skin0, insul0)
 
-    # The two halves reconstruct the full cylinder's exposed surface exactly; the only
-    # residual is the half-cylinder characteristic dimension (2^(1/3) smaller than the
-    # full cylinder's) feeding convection, so agreement is ~0.5%, not bitwise.
-    @test result.metabolic_heat_flow ≈ baseline.energy_flows.metabolic_heat_flow rtol = 1e-2
-    @test result.skin_temperature ≈ baseline.thermoregulation.skin_temperature rtol = 1e-3
-    @test result.insulation_temperature ≈ baseline.thermoregulation.insulation_temperature rtol = 1e-3
+    # The two halves reconstruct the full cylinder's exposed surface exactly, and (Phase 8
+    # step 4) now share the reconstructed whole cylinder's convective characteristic
+    # dimension. That removes the former ~0.5% residual — which was entirely the half's
+    # (V/2)^(1/3) being 2^(1/3) too small — so two-half reproduces dorsal/ventral to ~5e-5
+    # in metabolic rate and ~1e-6 in surface temperatures.
+    @test result.metabolic_heat_flow ≈ baseline.energy_flows.metabolic_heat_flow rtol = 1e-4
+    @test result.skin_temperature ≈ baseline.thermoregulation.skin_temperature rtol = 1e-5
+    @test result.insulation_temperature ≈ baseline.thermoregulation.insulation_temperature rtol = 1e-5
 end
 
 @testset "ConductiveCoupling: floating compartment + coupling limits" begin
