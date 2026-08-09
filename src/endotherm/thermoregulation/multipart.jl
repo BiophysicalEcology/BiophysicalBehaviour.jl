@@ -728,7 +728,15 @@ function _assemble_endotherm_output(organism::Organism, environment, out;
     ).insulation_test
     has_insulation = insulation_test > 0.0u"m"
     radiating_surface_temperature = has_insulation ? p.insulation_temperature : p.skin_temperature
-    radiating_area = has_insulation ? total_area : BiophysicalGeometry.skin_area(body)
+    # Gross longwave radiates from the same surface the internal physics uses:
+    # `area_convection = total_area·(1 − conduction_fraction)` (heat_balance.jl). The
+    # ground-contact patch's exchange with the substrate (conduction and near-field
+    # radiation across the air layer, which can't be separated in practice) is bundled
+    # into the conduction term, so it is excluded from the *environmental* longwave here
+    # to avoid double-counting — using `total_area` would over-state gross in/out by
+    # 1/(1 − conduction_fraction) (the net, longwave_flow_in = out − p.flows.longwave,
+    # is unaffected either way).
+    radiating_area = area_convection
     longwave_flow_out = rad_pars.body_emissivity_dorsal * σ * radiating_area *
                         radiating_surface_temperature^4
     longwave_flow_in = longwave_flow_out - p.flows.longwave
