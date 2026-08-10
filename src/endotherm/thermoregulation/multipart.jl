@@ -579,7 +579,7 @@ _part_covered_areas(b::Body) =
 # The lung-hosting part's body mass, the effective air-exchanging mass for the
 # respiration balance. `Val` keeps the NamedTuple lookup type-stable.
 _lung_mass(body, name::Symbol) = _lung_mass(_parts(body), Val(name))
-_lung_mass(part_bodies::NamedTuple, ::Val{N}) where {N} = getfield(part_bodies, N).shape.mass
+_lung_mass(part_bodies::NamedTuple, ::Val{N}) where {N} = mass(getfield(part_bodies, N).shape)
 
 # =============================================================================
 # Per-part physiology mutation + multi-part rule-based effectors.
@@ -839,7 +839,7 @@ function _assemble_endotherm_output(organism::Organism, environment, out;
         volume = body.geometry.volume,
         volume_flesh = BiophysicalGeometry.flesh_volume(body),
         characteristic_dimension = HeatExchange.characteristic_dimension(HeatExchange.VolumeCubeRoot(), body),
-        fat_mass = body.shape.mass * fat.fraction,
+        fat_mass = mass(body.shape) * fat.fraction,
         body.geometry.length...,
     )
 
