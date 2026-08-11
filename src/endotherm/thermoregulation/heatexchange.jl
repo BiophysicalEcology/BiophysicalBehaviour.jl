@@ -49,12 +49,12 @@ function solar_heat_flows(body, rad_pars, environment_pars, environment_vars,
                           view_factors, conduction_fraction)
     total_area      = BiophysicalGeometry.total_area(body)
     conduction_area = total_area * conduction_fraction
-    silhouette      = silhouette_area(body, rad_pars.solar_orientation)
+    area_silhouette = silhouette(body, rad_pars.solar_orientation)
     absorptivities  = Absorptivities(rad_pars, environment_pars)
     solar_view_fac  = ViewFactors(view_factors.sky, view_factors.ground, 0.0, 0.0)
     solar_conds     = SolarConditions(environment_vars)
     result          = solar(body, absorptivities, solar_view_fac, solar_conds,
-                            silhouette, conduction_area)
+                            area_silhouette, conduction_area)
     if result.solar_flow > 0.0u"W"
         dorsal  = 2.0 * result.direct_flow + result.solar_sky_flow * 2.0
         ventral = (result.solar_substrate_flow / (1.0 - view_factors.sky - view_factors.vegetation)) *

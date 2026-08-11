@@ -31,7 +31,7 @@ end
 # silhouette (its only dependency beyond the body) is cacheable.
 @inline _shape_cache_entry(body, solar_orientation) = (;
     total_area         = BiophysicalGeometry.total_area(body),
-    silhouette_area    = BiophysicalGeometry.silhouette_area(body, solar_orientation),
+    silhouette_area    = BiophysicalGeometry.silhouette(body, solar_orientation),
     characteristic_dim = characteristic_dimension(VolumeCubeRoot(), body),
 )
 

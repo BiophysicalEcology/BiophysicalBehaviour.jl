@@ -3,16 +3,16 @@
 # =============================================================================
 
 # Prefer the direct shape+orientation dispatch (e.g. DesertIguana has
-# silhouette_area(shape, ::ParallelToSun) → scalar) over the body-level
-# NamedTuple route (silhouette_area(body) → (; normal, parallel)) which
-# requires the 3-arg silhouette_area(shape, insulation, body) form that some
+# silhouette(shape, ::ParallelToSun) → scalar) over the body-level
+# NamedTuple route (silhouette(body) → (; normal, parallel)) which
+# requires the 3-arg silhouette(shape, insulation, body) form that some
 # shapes (notably DesertIguana in the installed package) do not implement.
 function _silhouette_area(body, o)
     sh = shape(body)
-    if hasmethod(silhouette_area, (typeof(sh), typeof(o)))
-        return silhouette_area(sh, o)
+    if hasmethod(silhouette, (typeof(sh), typeof(o)))
+        return silhouette(sh, o)
     end
-    areas = silhouette_area(body)   # → (; normal, parallel)
+    areas = silhouette(body)   # → (; normal, parallel)
     o isa NormalToSun   ? areas.normal   :
     o isa ParallelToSun ? areas.parallel :
     (areas.normal + areas.parallel) * 0.5
@@ -215,7 +215,7 @@ Orient body parallel to the sun (`sun_orientation = 0.0°`) to minimise
 direct-beam solar interception.
 
 Sets `solar_orientation = ParallelToSun()` and `A_silhouette` from body geometry
-via `silhouette_area(body, ParallelToSun())`. Only call when
+via `silhouette(body, ParallelToSun())`. Only call when
 `limits.sun_orientation > 0.0` (organism not already fully parallel).
 Returns updated limits and organism.
 """
@@ -234,7 +234,7 @@ Orient body perpendicular to the sun (`sun_orientation = 90.0°`) to maximise
 direct-beam solar interception.
 
 Sets `solar_orientation = NormalToSun()` and computes `A_silhouette` from the
-body geometry via `silhouette_area(body, NormalToSun())`. Only call when
+body geometry via `silhouette(body, NormalToSun())`. Only call when
 `limits.sun_orientation < 90.0` (organism not already fully perpendicular).
 Returns updated limits and organism.
 """
