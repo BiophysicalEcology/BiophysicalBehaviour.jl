@@ -351,8 +351,8 @@ function precompute_view_partition(organism::Organism, environment_vars;
     body = HeatExchange.body(organism)
     body isa BiophysicalGeometry.CompositeBody || return nothing
     sun = _sun_direction(environment_vars.zenith_angle)
-    partition = BiophysicalGeometry.view_partition(body; ndirections, resolution)
-    lit = BiophysicalGeometry.silhouette_area_per_part(body, sun; resolution)
+    partition = BiophysicalGeometry.silhouette_factors(body; ndirections, resolution)
+    lit = BiophysicalGeometry.silhouette(body, BiophysicalGeometry.Point(sun); resolution)
     names = keys(partition)
     return NamedTuple{names}(map(names) do n
         (; partition[n].sky, partition[n].ground, partition[n].neighbours, lit_silhouette = lit[n])
