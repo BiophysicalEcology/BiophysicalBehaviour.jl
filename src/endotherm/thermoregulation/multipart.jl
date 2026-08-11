@@ -339,7 +339,7 @@ The `init!` step for multi-part surface radiation: bake the geometry-dependent,
 occlusion-aware view of each part for the organism's current pose and sun position.
 Returns a `NamedTuple` keyed like the parts, each `(; sky, ground, neighbours,
 lit_silhouette)` — the sky/ground view fractions and per-neighbour occlusion from
-`view_partition`, plus the direct-beam lit silhouette from `silhouette_area_per_part`.
+`silhouette_factors`, plus the direct-beam lit silhouette from `silhouette`.
 
 `solve` then consumes these numbers unchanged (via `part_surface_setups(...; view=…)`);
 they are a pure function of pose + sun, so they are computed once per configuration,
@@ -351,8 +351,10 @@ function precompute_view_partition(organism::Organism, environment_vars;
     body = HeatExchange.body(organism)
     body isa BiophysicalGeometry.CompositeBody || return nothing
     sun = _sun_direction(environment_vars.zenith_angle)
-    partition = BiophysicalGeometry.silhouette_factors(body; ndirections, resolution)
-    lit = BiophysicalGeometry.silhouette(body, BiophysicalGeometry.Point(sun); resolution)
+    # Flat-ground horizon (sky and ground each a hemisphere). A sloped or occluded
+    # site would pass its own `Sky`/`Ground`/`Horizon` here instead.
+    partition = BiophysicalGeometry.silhouette_factors(body, BiophysicalGeometry.Sky(0.5); ndirections, resolution)
+    lit = BiophysicalGeometry.silhouette(body, BiophysicalGeometry.Beam(sun); resolution)
     names = keys(partition)
     return NamedTuple{names}(map(names) do n
         (; partition[n].sky, partition[n].ground, partition[n].neighbours, lit_silhouette = lit[n])
