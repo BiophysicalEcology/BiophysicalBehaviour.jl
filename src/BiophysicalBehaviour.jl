@@ -2,6 +2,7 @@ module BiophysicalBehaviour
 
 import ConstructionBase
 import FluidProperties
+import Flatten
 
 using BiophysicalGeometry
 using HeatExchange
@@ -52,8 +53,9 @@ export AbstractControlStrategy,
     IPOPTControl,
     IPOPTSolverCache
 
-# NLP strategy types (re-exported from HeatExchange for IPOPTControl.nlp_strategy)
-export NLPStrategy, WeightedMeanNLP, MultiSidedNLP
+# NLP strategy types. `NLPStrategy` is the HeatExchange abstract type; `MultipartNLP`
+# is defined in BB (multipart_nlp.jl) as its sole concrete strategy.
+export NLPStrategy, MultipartNLP
 
 # Thermoregulation modes
 export AbstractThermoregulationMode,
@@ -73,10 +75,60 @@ export thermal_strategy,
     activity_period,
     control_strategy
 
+# Part selectors and traversal
+export PartSelector,
+    WholeBody,
+    ByName,
+    Compartment,
+    part_names,
+    select_names,
+    map_parts,
+    foldl_parts,
+    set_part,
+    couplings,
+    organism_compartment_graph
+
+# Heat couplings between joined parts (defined in HeatExchange; re-exported so a
+# `using BiophysicalBehaviour` user can build `couplings = (ConductiveCoupling(),)`).
+export HeatCoupling, SharedCore, ConductiveCoupling
+
+# Per-part physiology + lung part (§3.9, §4)
+export LungPart,
+    panting_capacity,
+    is_lung_part,
+    unwrap_physiology,
+    broadcast_physiology,
+    physiology,
+    part_physiology,
+    lung_part,
+    lung_physiology,
+    pant_selector
+
+# Effector tags + interface
+export Effector,
+    Piloerect,
+    Uncurl,
+    Vasodilate,
+    Hyperthermia,
+    Pant,
+    Sweat,
+    effect
+
 # Endotherm thermoregulation functions
 export piloerect, uncurl, vasodilate, hyperthermia, pant, sweat
 
 export thermoregulate
+
+# Multi-part coupled metabolic-rate solve (Phase 4 / 6-7 integration)
+export solve_multipart_metabolic_rate,
+    part_surface_setups,
+    map_part_physiology
+
+# Precomputed geometry cache (Phase 5)
+export ShapeCache,
+    precompute_shape_cache,
+    refresh,
+    precompute_view_partition
 
 # Thermoregulation limit structs (shared)
 export SteppedParameter,
@@ -117,10 +169,15 @@ export example_ectotherm_behavioral_limits,
     example_ectotherm_organism_traits
 
 include("organism.jl")
+include("parts.jl")
+include("physiology.jl")
+include("cache.jl")
 include("endotherm/endotherm_traits.jl")
 include("endotherm/thermoregulation/shared.jl")
 include("endotherm/thermoregulation/rulebased.jl")
+include("endotherm/thermoregulation/multipart.jl")
 include("endotherm/thermoregulation/ipopt.jl")
+include("endotherm/thermoregulation/multipart_nlp.jl")
 include("endotherm/example_variables_and_parameters.jl")
 include("ectotherm/ectotherm_traits.jl")
 include("ectotherm/thermoregulation.jl")

@@ -9,16 +9,26 @@
 
 # ----------------------------------------------------------------------------
 # Effectors
+#
+# Each effector is an `effect(op::Effector, ::WholeBody, organism, limit…)`
+# method; the old scalar names (`piloerect`, …) forward to it. On today's
+# whole-organism dorsal/ventral physiology every effector targets the whole
+# body — the genuine per-part / per-compartment `apply` split (§3.10) lands
+# with per-part physiology in Phase 4. Numerics are unchanged from the
+# pre-refactor functions.
 # ----------------------------------------------------------------------------
 
 """
-    piloerect(organism::Organism, insulation_limits::InsulationLimits)
+    piloerect(organism, insulation_limits) =
+        effect(Piloerect(), WholeBody(), organism, insulation_limits)
 
 Reduce insulation depth toward reference values (flatten fur/feathers).
-
 Returns updated `InsulationLimits` and `organism`.
 """
-function piloerect(organism::Organism, insulation_limits::InsulationLimits)
+piloerect(organism::Organism, insulation_limits::InsulationLimits) =
+    effect(Piloerect(), WholeBody(), organism, insulation_limits)
+
+function effect(::Piloerect, ::WholeBody, organism::Organism, insulation_limits::InsulationLimits)
     insulation_pars = HeatExchange.insulation_pars(organism)
     shape_pars = HeatExchange.shape_pars(organism)
     fibre_length_dorsal = insulation_pars.dorsal.length
@@ -58,13 +68,16 @@ function piloerect(organism::Organism, insulation_limits::InsulationLimits)
 end
 
 """
-    uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
+    uncurl(organism, axis_ratio_limits) =
+        effect(Uncurl(), WholeBody(), organism, axis_ratio_limits)
 
 Increase body axis ratio (uncurl from ball to elongated).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
+uncurl(organism::Organism, axis_ratio_limits::SteppedParameter) =
+    effect(Uncurl(), WholeBody(), organism, axis_ratio_limits)
+
+function effect(::Uncurl, ::WholeBody, organism::Organism, axis_ratio_limits::SteppedParameter)
     shape_pars = HeatExchange.shape_pars(organism)
 
     # No meaning to uncurl a sphere
@@ -86,13 +99,16 @@ function uncurl(organism::Organism, axis_ratio_limits::SteppedParameter)
 end
 
 """
-    vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
+    vasodilate(organism, flesh_conductivity_limits) =
+        effect(Vasodilate(), WholeBody(), organism, flesh_conductivity_limits)
 
 Increase tissue thermal conductivity (vasodilation).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter)
+vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParameter) =
+    effect(Vasodilate(), WholeBody(), organism, flesh_conductivity_limits)
+
+function effect(::Vasodilate, ::WholeBody, organism::Organism, flesh_conductivity_limits::SteppedParameter)
     flesh_conductivity = min(flesh_conductivity_limits.current + flesh_conductivity_limits.step, flesh_conductivity_limits.max)
     flesh_conductivity_limits = @set flesh_conductivity_limits.current = flesh_conductivity
 
@@ -102,13 +118,17 @@ function vasodilate(organism::Organism, flesh_conductivity_limits::SteppedParame
 end
 
 """
-    hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+    hyperthermia(organism, core_temperature_limits, pant_cost) =
+        effect(Hyperthermia(), WholeBody(), organism, core_temperature_limits, pant_cost)
 
 Allow core temperature to rise (hyperthermia).
-
 Returns updated `SteppedParameter`, new minimum_heat_flow, and `organism`.
 """
-function hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost)
+hyperthermia(organism::Organism, core_temperature_limits::SteppedParameter, pant_cost) =
+    effect(Hyperthermia(), WholeBody(), organism, core_temperature_limits, pant_cost)
+
+function effect(::Hyperthermia, ::WholeBody, organism::Organism,
+                core_temperature_limits::SteppedParameter, pant_cost)
     minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     core_temp = min(core_temperature_limits.current + core_temperature_limits.step, core_temperature_limits.max)
     core_temperature_limits = @set core_temperature_limits.current = core_temp
@@ -124,13 +144,16 @@ function hyperthermia(organism::Organism, core_temperature_limits::SteppedParame
 end
 
 """
-    pant(organism::Organism, panting_limits::PantingLimits)
+    pant(organism, panting_limits) =
+        effect(Pant(), WholeBody(), organism, panting_limits)
 
 Increase panting rate for evaporative cooling.
-
 Returns updated `PantingLimits`, new minimum_heat_flow, and `organism`.
 """
-function pant(organism::Organism, panting_limits::PantingLimits)
+pant(organism::Organism, panting_limits::PantingLimits) =
+    effect(Pant(), WholeBody(), organism, panting_limits)
+
+function effect(::Pant, ::WholeBody, organism::Organism, panting_limits::PantingLimits)
     minimum_heat_flow = thermoregulation(organism).minimum_heat_flow
     pant_rate_limits = panting_limits.pant
     pant_rate = min(pant_rate_limits.current + pant_rate_limits.step, pant_rate_limits.max)
@@ -152,13 +175,16 @@ function pant(organism::Organism, panting_limits::PantingLimits)
 end
 
 """
-    sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
+    sweat(organism, skin_wetness_limits) =
+        effect(Sweat(), WholeBody(), organism, skin_wetness_limits)
 
 Increase skin wetness for evaporative cooling (sweating).
-
 Returns updated `SteppedParameter` and `organism`.
 """
-function sweat(organism::Organism, skin_wetness_limits::SteppedParameter)
+sweat(organism::Organism, skin_wetness_limits::SteppedParameter) =
+    effect(Sweat(), WholeBody(), organism, skin_wetness_limits)
+
+function effect(::Sweat, ::WholeBody, organism::Organism, skin_wetness_limits::SteppedParameter)
     skin_wetness = min(skin_wetness_limits.current + skin_wetness_limits.step, skin_wetness_limits.max)
     skin_wetness_limits = @set skin_wetness_limits.current = skin_wetness
 
@@ -191,12 +217,30 @@ Applies thermoregulation behaviors in order:
 
 Returns the final `endotherm_out` result from `solve_metabolic_rate`.
 """
+# Uniform inner-solve adapters for the rule-based loop. Each returns the three
+# scalars the ladder iterates on plus the full `output` it returns at convergence.
+# `_multisided_inner` is the legacy dorsal/ventral path; `_multipart_inner` is the
+# genuine per-part path (Phase 8). The loop is identical either way.
+_multisided_inner(o, e, skin, insul) = begin
+    out = solve_metabolic_rate(o, e, skin, insul)
+    (; skin_temperature = out.thermoregulation.skin_temperature,
+       insulation_temperature = out.thermoregulation.insulation_temperature,
+       metabolic_heat_flow = out.energy_flows.metabolic_heat_flow,
+       output = out)
+end
+_multipart_inner(o, e, skin, insul) = begin
+    out = solve_multipart_metabolic_rate(o, e, skin, insul)
+    output = _assemble_endotherm_output(o, e, out)
+    (; out.skin_temperature, out.insulation_temperature, out.metabolic_heat_flow, output)
+end
+
 function thermoregulate(
     ::Endotherm,
     ::RuleBasedSequentialControl,
     organism::Organism,
     environment::NamedTuple,
-    init::NamedTuple,
+    init::NamedTuple;
+    inner_solve = _multisided_inner,
 )
     (; skin_temperature, insulation_temperature) = init
 
@@ -227,10 +271,11 @@ function thermoregulate(
         insulation_limits = @set insulation_limits.ventral.step = limits.insulation.ventral.step
     end
 
-    endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
-    skin_temperature = endotherm_out.thermoregulation.skin_temperature
-    insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-    metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+    r = inner_solve(organism, environment, skin_temperature, insulation_temperature)
+    endotherm_out    = r.output
+    skin_temperature = r.skin_temperature
+    insulation_temperature = r.insulation_temperature
+    metabolic_heat_flow = r.metabolic_heat_flow
 
     minimum_heat_flow = limits.minimum_heat_flow
 
@@ -289,10 +334,11 @@ function thermoregulate(
             skin_wetness_limits, organism = sweat(organism, skin_wetness_limits)
         end
 
-        endotherm_out    = solve_metabolic_rate(organism, environment, skin_temperature, insulation_temperature)
-        skin_temperature = endotherm_out.thermoregulation.skin_temperature
-        insulation_temperature = endotherm_out.thermoregulation.insulation_temperature
-        metabolic_heat_flow = endotherm_out.energy_flows.metabolic_heat_flow
+        r = inner_solve(organism, environment, skin_temperature, insulation_temperature)
+        endotherm_out    = r.output
+        skin_temperature = r.skin_temperature
+        insulation_temperature = r.insulation_temperature
+        metabolic_heat_flow = r.metabolic_heat_flow
     end
 
     return endotherm_out

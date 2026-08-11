@@ -1,9 +1,10 @@
 # IPOPT-Based Endotherm Thermoregulation
 
 **Source files:**
-- `src/endotherm/thermoregulation/ipopt.jl` — NLP formulation, solver setup, output assembly
-- `src/endotherm/endotherm_traits.jl` — `ThermoregulationLimits` struct and penalty fields
-- `HeatExchange.jl/src/nlp_interface.jl` — `nlp_pack`, `nlp_residuals`, `nlp_assemble_output` functions used by the NLP solver
+- `src/endotherm/thermoregulation/ipopt.jl` — shared direct-Ipopt + Enzyme solver machinery (cache, callbacks, solve loop, `thermoregulate` dispatch)
+- `src/endotherm/thermoregulation/multipart_nlp.jl` — the `MultipartNLP` strategy: variable/residual templates, objective, bounds, scaling, output assembly
+- `src/endotherm/endotherm_traits.jl` — `ThermoregulationLimits` struct and objective-weight fields
+- `HeatExchange.jl/src/nlp_interface.jl` — `NLPStrategy` abstraction and the `nlp_pack` entry point; physics residuals come from `part_surface.jl`
 
 > **Recommended reading:** readers unfamiliar with the effectors, heat balance loop, and
 > biological priority hierarchy should read
@@ -27,9 +28,9 @@ equations.
 One answer is to apply effectors in a fixed biological priority order, one at a time, until
 balance is restored. That is what `RuleBasedSequentialControl` does and it is intuitive and
 transparent. The alternative explored here is to let a mathematical optimiser find the best
-combination simultaneously, without prescribing the order. In this framing, penalty weights
-take the place of hard-wired priority rules: setting `panting_penalty` lower than
-`skin_wetness_penalty`, for example, makes the solver prefer panting before sweating — the
+combination simultaneously, without prescribing the order. In this framing, objective weights
+take the place of hard-wired priority rules: setting `panting_weight` lower than
+`skin_wetness_weight`, for example, makes the solver prefer panting before sweating — the
 same effect as placing panting earlier in the sequential rule-based sequence, but with a smooth
 trade-off rather than a step-wise one. This makes the approach well suited to sensitivity
 analyses and to species where the biological priority order is uncertain.
@@ -156,24 +157,28 @@ out   = thermoregulate(Endotherm(), IPOPTControl(), organism, environment, init;
 
 ## Control-Theory Framing
 
-Following standard control theory, the nine NLP decision variables are split into two categories:
+Following standard control theory, the NLP decision variables split into two categories.
+Some are shared across the whole organism; others exist once *per body part*, so the count
+scales with the organism (`3 + 4·N` variables for `N` parts).
 
 **Control variables (effectors, u)** — things the animal actively adjusts:
-| Variable | Symbol | Description |
-|---|---|---|
-| Metabolic heat generation | `log(metabolic_heat_flow)` | Log-space for numerical scaling; exponentiated inside the solver |
-| Flesh conductivity | `flesh_conductivity` | Tissue conductivity (vasoconstriction/vasodilation) |
-| Panting rate | `pant` | Multiplier on baseline ventilation (1 = resting) |
-| Skin wetness | `skin_wetness` | Fractional wetted surface area (sweating/cutaneous evaporation) |
-| Insulation depth | `insulation_depth` | Fur/feather erection depth (piloerection) |
-| Body shape | `axis_ratio_factor` | Ellipsoid axis ratio (curling/elongating posture) |
+| Variable | Scope | Symbol | Description |
+|---|---|---|---|
+| Metabolic heat generation | whole-organism | `log(metabolic_heat_flow)` | Log-space for numerical scaling; exponentiated inside the solver |
+| Panting rate | whole-organism | `panting_rate` | Multiplier on baseline ventilation (1 = resting) |
+| Flesh conductivity | per-part | `flesh_conductivity` | Tissue conductivity (vasoconstriction/vasodilation) |
+| Skin wetness | per-part | `skin_wetness` | Fractional wetted surface area (sweating/cutaneous evaporation) |
+
+Geometry effectors (piloerection `insulation_depth`, uncurling `axis_ratio`) are **deferred** —
+they would rebuild each part's body inside the differentiated residual, which the multi-part
+rule-based ladder also avoids. The per-part `setups` are therefore fixed across the solve.
 
 **State variables (x)** — outcomes determined by the effectors and the heat balance:
-| Variable | Description |
-|---|---|
-| Core temperature | `core_temperature` (K) |
-| Skin temperature | `skin_temperature` (K) |
-| Insulation surface temperature | `insulation_temperature` (K) |
+| Variable | Scope | Description |
+|---|---|---|
+| Core temperature | whole-organism | `core_temperature` (K) — one regulated core shared across all parts |
+| Skin temperature | per-part | `skin_temperature` (K) |
+| Insulation surface temperature | per-part | `insulation_temperature` (K) |
 
 In principle, state variables are fully determined by the effectors via the heat balance
 constraints. Including them explicitly as NLP variables (with equality constraints to enforce
@@ -181,64 +186,52 @@ consistency) improves numerical stability and allows IPOPT to find feasible poin
 
 ---
 
-## NLP Strategies
+## NLP Strategy
 
-Two NLP formulations are available via `IPOPTControl(nlp_strategy=...)`:
+There is one NLP formulation, `MultipartNLP()` (the default `IPOPTControl.nlp_strategy`). It
+solves a genuine multi-part organism: one regulated core shared across all parts, per-part
+surface temperatures and effectors, and a single whole-organism respiration balance closed at
+the lung. A single `Body` is the one-part case; a `CompositeBody` (torso/head/legs) adds two
+equality constraints per part.
 
-| Strategy | Decision variables | Constraints | Description |
-|---|---|---|---|
-| `WeightedMeanNLP()` | 9 | 4 (3 equality + 1 Q10) | Single mean-weighted body; dorsal/ventral merged by view-factor weights |
-| `MultiSidedNLP()` | 11 | 6 (5 equality + 1 Q10) | Explicit dorsal and ventral sides; two skin temperatures, two insulation temperatures |
+| Variables | Constraints |
+|---|---|
+| `3 + 4·N` (`N` = number of parts) | `2·N + 2` (`2·N` per-part equalities + 1 whole-organism equality + 1 Q10 inequality) |
 
-`WeightedMeanNLP` is the default. `MultiSidedNLP` gives more accurate results under strongly
-asymmetric conditions (high solar loading) at the cost of a slightly larger NLP.
+The decision-variable layout is **not** hand-indexed: it is a nested `NamedTuple` template with
+`Unitful` leaves, and `Flatten.flatten` / `Flatten.reconstruct` bridge it to the flat
+`Vector{Float64}` Ipopt optimises. Variables, bounds, scaling and residuals are all templates of
+the same shape flattened in the same order, so a bound can never drift out of alignment with the
+variable it bounds, and adding a part or a per-part effector is a change to the *structure*, never
+to a pile of `x[3 + 4i]` offsets.
 
 ---
 
 ## Constraints
 
-### `WeightedMeanNLP`: 4 constraints
+For an `N`-part organism the residual vector is `2·N + 2` long: two equalities per part, then the
+whole-organism respiration balance, then the Q10 inequality (last, so it is the single `≥ 0`
+constraint).
 
-**Constraints 1–3: Heat balance equalities (= 0)**
+**Per part (2·N equalities, = 0)** — from `HeatExchange.part_surface_residuals`:
 
-Provided by `HeatExchange.nlp_residuals(::WeightedMeanNLPPacked, ...)`, which returns three residuals:
+1. **Surface balance** (W): `residual_energy_balance − residual_internal_conduction = 0` — pure
+   surface heat exchange (solar, longwave, convection, conduction, net internal heat flow);
+   metabolic and respiration terms cancel algebraically, so respiration is counted once
+   whole-organism (below) rather than per part.
+2. **Skin temperature consistency** (K): skin temperature is consistent with the core–skin
+   gradient given flesh conductivity and body geometry.
 
-1. **Energy balance residual** (W): net heat flow at the insulation surface must be zero.
-2. **Internal conduction residual** (W): heat flow from core to skin through flesh and fat must
-   match the heat flow from skin through insulation to the environment.
-3. **Skin temperature consistency** (K): skin temperature must be consistent with the
-   core–skin gradient given flesh conductivity and body geometry.
-
-**Constraint 4: Q10 metabolic scaling inequality (≥ 0)**
-
-```
-generated_heat_flow ≥ minimum_heat_flow × Q10^((core_temperature − setpoint) / 10)
-```
-
-### `MultiSidedNLP`: 6 constraints
-
-**Constraints 1–2: Dorsal surface physics (= 0)**
-
-1. **Dorsal surface balance** (W): `residual_energy_balance_d − residual_internal_conduction_d = 0`
-   — pure surface heat exchange (solar, longwave, convection, conduction, net internal heat flow);
-   metabolic and respiration terms cancel algebraically.
-2. **Dorsal skin temperature** (K): `residual_skin_temperature_d = 0`
-
-**Constraints 3–4: Ventral surface physics (= 0)**
-
-3. **Ventral surface balance** (W): `residual_energy_balance_v − residual_internal_conduction_v = 0`
-4. **Ventral skin temperature** (K): `residual_skin_temperature_v = 0`
-
-**Constraint 5: Whole-organism energy balance (= 0)**
+**Whole-organism energy balance (= 0)**
 
 ```
-metabolic_heat_flow − respiration_heat_flow = dmult × net_metabolic_heat_internal_d + vmult × net_metabolic_heat_internal_v
+metabolic_heat_flow − respiration_heat_flow = Σ_parts net_metabolic_heat_internal
 ```
 
-where `dmult = sky_view_factor + vegetation_view_factor` and `vmult = 1 − dmult`. This mirrors
-the validated rule-based multi-sided solver criterion exactly.
+Respiration is closed once at the lung, using the mean skin temperature across parts for the lung
+temperature. This mirrors `solve_coupled_metabolic_rate` at its converged point.
 
-**Constraint 6: Q10 metabolic scaling inequality (≥ 0)**
+**Q10 metabolic scaling inequality (≥ 0)**
 
 ```
 generated_heat_flow ≥ minimum_heat_flow × Q10^((core_temperature − setpoint) / 10)
@@ -256,7 +249,7 @@ The Q10 value is taken from `MetabolismParameters.q10` in `HeatExchange.jl`.
 ## Objective Function
 
 The objective minimises thermal discomfort by penalising deviations from setpoint and use of
-active cooling effectors. All terms are normalised to [0, 1] so the penalty weights are directly
+active cooling effectors. All terms are normalised to [0, 1] so the objective weights are directly
 comparable:
 
 ```
@@ -279,23 +272,23 @@ for thermogenesis.
 In hot conditions, the Q10 inequality constraint (constraint 4) prevents `generated_heat_flow`
 from dropping below its temperature-scaled minimum, so the objective cannot drive it to zero.
 
-The small `metabolic_heat_penalty` (default 0.1) acts as a **regularisation** term only: it
+The small `metabolic_heat_weight` (default 0.1) acts as a **regularisation** term only: it
 breaks an otherwise degenerate manifold in cold conditions where combinations of high panting
 and high `generated_heat_flow` satisfy the energy balance equally well. A small weight is
 enough; the Q10 constraint takes over in hot conditions.
 
-### Penalty weights and their effects
+### Objective weights and their effects
 
 The weights are stored as fields of `ThermoregulationLimits`:
 
 | Field | Default | Effect |
 |---|---|---|
-| `core_temperature_penalty` | 1.0 | Lower → core temperature allowed to deviate more before effectors are exhausted |
-| `metabolic_heat_penalty` | 0.1 | Small regularisation to prevent high-panting/high-generated_heat_flow degeneracy in cold |
-| `panting_penalty` | 1.0 | Lower → panting activates sooner |
-| `skin_wetness_penalty` | 1.0 | Higher than `panting_penalty` → panting before sweating (birds/rabbits); lower → sweating first (humans) |
-| `gradient_penalty` | 0.0 | Non-zero → penalises deviation from `target_core_skin_gradient` (K); disabled by default |
-| `target_core_skin_gradient` | 2.0 | Target `core_temperature − skin_temperature` (K); only used when `gradient_penalty > 0` |
+| `core_temperature_weight` | 1.0 | Lower → core temperature allowed to deviate more before effectors are exhausted |
+| `metabolic_heat_weight` | 0.1 | Small regularisation to prevent high-panting/high-generated_heat_flow degeneracy in cold |
+| `panting_weight` | 1.0 | Lower → panting activates sooner |
+| `skin_wetness_weight` | 1.0 | Higher than `panting_weight` → panting before sweating (birds/rabbits); lower → sweating first (humans) |
+| `gradient_weight` | 0.0 | Non-zero → penalises deviation from `target_core_skin_gradient` (K); disabled by default |
+| `target_core_skin_gradient` | 2.0 | Target `core_temperature − skin_temperature` (K); only used when `gradient_weight > 0` |
 
 ---
 
@@ -304,13 +297,13 @@ The weights are stored as fields of `ThermoregulationLimits`:
 | Aspect | `RuleBasedSequentialControl` | `IPOPTControl` |
 |---|---|---|
 | **Philosophy** | Fixed priority order; apply one effector at a time until balance is achieved | Simultaneous optimisation across all effectors |
-| **Cold response** | Piloerect → curl → vasoconstrict → thermogenesis (strict order) | All effectors adjusted together; `metabolic_heat_penalty` regularisation biases toward the sequential ordering |
-| **Hot response** | Vasodilate → allow hyperthermia → pant → sweat (strict order) | Order emerges from relative penalty weights |
-| **Panting vs sweating** | Set by `mode` (e.g. `CorePantingSweatingFirst`) | Set by `panting_penalty` vs `skin_wetness_penalty` relative magnitudes |
+| **Cold response** | Piloerect → curl → vasoconstrict → thermogenesis (strict order) | All effectors adjusted together; `metabolic_heat_weight` regularisation biases toward the sequential ordering |
+| **Hot response** | Vasodilate → allow hyperthermia → pant → sweat (strict order) | Order emerges from relative objective weights |
+| **Panting vs sweating** | Set by `mode` (e.g. `CorePantingSweatingFirst`) | Set by `panting_weight` vs `skin_wetness_weight` relative magnitudes |
 | **Q10 scaling** | Applied explicitly: `generated_heat_flow_min` rises with Q10 at each step | Enforced via inequality constraint 4 |
-| **Core temperature** | Set explicitly by `hyperthermia()` when energy balance cannot close | Free to rise within bounds; penalised by `core_temperature_penalty` |
+| **Core temperature** | Set explicitly by `hyperthermia()` when energy balance cannot close | Free to rise within bounds; penalised by `core_temperature_weight` |
 | **Speed** | Fast (iterative, closed-form steps) | Comparable in practice; both approaches take similar wall time per temperature point |
-| **Tuning** | Logic rules and step sizes | Five scalar penalty weights |
+| **Tuning** | Logic rules and step sizes | Five scalar objective weights |
 | **Guarantee** | Always produces a result; may not be globally optimal | Returns the NLP optimum within bounds; may not converge in extreme cases |
 
 ---
@@ -442,46 +435,30 @@ warm-starting (though passing updated `init` still sets the fallback cold-start 
 
 ---
 
-## Mean-Weighted Body Approximation
-
-The IPOPT solver uses a single mean-weighted body (dorsal/ventral average) rather than the
-full dorsal/ventral split used by `solve_metabolic_rate`. Weights are derived from view factors:
-
-```
-dorsal_weight  = sky_view_factor + vegetation_view_factor
-ventral_weight = 1 − dorsal_weight
-```
-
-Insulation depth, fibre properties, view factors, and conduction coefficients are all
-weighted averages of the dorsal and ventral values. This is the same weighting used internally
-by `solve_metabolic_rate` and keeps the NLP problem dimensionality manageable.
-
----
-
 ## HeatExchange.jl NLP Interface
 
-The IPOPT solver does **not** call `solve_metabolic_rate`. Instead it uses three functions from
-`HeatExchange.jl/src/nlp_interface.jl`:
+The IPOPT solver does **not** call `solve_metabolic_rate` (or `solve_coupled_metabolic_rate`).
+Those internally iterate to find consistent temperatures given fixed physiological parameters; the
+optimiser cannot use them as constraints because the temperatures *are* decision variables —
+passing a trial `core_temperature` in would trigger a nested solve that ignores the optimiser's
+current guess. Instead it evaluates the physics *non-iteratively* at the optimiser's trial point.
 
-- **`nlp_pack(strategy, organism, environment, skin_temperature_init, insulation_temperature_init)`** —
-  pre-computes all geometry and environment quantities that are fixed for a given hour, returning a
-  packed parameter struct (`WeightedMeanNLPPacked` or `MultiSidedNLPPacked`).
+- **`nlp_pack(strategy, organism, environment, skin_temperature_init, insulation_temperature_init; smoothing)`**
+  (HeatExchange, extended in `multipart_nlp.jl`) — packs the fixed per-part physics once, returning
+  a `MultipartNLPPacked` with the per-part `part_surface_residuals` setups, the whole-organism
+  respiration inputs, and the `Unitful` variable template. `NLPStrategy` and `nlp_pack` are the
+  only names HeatExchange exposes for this; the strategy and all solver policy live in
+  BiophysicalBehaviour.
 
-- **`nlp_residuals(packed, core_temperature, skin_temperature, insulation_temperature, metabolic_heat_flow, ...)`** —
-  evaluates the heat balance residuals for a trial set of decision variables without any iterative
-  solve. Returns a `NamedTuple` with `residuals` (tuple of physics residuals in W/K) plus
-  individual heat flow components.
+- **`HeatExchange.part_surface_residuals(setup, core_temperature, skin_temperature, insulation_temperature,
+  metabolic_heat_flow; ...)`** — evaluates one part's surface-balance and skin-temperature residuals
+  for a trial set of decision variables, without any iterative solve. `_heat_balance_residuals!`
+  walks the parts calling this, then closes the whole-organism respiration balance once. This is the
+  same primitive the iterative coupled solver uses, so no physics is duplicated.
 
-- **`nlp_assemble_output(packed, organism, environment, ...)`** —
-  reconstructs the full thermoregulation output `NamedTuple` from the solver solution, including
-  respiration, mass flows, and energy flows in the same format as `solve_metabolic_rate`.
-
-This distinction is critical: `solve_metabolic_rate` internally iterates to find consistent
-temperatures given a fixed set of physiological parameters. The IPOPT solver cannot use it as a
-constraint because the temperatures themselves are decision variables — passing a trial
-`core_temperature` to `solve_metabolic_rate` would trigger a nested solve that ignores the
-optimizer's current guess. `nlp_residuals` instead accepts all temperature and effector values
-as explicit arguments and simply returns the residuals, leaving the root-finding entirely to IPOPT.
+Output assembly is `_assemble(::MultipartNLPPacked, …)` (`multipart_nlp.jl`): it reconstructs the
+converged `x` into named per-part fields and evaluates `part_surface_residuals` once more at the
+solution for the final per-part heat flows.
 
 ---
 
@@ -525,27 +502,29 @@ for (air_temperature, relative_humidity, q10) in zip(air_temperatures, ...)
 end
 ```
 
-Typical tuning guidance for penalty weights:
+Typical tuning guidance for objective weights:
 
-- **Birds (panting-first, no sweating):** `panting_penalty = 0.1`, `skin_wetness_penalty = 0.1`
+- **Birds (panting-first, no sweating):** `panting_weight = 0.1`, `skin_wetness_weight = 0.1`
   (skin_wetness_max near zero, so the wetness penalty matters little)
-- **Sweating mammals (humans):** `skin_wetness_penalty < panting_penalty`
-- **Panting mammals (rabbits, dogs):** `skin_wetness_penalty > panting_penalty`
-- **Cold-temperature fit too high:** increase `metabolic_heat_penalty` (stronger bias against
+- **Sweating mammals (humans):** `skin_wetness_weight < panting_weight`
+- **Panting mammals (rabbits, dogs):** `skin_wetness_weight > panting_weight`
+- **Cold-temperature fit too high:** increase `metabolic_heat_weight` (stronger bias against
   thermogenesis before behavioral effectors are exhausted)
 
 ---
 
 ## Limitations and Future Work
 
-- **Variable scaling:** scale factors are currently hard-coded by index position in `_scaling`.
-  The proper fix is to extend the `Param` wrappers in `HeatExchange/src/traits.jl` with a
-  `scaling` field so each decision variable's source `Param` owns its scale alongside its
-  bounds. This would eliminate the silent breakage risk when variables are reordered.
-- **Dorsal/ventral symmetry:** the mean-weighted body approximation merges dorsal and ventral
-  sides. The full `solve_metabolic_rate` computes them separately. In strongly asymmetric
-  conditions (e.g. high solar loading on dorsal surface) this may introduce small errors.
-  `MultiSidedNLP` mitigates this at the cost of a larger NLP.
+- **Variable scaling:** `_scaling` authors the per-variable Ipopt scale factors in the variable
+  *structure* and flattens it, so they stay aligned with the variables by construction (no index
+  drift). The scale *magnitudes* are still hand-chosen constants; a future refinement could derive
+  them from each variable's bounds.
+- **Per-part sub-side symmetry:** each part is a lumped body with a single skin and insulation
+  temperature, so asymmetric loading *within* a part (sun above, ground below) is averaged rather
+  than resolved. A multi-part organism can capture asymmetry *between* parts, but not within one.
+- **Deferred geometry effectors:** piloerection (`insulation_depth`) and uncurling (`axis_ratio`)
+  are not decision variables — they would rebuild each part's body inside the differentiated
+  residual. Adding them requires a per-part body-rebuild path that Enzyme can differentiate.
 - **Global optimality:** IPOPT finds a local optimum of the NLP. For well-posed problems the
   objective is approximately convex and the local optimum is unique, but unusual initial
   conditions or extreme parameter combinations may yield suboptimal solutions.
