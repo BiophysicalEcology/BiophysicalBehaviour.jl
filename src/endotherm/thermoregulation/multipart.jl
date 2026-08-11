@@ -548,7 +548,7 @@ end
 # cache is threaded through. Both paths return identical values.
 @inline _part_geometry(part_body, rad_pars, ::Nothing) = (
     BiophysicalGeometry.total_area(part_body),
-    BiophysicalGeometry.silhouette_area(part_body, rad_pars.solar_orientation),
+    BiophysicalGeometry.silhouette(part_body, rad_pars.solar_orientation),
     characteristic_dimension(VolumeCubeRoot(), part_body),
 )
 @inline _part_geometry(_, _rad_pars, cache_entry::NamedTuple) =
@@ -833,7 +833,7 @@ function _assemble_endotherm_output(organism::Organism, environment, out;
         area_evaporation = BiophysicalGeometry.evaporation_area(body),
         area_convection,
         area_conduction = total_area * cond_frac,
-        area_silhouette = HeatExchange.silhouette_area(body, rad_pars.solar_orientation),
+        area_silhouette = HeatExchange.silhouette(body, rad_pars.solar_orientation),
         sky_view_factor = sky_factor,
         ground_view_factor = ground_factor,
         volume = body.geometry.volume,
