@@ -704,5 +704,3 @@ final_plot = plot(pc1, pc2, pc3, pc4, pc5, pc6, pc7,
     layout = (4, 2),
     size = (700, 1000))
 display(final_plot)
-println("\nPlot window open. Press Enter to exit.")
-readline()
