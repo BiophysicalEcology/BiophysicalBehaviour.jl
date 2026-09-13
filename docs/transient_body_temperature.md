@@ -190,7 +190,7 @@ endotherm physics, without porting new physics from scratch: `HeatExchange.heat_
 driven to zero rather than as a rate.
 
 - **`Naked` bodies** reuse `heat_balance(core_temperature, organism, e)` verbatim — its
-  `metabolic_heat_flow` already comes from `organism`'s own `metabolism_pars.model` (a genuine
+  `metabolic_heat_flow` already comes from `organism`'s own `metabolism_pars.model` (a
   forward model, e.g. `Kleiber`/`McKechnieWolf`/`AndrewsPough2`), so `.energy_balance.heat_balance`
   (heat in − heat out at the given, possibly off-equilibrium, core temperature) is already the
   correct ODE numerator.

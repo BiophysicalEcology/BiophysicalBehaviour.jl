@@ -3,12 +3,12 @@
 # Fuzzy-logic level combination: max for OR, min for AND (Zadeh), reducing to
 # boolean any/all at the {0,1} extremes.
 
-struct AnyController{T<:NamedTuple} <: AbstractArrestController
+struct AnyController{T<:NamedTuple} <: AbstractCondition
     controllers::T
 end
 AnyController(; kw...) = AnyController(NamedTuple(kw))
 
-struct AllController{T<:NamedTuple} <: AbstractArrestController
+struct AllController{T<:NamedTuple} <: AbstractCondition
     controllers::T
 end
 AllController(; kw...) = AllController(NamedTuple(kw))

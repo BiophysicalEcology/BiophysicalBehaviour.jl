@@ -5,7 +5,7 @@
 # step (HardBound) vs smooth, differentiable transition (SmoothBound) -- see
 # threshold.jl.
 
-abstract type AbstractArrestController end
+abstract type AbstractCondition end
 
 # flattens a Tuple-of-Tuples via recursive tuple destructuring. Used to
 # trigger_conditions/arrest_conditions concretely typed for type-stable
@@ -40,14 +40,14 @@ signal_value(x::NamedTuple{(:value, :rate)}) = x.value
 signal_rate(x::NamedTuple{(:value, :rate)}) = x.rate
 signal_rate(x) = error("directional controller needs a `(; value, rate)` signal, got $(typeof(x))")
 
-initial_controller_state(::AbstractArrestController) = NamedTuple()
-controller_rate(::AbstractArrestController, own_state, progress, signals, model, arrest_state) = NamedTuple()
+initial_controller_state(::AbstractCondition) = NamedTuple()
+controller_rate(::AbstractCondition, own_state, progress, signals, model, arrest_state) = NamedTuple()
 
 function controller_level end
 
 # continuous-ODE hosts only; only HardBound controllers need one (SmoothBound has no discontinuity to root-find).
-trigger_conditions(::AbstractArrestController) = ()
-register_callback(::AbstractArrestController) = false
+trigger_conditions(::AbstractCondition) = ()
+register_callback(::AbstractCondition) = false
 
-struct NeverController <: AbstractArrestController end
+struct NeverController <: AbstractCondition end
 controller_level(::NeverController, own_state, progress, signals, model, arrest_state) = 0.0

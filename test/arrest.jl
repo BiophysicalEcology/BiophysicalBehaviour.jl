@@ -73,6 +73,23 @@ end
     @test controller_level(c, s, 0.0, (;), c, s) == 0.0
 end
 
+@testset "ProportionalController: ramps across the whole metric range, not just near target" begin
+    c = ProportionalController(metric=Accumulate((p, sig, m, as) -> 1.0, 0.0), target=10.0)
+    s = initial_controller_state(c)
+    levels = Float64[]
+    for _ in 1:15
+        push!(levels, controller_level(c, s, 0.0, (;), c, s))
+        r = controller_rate(c, s, 0.0, (;), c, s)
+        s = step_state(s, r, 1.0)
+    end
+    @test levels[1] == 0.0
+    @test levels[5] == 0.4    # 40% of target well before completion, not near-zero
+    @test levels[11] == 1.0   # accumulator == target
+    @test levels[end] == 1.0  # clamped, not > 1
+    @test issorted(levels)
+    @test !register_callback(c)
+end
+
 @testset "FunctionController: fires exactly at closure zero-crossing" begin
     c = FunctionController(condition=(s, progress, signals, m, as) -> signals.x - 5.0)
     s = initial_controller_state(c)

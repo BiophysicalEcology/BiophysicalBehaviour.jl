@@ -18,8 +18,8 @@
 ### The optimisation problem
 
 An endotherm facing thermal stress has several physiological and behavioural options: erect or
-flatten its fur, change its posture, dilate or constrict peripheral blood vessels, pant, or
-sweat. Each option has a cost (metabolic energy, water loss, time) and each shifts the heat
+flatten its fur/feathers, change its posture, dilate or constrict peripheral blood vessels, pant,
+or sweat. Each option has a cost (metabolic energy, water loss, time) and each shifts the heat
 balance by a different amount. The question of which combination is best — or even feasible —
 is not obvious when several effectors interact non-linearly through the same heat balance
 equations.

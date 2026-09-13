@@ -137,6 +137,7 @@ export AnyDirection, RisingDirection, FallingDirection
 export RawSignal, RawProgress, Accumulate
 export FixedBound
 export ThresholdController
+export ProportionalController
 export FunctionController
 export AnyController, AllController
 export ComposedArrest, AnyArrestModel, AllArrestModel
@@ -144,6 +145,19 @@ export initial_controller_state, controller_rate, controller_level, register_cal
 export initial_arrest_state, advance_arrest, arrest_level, step_state
 export arrest_component
 export print_arrest_structure
+
+# Stages: domain-agnostic ordered life-cycle topology. See src/stages/ and
+# docs/stages.md. No domain vocabulary (insect, plant, or otherwise) is
+# exported or shipped here -- a downstream package supplies concrete
+# AbstractStage/AbstractTransition subtypes.
+export AbstractStage, AbstractTransition, StageSequence
+export stages, transitions
+export stage_traits, transition_controller, stage_key, transition_key
+export initial_stage_state, advance_stage
+export stage_weights, current_stage, stage_value
+export stage_conditions
+export stage_component
+export print_stage_structure
 
 include("organism.jl")
 include("endotherm/endotherm_traits.jl")
@@ -161,14 +175,26 @@ include("transient/simulate.jl")
 include("transient/ectotherm/behavioral_driver.jl")
 include("transient/endotherm/behavioral_driver.jl")
 
-include("arrest/controllers.jl")
-include("arrest/metrics.jl")
-include("arrest/bounds.jl")
-include("arrest/threshold.jl")
-include("arrest/function_controller.jl")
-include("arrest/composition.jl")
+include("control/conditions.jl")
+include("control/metrics.jl")
+include("control/bounds.jl")
+include("control/threshold.jl")
+include("control/proportional.jl")
+include("control/function_controller.jl")
+include("control/composition.jl")
+include("control/step_state.jl")
+include("control/structure.jl")
+
 include("arrest/arrest_model.jl")
 include("arrest/component.jl")
 include("arrest/structure.jl")
+
+include("stages/stage_sequence.jl")
+include("stages/lookup.jl")
+include("stages/weights.jl")
+include("stages/state.jl")
+include("stages/conditions.jl")
+include("stages/component.jl")
+include("stages/structure.jl")
 
 end # module BiophysicalBehaviour

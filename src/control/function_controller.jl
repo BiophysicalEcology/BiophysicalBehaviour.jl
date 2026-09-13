@@ -1,10 +1,10 @@
-# Escape hatch for anything not expressible as metric-vs-bound -- genuinely
+# Escape hatch for anything not expressible as metric-vs-bound -- 
 # custom/order-dependent logic stays plain code here (not a composable
 # "Rule" type), matching RuleBasedSequentialControl's hardcoded if/elseif idiom.
 #
 # `condition`: (own_state, progress, signals, model, arrest_state) -> Real,
 # same signed-distance convention as ThresholdController's `_gap`.
-Base.@kwdef struct FunctionController{F,L} <: AbstractArrestController
+Base.@kwdef struct FunctionController{F,L} <: AbstractCondition
     condition::F
     level_function::L = nothing
     needs_callback::Bool = true

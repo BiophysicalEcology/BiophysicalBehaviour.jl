@@ -1,5 +1,5 @@
 # Metric-vs-bound comparison: covers threshold and cumulation via composition.
-Base.@kwdef struct ThresholdController{M<:AbstractMetric,B<:AbstractBound,D<:AbstractDirection,C<:AbstractComparison,S<:SmoothingStrategy,SC} <: AbstractArrestController
+Base.@kwdef struct ThresholdController{M<:AbstractMetric,B<:AbstractBound,D<:AbstractDirection,C<:AbstractComparison,S<:SmoothingStrategy,SC} <: AbstractCondition
     metric::M
     bound::B
     direction::D = AnyDirection()

@@ -7,18 +7,11 @@ function initial_arrest_state end
 function advance_arrest end
 function arrest_level end
 
-# recursively advances a model-defined NamedTuple state by rate*dt -- discrete
-# step-loop hosts use this directly; an empty rate NamedTuple leaves the
-# matching state branch unchanged.
-step_state(state::NamedTuple, rate::NamedTuple{(),Tuple{}}, dt) = state
-step_state(state::NamedTuple, rate::NamedTuple, dt) =
-    NamedTuple{keys(state)}(map((s, r) -> step_state(s, r, dt), values(state), values(rate)))
-step_state(state::Number, rate::Number, dt) = state + rate * dt
 arrest_conditions(::AbstractArrestModel) = ()
 
 # one induction controller + one breakage controller. level = induction*(1-breakage),
 # fuzzy AND-NOT reducing to `in_diapause && !broken` at the {0,1} extremes.
-struct ComposedArrest{I<:AbstractArrestController,B<:AbstractArrestController} <: AbstractArrestModel
+struct ComposedArrest{I<:AbstractCondition,B<:AbstractCondition} <: AbstractArrestModel
     induction::I
     breakage::B
 end
