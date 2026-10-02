@@ -1,9 +1,9 @@
 # Endotherm thermoregulation by rules
 
-An endotherm holds its core temperature. In the cold it does so by making heat, and the heat budget of
-HeatExchange.jl gives the amount. In the heat it cannot make less than its minimum, and must lose more. This
-page describes the sequence of responses by which it does that, which is the thermoregulatory loop of the
-NicheMapR endotherm model (Kearney et al. 2021).
+An endotherm holds its core temperature. In the cold it makes more heat, and the heat budget of HeatExchange.jl
+gives the amount. In the heat it cannot make less than its minimum, and must lose more. This page describes
+the sequence of responses by which it does that, the thermoregulatory loop of the NicheMapR endotherm model
+(Kearney et al. 2021).
 
 ```@setup endotherm_rules
 using Main.FigureHelpers
@@ -20,9 +20,10 @@ balances for a given core temperature. The animal has a least rate at which it c
 Q_{\text{gen}} < Q_{\text{min}}\,(1 - \text{tolerance})
 ```
 
-that is, while holding the core temperature would need the animal to produce less heat than it can. The state
-is ``Q_{\text{gen}}``, the reference ``Q_{\text{min}}``, and each action increases the heat that the animal
-can lose, so that the ``Q_{\text{gen}}`` required rises towards the reference.
+that is, while holding the core temperature would need less heat than the animal can make. The state is
+``Q_{\text{gen}}``, the reference ``Q_{\text{min}}``, and each action increases the heat the animal can lose,
+so the ``Q_{\text{gen}}`` required rises towards the reference. See
+[Behaviour as control](control.md#Two-plants).
 
 ```julia
 thermoregulate(organism, environment, init)
@@ -51,30 +52,32 @@ ladder_diagram(["flatten fur", "uncurl", "vasodilate", "raise core\ntemperature"
 | 6 | sweat | [`sweat`](@ref) | [`Sweat`](@ref) | the fraction of the skin that is wet |
 
 The loop starts with the fur fully raised, the condition that conserves most heat. If the heat budget balances
-there at or above ``Q_{\text{min}}``, that is the answer, and the animal is at or below its lower critical
-temperature. Otherwise the first response that is not exhausted is moved one step, the heat budget is solved
-again, and the test is repeated.
+there at or above ``Q_{\text{min}}``, that is the answer: the animal is at or below its lower critical
+temperature. Otherwise the first response not exhausted is moved one step, the heat budget solved again, and
+the test repeated.
 
-The order is that of cost. The first three cost nothing but the loss of their use for anything else. A rise in
-core temperature costs performance and a higher metabolic rate. Panting and sweating cost water.
+The order is that of cost. The first three cost nothing but the loss of their use for anything else. A warmer
+core costs performance and a higher metabolic rate. Panting and sweating cost water. In the terms of
+[Gradients and control](gradients.md#Three-ways-to-act), the first three and sweating change a resistance,
+panting a sink, and a warmer core a gradient.
 
 ### The costs that feed back
 
-Two responses raise the reference as well as the state, see [Behaviour as control](control.md). A warmer core
-has a higher metabolic rate, and panting is work. After each step of either,
+Two responses raise the reference as well as the state, see
+[Behaviour as control](control.md#Negative-and-positive-feedback). A warmer core has a higher metabolic rate,
+and panting is work. After each step of either,
 
 ```math
 Q_{\text{min}} = (Q_{\text{basal}} + Q_{\text{pant}})\, Q_{10}^{(T_c - T_{c,\text{ref}})/10}
 ```
 
-``Q_{\text{pant}}`` rises linearly with the panting rate to `(multiplier - 1)` times the basal rate at
-full panting, see [`PantingLimits`](@ref). ``Q_{10}`` is that of the `MetabolismParameters` of HeatExchange.jl.
+``Q_{\text{pant}}`` rises linearly with the panting rate to `(multiplier - 1)` times the basal rate at full
+panting, see [`PantingLimits`](@ref). ``Q_{10}`` is that of the `MetabolismParameters` of HeatExchange.jl.
 
 ## Modes
 
-Many animals do not wait for their core temperature to reach its limit before panting, or for panting to reach
-its limit before sweating. The [`AbstractThermoregulationMode`](@ref) of the controller sets which responses
-advance together:
+Many animals pant before their core reaches its limit, or sweat before panting reaches its limit. The
+[`AbstractThermoregulationMode`](@ref) of the controller sets which responses advance together:
 
 | Mode | With each step of core temperature | NicheMapR `TREGMODE` |
 |:--|:--|:--|
@@ -82,13 +85,13 @@ advance together:
 | [`CoreAndPantingFirst`](@ref) | a step of panting | 2 |
 | [`CorePantingSweatingFirst`](@ref) | a step of panting and a step of sweating | 3 |
 
-The mode is a hypothesis about the animal. It is a model trait, see
-[States, thresholds and traits](states_traits.md).
+The mode is a hypothesis about the animal, a model trait, see
+[States, thresholds and traits](states_traits.md#The-four-classes-of-functional-trait).
 
 ## An example
 
-The 65 kg animal of [Get started](../get_started.md). `example_thermoregulation_limits` takes the range and
-step of each response as keywords:
+The 65 kg animal of [Get started](../get_started.md). `example_thermoregulation_limits` takes the range and step
+of each response as keywords:
 
 ```@example endotherm_rules
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -130,12 +133,14 @@ markdown_table(["", ("$(T)" for T in temperatures)...], [ # hide
 ]) # hide
 ```
 
-At 10 °C nothing is done and the metabolic rate is above the minimum. At 20 °C the animal has only uncurled.
-At 30 °C it is fully vasodilated, its core has warmed to the limit and it has begun to pant. At 45 °C it
-is breathing at eight times the resting rate and losing 200 g of water an hour.
+- At 10 °C nothing is done, and the metabolic rate is above the minimum.
+- At 20 °C the animal has only uncurled.
+- At 30 °C it is fully vasodilated, its core has warmed to the limit, and it has begun to pant.
+- At 45 °C it is breathing at eight times the resting rate and losing 200 g of water an hour.
 
-The output is the `ThermoregulationOutput` of HeatExchange.jl, with the same four groups: `thermoregulation`,
-`morphology`, `energy_flows` and `mass_flows`. The state of every response is in `thermoregulation`.
+The output is the `ThermoregulationOutput` of HeatExchange.jl, with its four groups: `thermoregulation`,
+`morphology`, `energy_flows` and `mass_flows`. The state of every response is in `thermoregulation`. See
+[A mammal across air temperatures](../tutorials/mammal.md) for the whole curve, compared with NicheMapR.
 
 ### The effect of the mode
 
@@ -169,9 +174,8 @@ more water.
 
 ### The effect of the step
 
-The step of each response is the resolution of the controller. Coarser steps overshoot: the loop stops at the
-first state in which the required heat production exceeds the minimum, and the excess is heat that the animal
-must then produce.
+The step is the resolution of the controller. Coarser steps overshoot: the loop stops at the first state in
+which the required heat production exceeds the minimum, and the excess is heat the animal must then produce.
 
 ```@example endotherm_rules
 fine = mammal(; pant_step = 0.02)
@@ -183,27 +187,22 @@ markdown_table(["Panting step", "Panting multiplier at 40 °C", "Metabolic rate"
 
 ## When nothing is left
 
-If every response reaches its limit and the required heat production is still below the minimum, the loop
-stops and returns the last state. Its `metabolic_heat_flow` is then below `minimum_heat_flow`: the animal cannot
-hold its core temperature in that environment by these means. That is the result, and what follows from it,
-heat storage and a rising body temperature, is outside a steady-state model.
+If every response reaches its limit and the required heat production is still below the minimum, the loop stops
+and returns the last state. Its `metabolic_heat_flow` is then below `minimum_heat_flow`: the animal cannot hold
+its core temperature in that environment by these means. What follows, heat storage and a rising body
+temperature, is outside a steady-state model.
 
 ## Limits
 
 [`ThermoregulationLimits`](@ref) holds the range of each response as a [`SteppedParameter`](@ref), with
 [`InsulationLimits`](@ref) for the dorsal and ventral fur and [`PantingLimits`](@ref) for panting and its cost.
 It also holds the weights used by [Thermoregulation by optimisation](optimisation.md), which this controller
-ignores. See [Parameters](parameters.md) for every field.
+ignores. See [Parameters](parameters.md).
 
 A response is switched off by giving it no range: a `max` equal to its `current` value.
 
 ## Bodies of many parts
 
-For an organism on a `CompositeBody` the same loop runs with the responses applied part by part: vasodilation
-and sweating to every part, panting to the part that holds the lungs. Fur and posture are not yet changed.
-
-For a body of many parts, posture will be a change of *pose*: raising or lowering wings or ears, bringing the
-limbs in to the body or holding them away from it. That changes which surfaces are hidden under joins and what
-each part sees of the sky, the ground and its neighbours, through the geometry of BiophysicalGeometry.jl. It is to
-replace the change of axis ratio by which a single body curls and uncurls.
-See [Bodies of many parts](multipart.md).
+For an organism on a `CompositeBody` the same loop runs with the responses applied by part: vasodilation and
+sweating to every part, panting to the part that holds the lungs. Fur and posture are not yet changed. Posture
+is to become a change of *pose*, see [Bodies of many parts](multipart.md#Thermoregulating).

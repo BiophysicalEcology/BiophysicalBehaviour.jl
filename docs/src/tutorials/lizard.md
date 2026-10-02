@@ -1,13 +1,13 @@
 # A lizard's day
 
-The desert iguana, *Dipsosaurus dorsalis*, is active at body temperatures that would kill most lizards, in a
-place where the ground reaches 60 °C. Porter et al. (1973) used it to show that the times and places of an
-animal's activity could be computed from its heat budget and the microclimates open to it. This tutorial repeats
-that calculation: a 40 g lizard at Palm Springs, California, on the middle day of each month.
+The desert iguana, *Dipsosaurus dorsalis*, is active at body temperatures that would kill most lizards, where
+the ground reaches 60 °C. Porter et al. (1973) used it to show that the times and places of an animal's activity
+can be computed from its heat budget and the microclimates open to it. This tutorial repeats that calculation:
+a 40 g lizard at Palm Springs, California, on the middle day of each month.
 
-It needs two more packages than the rest of this documentation,
-[Microclimate.jl](https://github.com/BiophysicalEcology/Microclimate.jl) for the environments and the Statistics
-standard library.
+It needs two more packages than the rest of this documentation:
+[Microclimate.jl](https://github.com/BiophysicalEcology/Microclimate.jl) for the environments, and the
+Statistics standard library.
 
 ```@setup lizard
 using Main.FigureHelpers
@@ -16,8 +16,8 @@ using CairoMakie
 
 ## The microclimates
 
-The site is at 33.8° N and 130 m, on pale sand. The weather is monthly climate: mean daily minima and maxima of
-air temperature, wind speed and humidity, under clear skies.
+The site is at 33.8° N and 130 m, on pale sand. The weather is monthly climate, mean daily minima and maxima of
+air temperature, wind speed and humidity, under clear skies:
 
 ```@example lizard
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Microclimate, Unitful
@@ -43,7 +43,7 @@ nothing # hide
 ```
 
 The lizard can climb into creosote bushes, so the air is described at five heights up to 2 m, the last being
-the height of the weather data. The soil is described at the default depths of Microclimate.jl, down to 2 m.
+the height of the weather data. The soil is described at the default depths of Microclimate.jl, down to 2 m:
 
 ```@example lizard
 heights = [1.0, 50.0, 100.0, 150.0, 200.0]u"cm"
@@ -98,10 +98,16 @@ The red band is the range of body temperatures at which the lizard is active.
 
 ## The lizard
 
-The traits are those of Porter et al. (1973). The lizard is active between 38 and 43 °C and prefers 38.5 °C.
-It changes colour, from a solar absorptivity of 0.8 when cool to 0.6 when hot. It turns broadside to the sun to
-bask. It climbs. It does not seek shade on the ground, but it has a burrow, no shallower than 2.5 cm, under open
-ground.
+The traits are those of Porter et al. (1973):
+
+- active between 38 and 43 °C, preferring 38.5 °C;
+- changes colour, from a solar absorptivity of 0.8 when cool to 0.6 when hot;
+- turns broadside to the sun to bask;
+- climbs;
+- does not seek shade on the ground, but has a burrow, no shallower than 2.5 cm, under open ground.
+
+These thresholds and capabilities are the traits described in
+[States, thresholds and traits](../manual/states_traits.md#Threshold-traits-of-an-ectotherm).
 
 ```@example lizard
 desert_iguana(; changes...) = Organism(Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked()), example_ectotherm_organism_traits(;
@@ -142,8 +148,8 @@ nothing # hide
 
 ## The year
 
-[`thermoregulate`](@ref) is called for each of the 288 hours. The depth of each hour is passed to the next,
-and a flag records whether the lizard has yet been out on the day:
+[`thermoregulate`](@ref) is called for each of the 288 hours. The depth of each hour is passed to the next, and
+a flag records whether the lizard has yet been out that day:
 
 ```@example lizard
 function simulate(organism, environments, ground, steps)
@@ -194,12 +200,14 @@ fig # hide
 
 The strip at the foot of the top panels is the state of the lizard: blue at rest, orange basking, red active.
 
-In April the lizard comes out in mid-morning, basks, and is active through the middle of the day, paling as it
-warms. It never needs to leave the ground. In July it is out soon after sunrise and too hot on the ground by
-mid-morning. It climbs, where the air is cooler and moves faster, and when that fails it goes underground
-through the middle of the day. It comes out again in the late afternoon, up in the bushes first and then on the
-ground. This is the pattern that Porter et al. (1973) computed and observed: one period of activity in spring,
-two in summer.
+- **April.** The lizard comes out in mid-morning, basks, and is active through the middle of the day, paling as
+  it warms. It never needs to leave the ground.
+- **July.** It is out soon after sunrise and too hot on the ground by mid-morning. It climbs, where the air is
+  cooler and faster, and when that fails it goes underground through the middle of the day. It comes out again
+  in the late afternoon, up in the bushes first and then on the ground.
+
+This is the pattern Porter et al. (1973) computed and observed: one period of activity in spring, two in summer.
+See [Ectotherm thermoregulation](../manual/ectotherm.md#The-sequence) for the decisions behind it.
 
 ### The year at a glance
 
@@ -230,12 +238,12 @@ fig # hide
 ```
 
 Red is active and orange basking. The lizard is not active at all from November to February: nowhere within
-its reach is warm enough. That seasonal limit, and the two-peaked days of summer, both follow from two
-threshold traits, 38 and 43 °C, and the physics.
+reach is warm enough. That seasonal limit, and the two-peaked days of summer, both follow from two threshold
+traits, 38 and 43 °C, and the physics.
 
 ## What the behaviours are for
 
-Each behaviour can be taken away, see [Ectotherm thermoregulation](../manual/ectotherm.md):
+Each behaviour can be taken away, see [Ectotherm thermoregulation](../manual/ectotherm.md#What-each-behaviour-is-worth):
 
 ```@example lizard
 variants = (
@@ -256,8 +264,12 @@ hottest afternoon is above the critical maximum of 44 °C.
 
 ## Where next
 
-The body temperatures and activity states computed here are the inputs to models of what the animal can do
-with its time: [ThermalPhysiology.jl](https://github.com/BiophysicalEcology/ThermalPhysiology.jl) for
-performance and survival as functions of body temperature, and energy and water budgets driven by hours of
-activity. For a site described by real weather in place of monthly means, see the documentation of
-Microclimate.jl.
+- The same lizard, without behaviour, is taken apart term by term in
+  [An ectotherm: body temperature](https://biophysicalecology.github.io/HeatExchange.jl/dev/tutorials/ectotherm)
+  in the documentation of HeatExchange.jl.
+- A mammal in the same microclimates is in [A desert mammal through the year](endotherm_year.md).
+- The body temperatures and activity states computed here feed models of what the animal can do with its time:
+  [ThermalPhysiology.jl](https://github.com/BiophysicalEcology/ThermalPhysiology.jl) for performance and
+  survival, and energy and water budgets driven by hours of activity.
+- For real weather in place of monthly means, see the documentation of Microclimate.jl, and for any place, see
+  [From gridded climate data](../manual/environments.md#From-gridded-climate-data).

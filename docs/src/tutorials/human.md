@@ -1,13 +1,11 @@
 # A human that thermoregulates
 
-HomoTherm (Kearney et al. 2026) is the human model of NicheMapR: a head, a trunk, two arms and two legs, each
-with its own heat budget, inside a loop that vasodilates, lets the core warm and sweats. The tutorial
+HomoTherm (Kearney et al. 2026) is the human model of NicheMapR: head, trunk, two arms and two legs, each with
+its own heat budget, inside a loop that vasodilates, lets the core warm and sweats.
 [A human of many parts](https://biophysicalecology.github.io/HeatExchange.jl/dev/tutorials/human) in the
-documentation of HeatExchange.jl builds the same person without the loop, and compares the two in the cold,
-stopping at 18 °C where HomoTherm begins to thermoregulate. This tutorial adds the loop and carries the
-comparison into the heat.
-
-The two loops are not the same, and the tutorial ends by saying where they part and why.
+documentation of HeatExchange.jl builds the same person without the loop and compares the two in the cold, up to
+18 °C where HomoTherm begins to thermoregulate. This tutorial adds the loop and carries the comparison into the
+heat. The two loops are not the same, and the end of the page says where they part and why.
 
 ```@setup human
 using Main.FigureHelpers
@@ -18,9 +16,8 @@ import BiophysicalGeometry: Sphere, Top, Bottom
 
 ## The person
 
-The proportions are those of HomoTherm, from
-[BiologicalScaling.jl](https://github.com/BiophysicalEcology/BiologicalScaling.jl): a 70 kg person with a
-density of 1050 kg/m³. The head is an ellipsoid and the other parts are cylinders.
+HomoTherm's proportions, from [BiologicalScaling.jl](https://github.com/BiophysicalEcology/BiologicalScaling.jl):
+70 kg at 1050 kg/m³, the head an ellipsoid and the other parts cylinders.
 
 ```@example human
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -36,8 +33,8 @@ shape(kind) = kind == :head ? Ellipsoid(part_mass[kind], density, ratio[kind], r
 nothing # hide
 ```
 
-Each kind of part has its own physiology, the defaults of HomoTherm for a person at rest. The trunk, arms and
-legs are under 6 mm of clothing, and the head under a mean of 5 mm of hair. The face is bare.
+Each kind of part has HomoTherm's resting physiology. Trunk, arms and legs are under 6 mm of clothing, the head
+under a mean of 5 mm of hair. The face is bare.
 
 ```@example human
 flesh_conductivity = map(k -> k * u"W/m/K", (head = 1.1, trunk = 0.9, arm = 0.5, leg = 0.5))
@@ -77,8 +74,7 @@ part_body(kind; fat = fat_fraction[kind]) = Body(shape(kind), CompositeInsulatio
 nothing # hide
 ```
 
-The parts are joined where a person's are: the head on top of the trunk, the arms at the shoulders, the legs
-beneath.
+The parts are joined where a person's are: head on the trunk, arms at the shoulders, legs beneath.
 
 ```@example human
 trunk, head, arm, leg = part_body(:trunk), part_body(:head), part_body(:arm), part_body(:leg)
@@ -105,8 +101,8 @@ composite_views(human; views = (:oblique, :front, :side), titles = ["", "side", 
 
 ## What the person can do
 
-HomoTherm's person vasodilates, to a flesh conductivity of 5 W/m/K, lets the core warm to 38 °C, and sweats
-until all of the skin is wet. It does not pant. The same limits here, with the same step sizes:
+As in HomoTherm: vasodilate to a flesh conductivity of 5 W/m/K, let the core warm to 38 °C, and sweat until all
+the skin is wet. No panting. The same limits and step sizes:
 
 ```@example human
 limits = ThermoregulationLimits(;
@@ -127,12 +123,12 @@ person = Organism(human, OrganismTraits(Endotherm(), map(part_traits, kind_of),
 nothing # hide
 ```
 
-With panting given no range, the mode `CorePantingSweatingFirst` lets sweating begin with the rise in core
-temperature, as it does in a person.
+With panting given no range, `CorePantingSweatingFirst` starts sweating with the rise in core temperature, as in
+a person, see [Endotherm thermoregulation by rules](../manual/endotherm_rules.md#Modes).
 
 ## The room
 
-Still air at 0.1 m/s and 50 % relative humidity, with the walls at air temperature.
+Still air at 0.1 m/s, 50 % relative humidity, walls at air temperature.
 
 ```@example human
 function respond(person, air_temperature)
@@ -149,11 +145,10 @@ responses = [respond(person, T) for T in air]
 all(part.success for response in responses for part in response.parts)
 ```
 
-The output of the multi-part controller is that of the multi-part solver, see
-[Bodies of many parts](../manual/multipart.md). The whole-body quantities that HomoTherm reports follow from
-it. Mean skin temperature is weighted by the area of each part. The core temperature reached is recovered from
-the lung temperature, which is the mean of the core and the mean skin temperature. The water evaporated from
-the skin is the latent heat lost there divided by the latent heat of vaporisation.
+The output is that of the multi-part solver, see [Bodies of many parts](../manual/multipart.md), and HomoTherm's
+whole-body quantities follow from it: mean skin temperature weighted by area; core temperature recovered from
+the lung temperature, the mean of core and mean skin; water from the skin as its latent heat over the latent
+heat of vaporisation.
 
 ```@example human
 areas = [ustrip(u"m^2", total_area(part)) for part in human.parts]
@@ -192,8 +187,7 @@ end # hide
 fig # hide
 ```
 
-The dashed line is the resting metabolic rate. The grey lines continue to 46 °C, beyond where this model is
-run.
+The dashed line is the resting metabolic rate. The grey lines continue to 46 °C, beyond where this model is run.
 
 ```@example human
 compared = [T in reference.air_temperature_C for T in x]
@@ -207,19 +201,17 @@ end
 markdown_table(["Air (°C)", "Metabolic rate (W)", "HomoTherm", "Skin (°C)", "HomoTherm", "Skin water (g/h)", "HomoTherm"], rows) # hide
 ```
 
-**In the cold**, up to 18 °C, neither model does anything but make heat, and the comparison is that of the
-heat budgets: the metabolic rates agree within about 2 %, as in the HeatExchange.jl tutorial. Here the area
-hidden where the parts join is computed from the joins, where HomoTherm uses fixed fractions.
+**In the cold**, up to 18 °C, neither model does anything but make heat, so this compares heat budgets: the
+metabolic rates agree within about 2 %, as in the HeatExchange.jl tutorial. Here the area hidden at the joins is
+computed from them; HomoTherm uses fixed fractions.
 
-**From 20 °C**, both hold the metabolic rate near the resting 105 W. Vasodilation warms the skin, steeply,
-over a few degrees of air temperature. Then sweating begins, and the water evaporated from the skin rises
-almost linearly with air temperature, in both, to well over 100 g/h at 34 °C. Below 20 °C the small loss of
-water through unsweating skin is about half that of HomoTherm.
+**From 20 °C** both hold metabolic rate near the resting 105 W. Vasodilation warms the skin steeply over a few
+degrees. Then sweating begins, and water loss from the skin rises almost linearly, in both, to well over 100 g/h
+at 34 °C. Below 20 °C the small loss through unsweating skin is about half HomoTherm's.
 
-The clearest difference is the core. Here it rises to its limit of 38 °C by an air temperature of 28 °C, where
-HomoTherm holds 36.8 °C until 32 °C and lets it drift up slowly after that. The metabolic rate here is a few
-watts higher through the warm range for that reason, the ``Q_{10}`` effect of a warmer core, and the skin is
-about 1 °C warmer. All three follow from the differences below.
+**The core differs most.** Here it reaches its 38 °C limit by 28 °C air; HomoTherm holds 36.8 °C to 32 °C and
+drifts up slowly after. So the metabolic rate here is a few watts higher through the warm range (the ``Q_{10}``
+effect) and the skin about 1 °C warmer. All three follow from the differences below.
 
 ## The person at 30 °C
 
@@ -235,40 +227,40 @@ markdown_table(["Part", "Skin", "Clothing or hair surface", "Heat passed to the 
     for (name, part) in zip(names, warm.parts)]) # hide
 ```
 
-Most of the heat that the trunk and limbs pass to their skin leaves as evaporation. The value for the head is
-negative, a gain of latent heat at its surface, which has not been examined further.
+Most of the heat the trunk and limbs pass to their skin leaves as evaporation. The head's value is negative, a
+gain of latent heat at its surface, not examined further.
 
 ## Where the two loops differ
 
 | | HomoTherm | Here |
 |:--|:--|:--|
-| core temperature | one for each part: 36.8, 36.8, 36.5 and 36.7 °C at rest | one, that of the trunk |
-| flesh conductivity | one for each part, each raised from its own resting value | each part has its own at rest. The first step of vasodilation sets every part to one value |
-| vasodilation and fat | as flesh conductivity rises above 0.5 W/m/K, the fat layer is thinned by a tenth at each step, standing for blood that bypasses it | the fat layer is unchanged |
-| what starts sweating | skin temperature: above 35 °C, wetness and core temperature rise together | the heat budget: sweating rises with core temperature once vasodilation is complete |
-| rate of vasodilation | faster when mean skin temperature is between 32 and 35 °C, slower above | one step size |
-| ceiling on sweating | a maximum sweat rate, 0.75 L/h for each m² | all of the skin wet |
-| ceiling on core temperature | can pass 38 °C if nothing else is left | stops at 38 °C |
-| each part | a dorsal and a ventral side, averaged | one surface |
-| lungs | at a temperature half way through the flesh of the trunk; air exhaled cooler than the lungs in cool air | at the mean of core and mean skin temperature; air exhaled at lung temperature |
+| core temperature | one per part: 36.8, 36.8, 36.5 and 36.7 °C at rest | one, the trunk's |
+| flesh conductivity | one per part, each raised from its own resting value | own resting value per part; the first vasodilation step sets all to one value |
+| vasodilation and fat | above 0.5 W/m/K the fat layer thins by a tenth per step (blood bypassing it) | fat unchanged |
+| what starts sweating | skin above 35 °C; wetness and core rise together | the heat budget: sweating rises with core once vasodilation is complete |
+| rate of vasodilation | faster with mean skin at 32–35 °C, slower above | one step size |
+| ceiling on sweating | 0.75 L/h per m² | all skin wet |
+| ceiling on core | can pass 38 °C if nothing else is left | stops at 38 °C |
+| each part | dorsal and ventral sides, averaged | one surface |
+| lungs | half way through the trunk's flesh; exhaled air cooler than the lungs in cool air | mean of core and mean skin; exhaled at lung temperature |
 
-HomoTherm's loop was written for a person, with rules that follow what is known of human skin temperature and
-sweating. The loop here is the general one of [Endotherm thermoregulation by rules](../manual/endotherm_rules.md),
-applied to a body of parts. That the two agree as far as they do says that the order of the responses, and the
-physics under them, carry most of the result.
+HomoTherm's loop was written for a person, with rules from what is known of human skin temperature and
+sweating. The loop here is the general one of [Endotherm thermoregulation by rules](../manual/endotherm_rules.md)
+applied to a body of parts. That they agree as far as they do says the order of responses, and the physics
+under them, carry most of the result. See also [For NicheMapR users](../manual/nichemapr.md).
 
 ## Where this model stops
 
-Above 34 °C the two diverge. HomoTherm continues to 46 °C in this room, with almost all of the skin wet and
-the core a little over 38 °C. Here, at 36 °C the surface solve of one part fails, and from 38 °C the loop ends
-with every response at its limit and the heat budget still not balanced at the resting rate: by these
-responses, within these limits, the person cannot lose enough heat.
+Above 34 °C the two diverge. HomoTherm continues to 46 °C, with almost all the skin wet and the core a little
+over 38 °C. Here the surface solve of one part fails at 36 °C, and from 38 °C the loop ends with every response
+at its limit and the heat budget unbalanced at the resting rate: by these responses, within these limits, the
+person cannot lose enough heat.
 
 ### Without the fat
 
 One difference in the table can be tested directly. In HomoTherm a vasodilated part loses its insulating fat,
-since the blood carries heat through it. The nearest thing here is to begin again, at the point where the two
-diverge, with a person who has no fat layer at all:
+since blood carries heat through it. The nearest test here is to restart, where the two diverge, with no fat
+layer at all:
 
 ```@example human
 lean_body(kind) = part_body(kind; fat = 0.0)
@@ -291,16 +283,17 @@ end
 markdown_table(["Air (°C)", "Converged", "Metabolic rate (W)", "HomoTherm", "Skin (°C)", "HomoTherm", "Core (°C)", "HomoTherm", "Skin water (g/h)", "HomoTherm"], rows) # hide
 ```
 
-Without fat the person balances the heat budget at 36 °C, where the person with fat does not. Run further, the
-same test balances to within a few watts at 40 °C and fails beyond it, with one failure of the surface solve at
-38 °C on the way. Those runs are slow, because the loop goes to its limit of iterations, and are not repeated
-on this page.
+Without fat the person balances at 36 °C, where the person with fat does not. Run further, it balances to within
+a few watts at 40 °C and fails beyond, with one failed surface solve at 38 °C. Those runs are slow, as the loop
+reaches its iteration limit, and are not repeated here.
 
-So fat is part of the answer and not all of it. The lean person reaches 36 °C with a core at the 38 °C limit and
-a skin about 2 °C warmer than HomoTherm's, and still evaporates less water. At the limit, with all the skin
-wet, about 0.18 kg/h leaves the skin here, where HomoTherm evaporates 0.22 to 0.28 kg/h from a cooler skin
-between 40 and 46 °C. The remaining difference is therefore in how much water a wet skin under clothing can
-evaporate, which is a question for the heat budget of HeatExchange.jl and not for the controller.
+So fat is part of the answer, not all of it. The lean person reaches 36 °C with the core at its 38 °C limit and
+skin about 2 °C warmer than HomoTherm's, and still evaporates less: about 0.18 kg/h with all skin wet, against
+HomoTherm's 0.22 to 0.28 kg/h from cooler skin between 40 and 46 °C. The rest of the difference is in how much
+water a wet skin under clothing can evaporate, a question for the heat budget, see
+[Evaporation and respiration](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/evaporation_respiration)
+and [Insulation](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/insulation) in the
+documentation of HeatExchange.jl, not for the controller.
 
-What a human-specific controller would add to this one is then clear: vasodilation that thins the fat layer of
-the part, the skin-temperature trigger for sweating, and a core temperature for each part.
+A human-specific controller would add: vasodilation that thins the part's fat, the skin-temperature trigger for
+sweating, and a core temperature per part.

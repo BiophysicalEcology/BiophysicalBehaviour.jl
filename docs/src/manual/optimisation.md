@@ -1,17 +1,16 @@
 # Thermoregulation by optimisation
 
-[Rules in sequence](endotherm_rules.md) say what an animal does and in what order. The alternative is to say
-what the animal is trying to achieve, and what each response costs it, and to let a solver find the responses.
-[`IPOPTControl`](@ref) does this. It poses thermoregulation as a constrained optimisation, a nonlinear program,
-and solves it with the interior-point solver IPOPT, using derivatives of the heat budget obtained by automatic
-differentiation.
+[Rules in sequence](endotherm_rules.md) say what an animal does and in what order. The alternative is to say what
+the animal is trying to achieve and what each response costs, and let a solver find the responses.
+[`IPOPTControl`](@ref) poses thermoregulation as a constrained optimisation, a nonlinear program, and solves it
+with the interior-point solver IPOPT, using derivatives of the heat budget from automatic differentiation.
 
-This page describes the problem that is solved and how to use it. [How the optimisation is built](nlp.md)
-describes the machinery.
+This page describes the problem and how to use it. [How the optimisation is built](nlp.md) describes the
+machinery.
 
 !!! warning "In development"
     The optimiser is the newest part of the package. It agrees with the rule-based controller where the two can
-    be compared, but it can return a poor local optimum under high heat loads, and it does not yet report whether
+    be compared, but can return a poor local optimum under high heat loads, and does not yet report whether
     the solver converged. See [What to check](#What-to-check) and [Present limits](#Present-limits).
 
 ```@setup optimisation
@@ -21,7 +20,7 @@ using CairoMakie
 
 ## The problem
 
-In the terms of [Behaviour as control](control.md), the variables of the problem are of two kinds.
+In the terms of [Behaviour as control](control.md#Kinds-of-controller), the variables are of two kinds.
 
 **Control variables** are what the animal sets:
 
@@ -40,19 +39,19 @@ In the terms of [Behaviour as control](control.md), the variables of the problem
 | skin temperature | each part | a little below air temperature to a little above the maximum core temperature |
 | surface temperature of the insulation | each part | the same |
 
-The bounds are the limits of [`ThermoregulationLimits`](@ref), the same that the rule-based controller uses.
-An organism of ``N`` parts has ``3 + 4N`` variables. A single `Body` is the case ``N = 1``.
+The bounds are the limits of [`ThermoregulationLimits`](@ref), the same the rule-based controller uses. An
+organism of ``N`` parts has ``3 + 4N`` variables. A single `Body` is the case ``N = 1``.
 
 ### Constraints: the physics
 
-The heat budget must hold. For each part, two equations from `part_surface_residuals` of HeatExchange.jl must
-be zero:
+The heat budget must hold. For each part, two equations from `part_surface_residuals` of HeatExchange.jl are
+zero:
 
-1. the heat arriving at the surface from inside equals the heat leaving it to the environment;
+1. the heat arriving at the surface from inside equals the heat leaving it;
 2. the skin temperature is consistent with the heat conducted to it from the core.
 
-For the whole organism, the heat produced, less the heat lost in breathing, equals the sum over the parts of the
-heat that each passes to its surface:
+For the whole organism, heat produced less heat lost in breathing equals the sum over parts of the heat each
+passes to its surface:
 
 ```math
 Q_{\text{gen}} - Q_{\text{resp}} = \sum_{\text{parts}} Q_{\text{gen,net}}
@@ -64,13 +63,13 @@ and heat production cannot fall below the minimum, scaled for core temperature:
 Q_{\text{gen}} \ge Q_{\text{min}}\, Q_{10}^{(T_c - T_{c,\text{ref}})/10}
 ```
 
-That is ``2N + 2`` constraints. They are the same equations that `solve_metabolic_rate` drives to zero by
-iteration. Here the solver satisfies them and chooses the control variables together.
+That is ``2N + 2`` constraints, the equations that `solve_metabolic_rate` drives to zero by iteration. Here the
+solver satisfies them while choosing the control variables.
 
 ### Objective: the costs
 
 What is minimised is a weighted sum of squared departures from where the animal would rather be, each divided
-by the range over which it can vary so that the terms are comparable:
+by its range so the terms are comparable:
 
 ```math
 J = w_c \left(\frac{T_c - T_{c,\text{ref}}}{\Delta T_c}\right)^2
@@ -90,15 +89,15 @@ J = w_c \left(\frac{T_c - T_{c,\text{ref}}}{\Delta T_c}\right)^2
 | ``w_k`` | `flesh_conductivity_weight` | 0 | mean flesh conductivity above its resting value |
 | ``w_g`` | `gradient_weight` | 0 | a core-to-skin temperature difference away from `target_core_skin_gradient` |
 
-Each term is a [gradient of information](gradients.md): a difference between a state and a reference. The
-weights say how much the animal minds each. They take the place of the order of the rules. A response with a
-low weight is used freely, and one with a high weight is used last.
+Each term is a [gradient of information](gradients.md#A-gradient-of-information), a difference between a state
+and a reference, and the sum has the form of a free energy, see
+[Gradients and control](gradients.md#Free-energy). The weights say how much the animal minds each, and take the
+place of the order of the rules: a response with a low weight is used freely, one with a high weight last.
 
 ## Using it
 
 The controller is a field of the limits. Here is the 65 kg animal of
-[Endotherm thermoregulation by rules](endotherm_rules.md) with either controller, and with any of the weights
-as keywords:
+[Endotherm thermoregulation by rules](endotherm_rules.md) with either controller, and any weights as keywords:
 
 ```@example optimisation
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -134,8 +133,8 @@ out = thermoregulate(optimiser, warm, init)
 keys(out)
 ```
 
-The output is that of the multi-part solver, see [Bodies of many parts](multipart.md): whole-organism values,
-and under `parts` a NamedTuple for each part. A single `Body` has the one part `body`.
+The output is that of the multi-part solver, see [Bodies of many parts](multipart.md#Solving): whole-organism
+values, and under `parts` a NamedTuple for each part. A single `Body` has the one part `body`.
 
 ```@example optimisation
 part = out.parts.body
@@ -151,15 +150,15 @@ markdown_table(["", "At 30 °C"], [ # hide
 ]) # hide
 ```
 
-Where the rules would have raised the core temperature to its limit before panting, the optimiser has left
-the core almost where it was and used panting and sweating together, each a little. That is what equal weights
-on the three say.
+Where the rules would have raised the core temperature to its limit before panting, the optimiser has left the
+core almost where it was and used panting and sweating together, each a little. That is what equal weights on
+the three say.
 
 ## A sweep, with a warm start
 
-Over a sequence of conditions that change smoothly, each solution is a good first guess for the next. An
-[`IPOPTSolverCache`](@ref) keeps the solution and the multipliers of the previous solve and starts the next
-from them. It is passed to the method of `thermoregulate` that names the strategy and controller:
+Over conditions that change smoothly, each solution is a good first guess for the next. An
+[`IPOPTSolverCache`](@ref) keeps the solution and multipliers of the previous solve and starts the next from
+them. It is passed to the method of `thermoregulate` that names the strategy and controller:
 
 ```@example optimisation
 function sweep(animal, air_temperatures)
@@ -205,10 +204,9 @@ end # hide
 fig # hide
 ```
 
-In the cold the two agree, because there is nothing to decide: the heat budget fixes the metabolic rate. Both
-vasodilate over the same range of air temperature, since that is the only response without a cost in the
-default weights. Above it they part. The rules spend core temperature first, then panting. The optimiser spreads
-the load.
+In the cold the two agree: there is nothing to decide, and the heat budget fixes the metabolic rate. Both
+vasodilate over the same range of air temperature, the only response without a cost in the default weights.
+Above it they part. The rules spend core temperature first, then panting. The optimiser spreads the load.
 
 ## What the weights do
 
@@ -235,14 +233,15 @@ markdown_table(["Weights", "Core temperature", "Panting", "Skin wetness", "Heat 
 | an animal that pants before it sweats: birds, dogs, rabbits | `skin_wetness_weight > panting_weight` |
 | an animal that sweats first: humans, horses | `skin_wetness_weight < panting_weight` |
 | an animal that lets its core temperature drift, saving water: camels, many desert birds | a low `core_temperature_weight` |
-| vasodilation that is held in reserve | a non-zero `flesh_conductivity_weight` |
+| vasodilation held in reserve | a non-zero `flesh_conductivity_weight` |
 | reluctance to raise metabolic rate | a higher `metabolic_heat_weight` |
+
+See [A bird: rules and optimisation](../tutorials/budgerigar.md) for weights chosen for one species.
 
 ## What to check
 
-The result should be tested before it is used. `thermoregulate` returns the point at which IPOPT stopped,
-whether or not it converged. Each part carries the residuals of its heat budget at that point, and at a
-solution they are zero:
+Test the result before using it. `thermoregulate` returns the point at which IPOPT stopped, converged or not.
+Each part carries the residuals of its heat budget at that point, and at a solution they are zero:
 
 ```@example optimisation
 function is_feasible(result; power = 0.01u"W", temperature = 0.01u"K")
@@ -255,9 +254,9 @@ end
 all(is_feasible, optimised)
 ```
 
-A feasible point need not be the best one. The problem is not convex, and IPOPT finds a local optimum. Two
-signs of a poor one are a metabolic rate far above the minimum in the heat, and a flesh conductivity back at
-its resting value when the animal is hot. Starting from a previous solution, as the cache does, and raising
+A feasible point need not be the best. The problem is not convex, and IPOPT finds a local optimum. Two signs of
+a poor one: a metabolic rate far above the minimum in the heat, and a flesh conductivity back at its resting
+value when the animal is hot. Starting from a previous solution, as the cache does, and raising
 `metabolic_heat_weight`, both help.
 
 ## Rules or optimisation
@@ -267,20 +266,20 @@ its resting value when the animal is hot. Starting from a previous solution, as 
 | The animal is described by | an order of responses and a mode | a cost for each response |
 | Responses are used | one at a time, each to its limit | together |
 | Fur depth and posture | changed | not changed |
-| Result | always one, and the same from any start | a local optimum, which can depend on the start |
+| Result | always one, the same from any start | a local optimum, which can depend on the start |
 | Tuning | step sizes, the mode | weights |
 | Corresponds to | NicheMapR's `endoR` | nothing in NicheMapR |
-| Use when | the order is known, or NicheMapR is to be reproduced | the order is what is in question, or responses trade off |
+| Use when | the order is known, or NicheMapR is to be reproduced | the order is in question, or responses trade off |
 
 ## Present limits
 
 - **Fur and posture are fixed.** Piloerection and uncurling rebuild the geometry of the body, and are not yet
-  variables of the problem. Posture is to become a change of pose of a body of many parts, see
-  [Bodies of many parts](multipart.md#Thermoregulating). In the cold the optimiser therefore leaves the coat at its resting depth where the
-  rules raise it, see [A bird: rules and optimisation](../tutorials/budgerigar.md).
-- **Local optima under high heat loads.** Because the heat lost in breathing rises with metabolic rate, the
-  problem has a second family of solutions in which the animal raises its metabolic rate several-fold and pants
-  the heat away. For the animal on this page IPOPT finds them above about 40 °C.
+  variables. Posture is to become a change of pose of a body of many parts, see
+  [Bodies of many parts](multipart.md#Thermoregulating). In the cold the optimiser therefore leaves the coat
+  at its resting depth where the rules raise it, see [A bird: rules and optimisation](../tutorials/budgerigar.md).
+- **Local optima under high heat loads.** Because the heat lost in breathing rises with metabolic rate, there is
+  a second family of solutions in which the animal raises its metabolic rate several-fold and pants the heat
+  away. For the animal on this page IPOPT finds them above about 40 °C.
 - **No report of convergence.** When no feasible point exists, as in air hotter than the animal can regulate
   against, the returned point does not satisfy the heat budget. Use a check like `is_feasible`.
 - **One core.** All parts share one regulated core temperature.

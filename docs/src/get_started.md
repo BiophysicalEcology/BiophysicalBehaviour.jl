@@ -73,8 +73,8 @@ markdown_table(["Response", "At rest", "At 35 °C"], [ # hide
 ```
 
 It has stretched out (the axis ratio is the length of the body relative to its width), sent blood to its skin,
-let its core temperature rise by 2 °C and is breathing at several times the resting rate. Each was tried in that order, one step at a time, until the heat budget
-balanced. See [Endotherm thermoregulation by rules](manual/endotherm_rules.md), and
+let its core temperature rise by 2 °C and is breathing at several times the resting rate. Each was tried in
+that order, one step at a time, until the heat budget balanced. See [Endotherm thermoregulation by rules](manual/endotherm_rules.md), and
 [A mammal across air temperatures](tutorials/mammal.md) for the whole curve.
 
 ## An ectotherm
@@ -173,6 +173,9 @@ panel is the state of the animal: blue at rest, orange basking, red active. See
 
 ## Where next
 
-- [Behaviour as control](manual/control.md) for the idea behind the package.
+- [Behaviour as control](manual/control.md) for the idea behind the package, and
+  [Gradients](manual/gradients.md) for what a response changes.
+- [Get started](https://biophysicalecology.github.io/HeatExchange.jl/dev/get_started) in the documentation of
+  HeatExchange.jl for the heat budget underneath.
 - [Thermoregulation by optimisation](manual/optimisation.md) for the alternative to rules.
 - [Bodies of many parts](manual/multipart.md) for animals with a trunk, a head and limbs.

@@ -1,13 +1,13 @@
 # States, thresholds and traits
 
 The documentation of HeatExchange.jl sets out why the things it computes
-[are not traits](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/units_traits). Body
-temperature is a *state variable*. Metabolic rate and water loss are *processes*. Each belongs to an organism in
-a place at a time, and changes when the place does. What can be a trait is a particular value of a state or a
-process at which something happens to the organism, or at which it does something: a *threshold*.
+[are not traits](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/units_traits#State-variables-are-not-traits).
+Body temperature is a *state variable*. Metabolic rate and water loss are *processes*. Each belongs to an
+organism in a place at a time. What can be a trait is a particular value of a state or process at which
+something happens to the organism, or at which it acts: a *threshold*.
 
-This package is where thresholds live. A heat budget will return a body temperature of 60 °C without comment.
-The model of behaviour is what says that 60 °C will not do, and what the organism does instead.
+This package is where thresholds live. A heat budget returns a body temperature of 60 °C without comment. The
+model of behaviour says that 60 °C will not do, and what the organism does instead.
 
 ```@setup states_traits
 using Main.FigureHelpers
@@ -22,14 +22,13 @@ each.
 | Term | In HeatExchange.jl | Added here |
 |:--|:--|:--|
 | **state variable** | core, skin and surface temperatures | where the organism is: shade, height, depth; what it is doing: [`Resting`](@ref), [`Basking`](@ref), [`Active`](@ref) |
-| **process** | heat flows, metabolic rate, water loss | none: the processes are those of the heat budget, evaluated in the state that behaviour has chosen |
+| **process** | heat flows, metabolic rate, water loss | none: the processes of the heat budget, evaluated in the state behaviour has chosen |
 | **environmental variable** | air, ground and sky temperatures, wind, humidity, radiation | the set of environments within reach, see [`AvailableEnvironments`](@ref) |
-| **parameter** | the properties of the organism | the range over which each property can be changed, and the thresholds at which it is |
+| **parameter** | the properties of the organism | the range over which each can be changed, and the thresholds at which it is |
 
 ## Threshold traits of an ectotherm
 
-For an ectotherm the thresholds are body temperatures. They are fields of
-[`EctothermBehavioralLimits`](@ref):
+For an ectotherm the thresholds are body temperatures, fields of [`EctothermBehavioralLimits`](@ref):
 
 ```@example states_traits
 limits = example_ectotherm_behavioral_limits()
@@ -45,11 +44,10 @@ markdown_table(["Threshold", "Value", "What happens there"], [ # hide
 ```
 
 These are the `CT_min`, `T_RB_min`, `T_B_min`, `T_F_min`, `T_pref`, `T_F_max` and `CT_max` of the NicheMapR
-ectotherm model (Kearney and Porter 2020). They are properties of the animal. They can be measured in a
-thermal gradient or observed in the field, they do not depend on the weather, and they have dimensions of
-temperature.
+ectotherm model (Kearney and Porter 2020). They are properties of the animal: measured in a thermal gradient or
+observed in the field, independent of the weather, with dimensions of temperature.
 
-Together they partition the state variable into bands, and the band decides the consequence:
+Together they divide the state variable into bands, and the band decides the consequence:
 
 ```@example states_traits
 using CairoMakie # hide
@@ -70,12 +68,12 @@ ylims!(ax, 0, 1) # hide
 fig # hide
 ```
 
-An hour in which the animal can be active is an hour in which it can feed. The count of such hours is one of
-the main outputs of a mechanistic niche model, and it comes from two thresholds applied to a computed state.
+An hour in which the animal can be active is an hour in which it can feed. The count of such hours is a main
+output of a mechanistic niche model, and it comes from two thresholds applied to a computed state.
 
 ## Threshold traits of an endotherm
 
-For an endotherm the thresholds are mostly limits on processes and parameters. They are fields of
+For an endotherm the thresholds are mostly limits on processes and parameters, fields of
 [`ThermoregulationLimits`](@ref):
 
 ```@example states_traits
@@ -91,14 +89,14 @@ markdown_table(["Threshold", "Value", "Role"], [ # hide
 ]) # hide
 ```
 
-The minimum metabolic rate is a threshold on a process. A solution of the heat budget below it is the signal
-that the animal must act. The others are the ends of the ranges over which a parameter trait can be changed.
+The minimum metabolic rate is a threshold on a process: a solution of the heat budget below it is the signal
+that the animal must act. The others are the ends of the ranges over which a parameter can be changed.
 
 ## Plastic parameters
 
-A parameter trait in HeatExchange.jl has one value. Many of them are not constant in a living animal: fur is
-raised and flattened, skin is wetted, blood is sent to the skin. A [`SteppedParameter`](@ref) describes a
-parameter that the organism can change:
+A parameter in HeatExchange.jl has one value. Many are not constant in a living animal: fur is raised and
+flattened, skin is wetted, blood is sent to the skin. A [`SteppedParameter`](@ref) describes a parameter the
+organism can change:
 
 ```@example states_traits
 limits.flesh_conductivity
@@ -106,34 +104,31 @@ limits.flesh_conductivity
 
 | Field | Meaning |
 |:--|:--|
-| `current` | the value now. A state of the organism, changed by the controller |
+| `current` | the value now. A state, changed by the controller |
 | `reference` | the value in the resting or heat-conserving condition |
 | `max` | the limit of the response |
 | `step` | the increment by which a rule-based controller changes it |
 
-Of these, `reference` and `max` are traits. They bound the plasticity of the parameter and can be measured:
-the flesh conductivity of a vasoconstricted and a vasodilated limb, the depth of a flattened and a raised coat.
-`current` is a state. `step` belongs to the numerical method, not to the animal, although it should not be finer
-than the animal's own control.
+`reference` and `max` are traits. They bound the plasticity of the parameter and can be measured: the flesh
+conductivity of a vasoconstricted and a vasodilated limb, the depth of a flattened and a raised coat. `current`
+is a state. `step` belongs to the numerical method, not the animal, though it should not be finer than the
+animal's own control.
 
-So a parameter of the heat budget becomes, here, a state variable with trait-valued bounds. That is the sense
-in which physiological and behavioural thermoregulation are the same thing: both move a parameter of the
-physics between limits that are properties of the organism.
+So a parameter of the heat budget becomes, here, a state with trait-valued bounds. In that sense physiological
+and behavioural thermoregulation are the same thing: both move a parameter of the physics between limits that
+are properties of the organism.
 
 ## What is not a threshold trait
 
-The lower and upper critical temperatures of an endotherm, and its thermoneutral zone, are *air* temperatures.
-They belong to the environment, not to the animal, and they hold only for the wind, humidity, radiation and
-posture of the measurement (Kearney et al. 2021). Here they are outputs. The tutorial
-[A mammal across air temperatures](../tutorials/mammal.md) computes them from the traits above and shows where
-each response begins.
-
-The critical thermal limits of an ectotherm, by contrast, are *body* temperatures, and are traits. The
-difference is whether the value is a property of the state of the organism or of the conditions that produce
-it.
-
-In the same way the hours of activity, the depth of a burrow used, and the shade selected are not traits,
-however often they are reported as such. They are states, and this package computes them.
+- **Critical air temperatures.** The lower and upper critical temperatures of an endotherm, and its
+  thermoneutral zone, are *air* temperatures. They belong to the environment, and hold only for the wind,
+  humidity, radiation and posture of the measurement (Kearney et al. 2021). Here they are outputs, see
+  [A mammal across air temperatures](../tutorials/mammal.md#The-critical-temperatures-are-outputs).
+- **Not to be confused with critical body temperatures.** The critical thermal limits of an ectotherm are
+  *body* temperatures, and are traits. The difference is whether the value is a property of the state of the
+  organism or of the conditions that produce it.
+- **Patterns of behaviour.** Hours of activity, the depth of a burrow used, and the shade selected are states,
+  however often they are reported as traits. This package computes them.
 
 ## The four classes of functional trait
 
@@ -146,5 +141,6 @@ In the classification of Kearney et al. (2021):
 | **model** | the thermal strategy, [`Ectotherm`](@ref) or [`Endotherm`](@ref); the activity period; the capability flags `can_climb`, `can_retreat_underground`, `can_seek_shade`, `can_pant` and the rest; the [`AbstractThermoregulationMode`](@ref); which part of the body holds the lungs |
 | **estimation** | preferred temperatures from a thermal gradient, field body temperatures of active animals, evaporative water loss against air temperature in a metabolic chamber: observations from which thresholds and limits are estimated, given the conditions of measurement |
 
-The model traits are types and flags, on which the methods are chosen. The parameter and threshold traits are
-the data of a limits struct. The states are what [`thermoregulate`](@ref) returns.
+The model traits are types and flags, on which methods are chosen. The parameter and threshold traits are the
+data of a limits struct, see [Parameters](parameters.md). The states are what [`thermoregulate`](@ref)
+returns.

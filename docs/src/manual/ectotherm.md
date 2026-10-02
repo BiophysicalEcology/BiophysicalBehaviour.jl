@@ -1,9 +1,8 @@
 # Ectotherm thermoregulation
 
-The body temperature of an ectotherm is whatever balances its heat budget where it is. It regulates that
-temperature by changing where it is, how it is oriented and what colour it is. This page describes the
-sequence of decisions by which it does so, which is that of the NicheMapR ectotherm model (Kearney and Porter
-2020), going back to Porter et al. (1973).
+The body temperature of an ectotherm is whatever balances its heat budget where it is. It regulates by changing
+where it is, how it is oriented and what colour it is. This page describes the sequence of decisions, that of
+the NicheMapR ectotherm model (Kearney and Porter 2020), going back to Porter et al. (1973).
 
 ```@setup ectotherm
 using Main.FigureHelpers
@@ -14,16 +13,17 @@ using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
 
 ## The aim
 
-For each hour, find a position and posture at which the steady-state body temperature ``T_b`` lies between
-the minimum temperature for activity and the target temperature,
+For each hour, find a position and posture at which the steady-state body temperature ``T_b`` lies between the
+minimum temperature for activity and the target temperature,
 
 ```math
 T_{F,\text{min}} \le T_b \le T_{\text{pref}}
 ```
 
-or, failing that, the best that can be had. The state is ``T_b``, from
-[`solve_body_temperature`](@ref). The reference is the pair of threshold traits. The error is which side of
-the range ``T_b`` falls on, and the controller moves one actuator one step, in a fixed order, and solves again.
+or, failing that, the best that can be had. The state is ``T_b``, from [`solve_body_temperature`](@ref). The
+reference is the pair of threshold traits. The error is which side of the range ``T_b`` falls on, and the
+controller moves one actuator one step, in a fixed order, and solves again, see
+[Behaviour as control](control.md#Kinds-of-controller).
 
 One call does this for one hour:
 
@@ -43,30 +43,21 @@ thermoregulate(organism, environments, limits, site, step, previous_depth; activ
 
 ## The sequence
 
-### 1. Start from the reference position
+**1. Start from the reference position.** Each hour begins on the surface in the least shade, at the lowest
+height, darkest colour and a neutral posture, with the target temperature at its starting value
+([`reset_position`](@ref)). The animal carries no memory of the previous hour except its depth.
 
-Each hour begins on the surface in the least shade, at the lowest height, at the darkest colour, in a neutral
-posture, with the target temperature at its starting value ([`reset_position`](@ref)). The animal carries no
-memory of the previous hour except its depth.
+**2. Is this the time of day for activity?** The [`ActivityPeriod`](@ref) is tested against the zenith angle
+and sunlight ([`is_active`](@ref)). If not, and the animal can retreat underground, [`select_depth`](@ref)
+finds it a depth, and the hour is done.
 
-### 2. Is this the time of day for activity?
-
-The [`ActivityPeriod`](@ref) is tested against the zenith angle and the sunlight ([`is_active`](@ref)). If
-this is not an hour for activity and the animal can retreat underground, [`select_depth`](@ref) finds it a
-depth, and the hour is done.
-
-### 3. Can it emerge?
-
-If the animal spent the previous hour underground, it comes out only if the soil where it is has reached
+**3. Can it emerge?** After an hour underground the animal comes out only if the soil where it is has reached
 `emerge_temperature_min`. With a non-zero `emerge_signal` it also waits for the soil to be warming, or
 cooling, at that rate, as an animal deep in a burrow has no other cue to the time of day. Otherwise it stays
 down, at a depth chosen again for this hour.
 
-### 4. Regulate
-
-On the surface, the body temperature is solved and compared with the thresholds. One response is made, the
-body temperature is solved again, and the loop repeats until the body temperature is in range or nothing is
-left to try.
+**4. Regulate.** On the surface, body temperature is solved and compared with the thresholds. One response is
+made, body temperature is solved again, and the loop repeats until it is in range or nothing is left to try.
 
 ```@example ectotherm
 ladder_diagram(["lighten", "seek shade", "raise target", "climb", "pant", "retreat\nunderground"]; # hide
@@ -78,7 +69,7 @@ ladder_diagram(["darken", "face the sun", "press to\nground", "leave shade", "re
     title = "Too cold: body temperature below the basking minimum", colour = RGBf(0.78, 0.87, 0.95)) # hide
 ```
 
-**Too hot**, ``T_b > T_{\text{pref}}``. The first of these that is allowed and not yet exhausted:
+**Too hot**, ``T_b > T_{\text{pref}}``. The first of these that is allowed and not exhausted:
 
 | | Response | Function | Until |
 |:--|:--|:--|:--|
@@ -102,20 +93,16 @@ ladder_diagram(["darken", "face the sun", "press to\nground", "leave shade", "re
 | 7 | go underground | [`select_depth`](@ref) | the loop ends |
 
 **Basking**, ``T_{B,\text{min}} \le T_b < T_{F,\text{min}}``: turn broadside to the sun if not already, and
-otherwise accept the state.
-
-A lizard that has been basking broadside and has warmed into the activity range returns to a neutral posture,
-and its body temperature is solved once more.
+otherwise accept the state. A lizard that has basked broadside into the activity range returns to a neutral
+posture, and its body temperature is solved once more.
 
 Each response is switched on or off by a capability flag: `can_change_absorptivity`, `can_seek_shade`,
-`can_climb`, `can_pant`, `can_solar_orient`, `can_press_to_ground`, `can_retreat_underground`. These are
-model traits, see [States, thresholds and traits](states_traits.md).
+`can_climb`, `can_pant`, `can_solar_orient`, `can_press_to_ground`, `can_retreat_underground`. These are model
+traits, see [States, thresholds and traits](states_traits.md#The-four-classes-of-functional-trait).
 
-### 5. Classify
-
-The final body temperature decides the [`OrganismState`](@ref): [`Active`](@ref), [`Basking`](@ref) or
-[`Resting`](@ref). Underground, by default, body temperature is taken to be that of the soil, as in NicheMapR.
-Set `solve_underground = true` to solve the heat budget there too.
+**5. Classify.** The final body temperature decides the [`OrganismState`](@ref): [`Active`](@ref),
+[`Basking`](@ref) or [`Resting`](@ref). Underground, by default, body temperature is that of the soil, as in
+NicheMapR. Set `solve_underground = true` to solve the heat budget there too.
 
 ## What the order means
 
@@ -124,16 +111,15 @@ accepts a body temperature above the preferred one before giving up the surface.
 late, and the burrow last, because an animal underground is not feeding.
 
 The third step deserves a note. The target temperature starts at the preferred temperature and rises in steps
-to the maximum for activity. It is the reference of the controller that moves, not an actuator. The effect is
-that the animal uses all the shade it has to stay at its preferred temperature, and tolerates more only when
-the shade runs out.
+to the maximum for activity. It is the reference of the controller that moves, not an actuator. The animal uses
+all the shade it has to stay at its preferred temperature, and tolerates more only when the shade runs out.
 
 ## Choosing a depth
 
 [`select_depth`](@ref) returns the shallowest node, from `depth_min_underground` down, at which the soil is
 warmer than the critical minimum and cooler than a point half way between `active_temperature_max` and the
-critical maximum. If no node qualifies it returns the deepest. The animal is as near the surface as is safe,
-where it will be first to detect that conditions above have changed.
+critical maximum. If none qualifies it returns the deepest. The animal is as near the surface as is safe, where
+it will be first to detect that conditions above have changed.
 
 ## An hour at a time
 
@@ -170,9 +156,8 @@ The output of each hour is a NamedTuple:
 
 ## What each behaviour is worth
 
-Because each response is a flag, its value to the animal can be measured by taking it away. Here is the number
-of hours of activity on the middle day of each month, with the full set of behaviours, without shade, and
-without a burrow:
+Because each response is a flag, its value can be measured by taking it away. Hours of activity on the middle
+day of each month, with all behaviours, without shade, without a burrow, and without posture:
 
 ```@example ectotherm
 year = 1:288
@@ -200,12 +185,14 @@ markdown_table(["Behaviours", "Highest body temperature in July"], # hide
     [(label, celsius(peak(animal))) for (label, animal) in variants]) # hide
 ```
 
+[A lizard's day](../tutorials/lizard.md) does the same for a desert iguana through a year.
+
 ## An endotherm that chooses where to be
 
-An endotherm has the same choices of position, and makes them for a different reason: every degree it avoids
-by moving is water it need not evaporate. Given a set of available environments and an
-`EctothermBehavioralLimits`, `thermoregulate` for an [`Endotherm`](@ref) first runs a loop like the one above
-on its *operative temperature*, the body temperature it would have as a passive object, then thermoregulates
-physiologically at the position chosen, as in [Endotherm thermoregulation by rules](endotherm_rules.md). In
-the heat it tries a paler colour, a posture parallel to the sun ([`orient_parallel`](@ref)), shade, height and
-the burrow in turn, before any panting or sweating.
+An endotherm has the same choices of position, for a different reason: every degree it avoids by moving is
+water it need not evaporate. Given available environments and an `EctothermBehavioralLimits`,
+`thermoregulate` for an [`Endotherm`](@ref) first runs a loop like the one above on its *operative
+temperature*, the body temperature it would have as a passive object, then thermoregulates physiologically at
+the position chosen, as in [Endotherm thermoregulation by rules](endotherm_rules.md). In the heat it tries a
+paler colour, a posture parallel to the sun ([`orient_parallel`](@ref)), shade, height and the burrow in turn,
+before any panting or sweating. See [A desert mammal through the year](../tutorials/endotherm_year.md).

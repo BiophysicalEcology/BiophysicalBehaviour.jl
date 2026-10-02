@@ -1,7 +1,7 @@
 # Bodies of many parts
 
-HeatExchange.jl can solve the heat budget of a body made of several parts: each part with its own surface, and
-the parts joined through a shared or a conducting core. Its documentation
+HeatExchange.jl can solve the heat budget of a body of several parts: each with its own surface, joined through
+a shared or a conducting core. Its documentation
 ([Bodies of many parts](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/multipart)) builds the
 inputs of that solve by hand. This package builds them from an organism, and thermoregulates the result.
 
@@ -16,8 +16,9 @@ import BiophysicalGeometry: Sphere, Top, Bottom
 
 The body is a `CompositeBody` of
 [BiophysicalGeometry.jl](https://github.com/BiophysicalEcology/BiophysicalGeometry.jl): named parts, each a
-`Body`, and the joins between them. Its documentation has a builder for bodies of this kind. Here is a trunk
-with a head, both furred cylinders:
+`Body`, and the joins between them. Its documentation has an
+[interactive builder](https://biophysicalecology.github.io/BiophysicalGeometry.jl/dev/builder) for bodies of
+this kind. Here is a trunk with a head, both furred cylinders:
 
 ```@example multipart
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -34,7 +35,7 @@ animal_body = CompositeBody(;
 composite_views(animal_body; views = (:oblique, :side), titles = ["", "side"], size = (560, 260)) # hide
 ```
 
-The physiology is then a NamedTuple with the same names, one `HeatExchangeTraits` for each part, and
+The physiology is a NamedTuple with the same names, one `HeatExchangeTraits` for each part, and
 [`OrganismTraits`](@ref) is told which part holds the lungs:
 
 ```@example multipart
@@ -50,8 +51,8 @@ animal = Organism(animal_body, traits)
 part_names(animal_body), lung_part(animal)
 ```
 
-A single lumped `HeatExchangeTraits` given to a `CompositeBody` is applied to every part. A plain `Body` is
-treated throughout as a composite of one part, named `:body`, so that there is one code path.
+A single `HeatExchangeTraits` given to a `CompositeBody` is applied to every part. A plain `Body` is treated
+throughout as a composite of one part, named `:body`, so there is one code path.
 
 ## Whole-organism and per-part quantities
 
@@ -71,7 +72,7 @@ map(is_lung_part, physiology(animal))
 
 ## Selecting parts
 
-A [`PartSelector`](@ref) names the parts that something applies to:
+A [`PartSelector`](@ref) names the parts something applies to:
 
 | Selector | Selects |
 |:--|:--|
@@ -114,14 +115,14 @@ organism_compartment_graph(animal)
 !!! note "One core for now"
     Thermoregulation is at present supported for a single shared core. Compartments with their own core
     temperatures can be declared and are solved by `solve_multipart_metabolic_rate`, but that path is still in
-    development and is not yet used by the controllers.
+    development and not yet used by the controllers.
 
 ## Solving
 
 [`solve_multipart_metabolic_rate`](@ref) is the multi-part counterpart of `solve_metabolic_rate`. From the
-organism and the environment it builds the setup of each part ([`part_surface_setups`](@ref)), with the area
-hidden under each join removed from the part's surface, and passes them to `solve_coupled_metabolic_rate` of
-HeatExchange.jl, which solves each surface and closes the respiration balance once, in the lungs:
+organism and environment it builds the setup of each part ([`part_surface_setups`](@ref)), with the area hidden
+under each join removed, and passes them to `solve_coupled_metabolic_rate` of HeatExchange.jl, which solves
+each surface and closes the respiration balance once, in the lungs:
 
 ```@example multipart
 environment = (;
@@ -148,9 +149,9 @@ markdown_table(["Part", "Skin", "Fur surface", "Heat passed to the surface", "Co
 | `skin_temperature`, `insulation_temperature` | means over the parts |
 | `lung_temperature`, `respiration_out` | the respiration balance |
 
-The `success` of every part should be checked. The surface solve of a large, well-insulated part can fail to
-converge from a poor first guess, in particular a first guess of the fur surface at air temperature in the
-cold. A guess between skin and air temperature, as above, is more robust.
+Check the `success` of every part. The surface solve of a large, well-insulated part can fail from a poor first
+guess, in particular a fur surface at air temperature in the cold. A guess between skin and air temperature, as
+above, is more robust.
 
 ### Geometry that does not change
 
@@ -160,9 +161,9 @@ after a response that changes geometry. The rule-based controller makes one befo
 
 ### Parts that see each other
 
-A part of a body does not see a full hemisphere of sky and ground: its neighbours are in the way.
-[`precompute_view_partition`](@ref) computes, for the present pose and position of the sun, how much of each
-part's view is sky, ground and each other part, and the silhouette of each part that the sun reaches:
+A part does not see a full hemisphere of sky and ground: its neighbours are in the way.
+[`precompute_view_partition`](@ref) computes, for the present pose and sun, how much of each part's view is sky,
+ground and each other part, and the silhouette of each part the sun reaches:
 
 ```@example multipart
 view = precompute_view_partition(animal, environment.environment_vars)
@@ -171,12 +172,14 @@ markdown_table(["Part", "Sky", "Ground", "Other parts", "Sunlit silhouette"], [ 
 ```
 
 Passed as the `view` keyword of `solve_multipart_metabolic_rate`, it replaces the view factors of each part's
-traits, and adds an exchange of longwave radiation between the parts.
+traits and adds longwave exchange between the parts, see
+[Parts that see each other](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/multipart#Parts-that-see-each-other)
+in HeatExchange.jl.
 
 ## Thermoregulating
 
-[`thermoregulate`](@ref) takes the organism as it would any other. With the rule-based controller, the
-responses are applied by scope:
+[`thermoregulate`](@ref) takes the organism as it would any other. With the rule-based controller, responses are
+applied by scope:
 
 | Response | Applied to |
 |:--|:--|
@@ -188,10 +191,10 @@ responses are applied by scope:
 Raising and flattening the coat and changing posture are not yet applied to bodies of many parts.
 
 !!! note "Posture as pose"
-    For a body of many parts, posture will be a change of *pose*: raising or lowering wings or ears, bringing the
-    limbs in to the body or holding them away from it. That changes which surfaces are hidden under joins and what
-    each part sees of the sky, the ground and its neighbours, through the geometry of BiophysicalGeometry.jl. It is to
-    replace the change of axis ratio by which a single body curls and uncurls.
+    For a body of many parts, posture will be a change of *pose*: raising or lowering wings or ears, bringing
+    the limbs in to the body or holding them away. That changes which surfaces are hidden under joins and what
+    each part sees of the sky, the ground and its neighbours, through the geometry of BiophysicalGeometry.jl.
+    It is to replace the change of axis ratio by which a single body curls and uncurls.
 
 ```@example multipart
 function respond(animal, air_temperature)
@@ -217,8 +220,8 @@ fig # hide
 ```
 
 The trunk has the cooler skin in the cold. It is the thicker part, and with a shared core its skin is further
-from the warm centre. See
-[A dog of many parts](../tutorials/dog.md) for a body with legs.
+from the warm centre. See [A dog of many parts](../tutorials/dog.md) for a body with legs, and
+[A human that thermoregulates](../tutorials/human.md) for a person.
 
 With [`IPOPTControl`](@ref), flesh conductivity and skin wetness are variables of each part, so the optimiser
 can vasodilate or wet one part and not another, see [Thermoregulation by optimisation](optimisation.md).

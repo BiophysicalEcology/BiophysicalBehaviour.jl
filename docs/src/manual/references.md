@@ -5,6 +5,10 @@ Princeton University Press.
 
 Campbell, G. S. and Norman, J. M. (1998). *An Introduction to Environmental Biophysics*, 2nd edn. Springer, New York.
 
+Cannon, W. B. (1932). *The Wisdom of the Body*. W. W. Norton, New York.
+
+Friston, K. (2010). The free-energy principle: a unified brain theory? *Nature Reviews Neuroscience* 11: 127–138.
+
 Gates, D. M. (1980). *Biophysical Ecology*. Springer, New York.
 
 Kearney, M. R. and Porter, W. P. (2017). NicheMapR – an R package for biophysical modelling: the microclimate model.
@@ -38,6 +42,8 @@ ecology: thermal and behavioral modeling of desert ectotherms and their microenv
 
 Porter, W. P. and Kearney, M. (2009). Size, shape, and the thermal niche of endotherms. *Proceedings of the
 National Academy of Sciences* 106: 19666–19672.
+
+Sterling, P. (2012). Allostasis: a model of predictive regulation. *Physiology & Behavior* 106: 5–15.
 
 Wächter, A. and Biegler, L. T. (2006). On the implementation of an interior-point filter line-search algorithm for
 large-scale nonlinear programming. *Mathematical Programming* 106: 25–57.

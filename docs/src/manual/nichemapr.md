@@ -14,19 +14,19 @@ everything the animal does about it is in this package.
 | `metout`, `shadmet`, `soil`, `shadsoil` from `micro_*` | [`AvailableEnvironments`](@ref) over two results of Microclimate.jl, see [Activity and available environments](environments.md) |
 | `endoR` and `endoR_devel` with `THERMOREG = 1` | [`thermoregulate`](@ref) for an [`Endotherm`](@ref) with [`RuleBasedSequentialControl`](@ref), see [Endotherm thermoregulation by rules](endotherm_rules.md) |
 | `TREGMODE` 1, 2, 3 | [`CoreFirst`](@ref), [`CoreAndPantingFirst`](@ref), [`CorePantingSweatingFirst`](@ref) |
-| `HomoTherm`: `endoR` for each part inside a thermoregulatory loop | an organism on a `CompositeBody`, see [Bodies of many parts](multipart.md) |
+| `HomoTherm`: `endoR` for each part inside a thermoregulatory loop | an organism on a `CompositeBody`, see [Bodies of many parts](multipart.md) and [A human that thermoregulates](../tutorials/human.md) |
 | the `ACT` column of `environ`, 0, 1, 2 | [`Resting`](@ref), [`Basking`](@ref), [`Active`](@ref) |
 | nothing | [`IPOPTControl`](@ref), see [Thermoregulation by optimisation](optimisation.md) |
 | `onelump`, `onelump_var`, `twolump` | transient heat budgets, to be added to HeatExchange.jl: the residual of its heat balance tracked through time and turned into body temperature by the heat capacity |
 | `trans_behav`, and the behaviour of the transient option of `ectotherm` | behaviour during a transient: in development here, not in this documentation |
-| the Dynamic Energy Budget model within `ectotherm` | not here: a separate package |
+| the Dynamic Energy Budget model within `ectotherm` | not here: to come through [AnimalMapper.jl](https://github.com/BiophysicalEcology/AnimalMapper.jl), by way of [DEBtool_J.jl](https://github.com/add-my-pet/DEBtool_J.jl) |
 
 ## What is different
 
 **The loop over hours is the user's.** `ectotherm` takes a microclimate and returns tables for the whole
-period. Here `thermoregulate` does one hour, and the loop that calls it is a few lines, see
-[Get started](../get_started.md). The only things carried from hour to hour are the depth of the previous hour
-and whether the animal has yet been active today.
+period. Here `thermoregulate` does one hour, and the loop around it is a few lines, see
+[Get started](../get_started.md). Only the depth of the previous hour, and whether the animal has yet been
+active today, carry from hour to hour.
 
 **Capabilities are flags.** Whether an animal seeks shade, climbs, burrows, changes colour, pants or orients to
 the sun is each a field of [`EctothermBehavioralLimits`](@ref).
@@ -89,15 +89,17 @@ resting rate and all of the skin can be wet.
 
 ## How closely they agree
 
-The tests of the package compare both models with NicheMapR.
+The tests compare both models with NicheMapR.
 
-For the ectotherm, the microclimate tables of NicheMapR are read in as the available environments, and hourly
-body temperature, shade, depth and activity are compared for four combinations of behaviours.
+- **Ectotherm.** The microclimate tables of NicheMapR are read in as the available environments, and hourly body
+  temperature, shade, depth and activity are compared for four combinations of behaviours.
+- **Endotherm.** [A mammal across air temperatures](../tutorials/mammal.md#Comparison-with-NicheMapR) computes the
+  comparison on the page: each response begins at the same air temperature and reaches the same value as in
+  `endoR_devel` from 0 to 50 °C, and metabolic rate agrees to 1 % on average and 5 % at worst. The differences
+  are those of the heat budget, see the documentation of HeatExchange.jl, and of where each loop stops within
+  its tolerance.
+- **Human.** [A human that thermoregulates](../tutorials/human.md) compares a six-part person with `HomoTherm`,
+  closely to 34 °C, and says where and why the two loops part above it.
 
-For the endotherm, [A mammal across air temperatures](../tutorials/mammal.md) computes the comparison on the
-page: the thresholds at which each response begins, and the value it reaches, match `endoR_devel` across 0 to
-50 °C, and metabolic rate agrees within a few per cent. The differences are those of the heat budget, described
-in the documentation of HeatExchange.jl, and of where each loop stops within its tolerance.
-
-`example_respiration_pars` leaves the exhaled air at lung temperature. NicheMapR's default, `DELTAR = 0`, has it
-leave at air temperature, and the comparison uses `DELTAR = 100` to match.
+`example_respiration_pars` exhales air at lung temperature. NicheMapR's default, `DELTAR = 0`, exhales at air
+temperature, and the comparison uses `DELTAR = 100` to match.

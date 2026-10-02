@@ -1,8 +1,7 @@
 # Activity and available environments
 
 An organism that regulates its body temperature by moving needs a description of where it can go. This page
-describes that description, [`AvailableEnvironments`](@ref), and the rules that say when the organism is out in
-it at all.
+describes that description, [`AvailableEnvironments`](@ref), and the rules for when the organism is out at all.
 
 ```@setup environments
 using Main.FigureHelpers
@@ -14,10 +13,10 @@ using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
 ## Two microclimates
 
 At any hour the places within reach of a small animal differ in three ways: how much of the sky is hidden by
-vegetation, how far they are above the ground, and how far below it. A run of
+vegetation, how high above the ground they are, and how deep below it. A run of
 [Microclimate.jl](https://github.com/BiophysicalEcology/Microclimate.jl) gives the conditions at one level of
-shade, at a set of heights in the air and a set of depths in the soil, for every hour. Two runs, at the least
-and the most shade available, bound the rest:
+shade, at a set of heights and depths, for every hour. Two runs, at the least and the most shade available,
+bound the rest:
 
 ```julia
 environments = AvailableEnvironments(open_result, shaded_result, 0.0, 0.9, depths, heights)
@@ -28,9 +27,8 @@ environments = madison_environments() # the microclimates of Get started
 nothing # hide
 ```
 
-This is the arrangement of NicheMapR, in which the microclimate model is run for `minshade` and `maxshade` and
-the ectotherm model moves between its `metout`/`soil` and `shadmet`/`shadsoil` tables (Kearney and Porter
-2020).
+This is the arrangement of NicheMapR, which runs its microclimate model for `minshade` and `maxshade` and moves
+the ectotherm between its `metout`/`soil` and `shadmet`/`shadsoil` tables (Kearney and Porter 2020).
 
 | Field | Content |
 |:--|:--|
@@ -39,16 +37,16 @@ the ectotherm model moves between its `metout`/`soil` and `shadmet`/`shadsoil` t
 | `depths` | the depths of the soil nodes. Node 1 is the surface |
 | `heights` | the heights of the air nodes. Node 1 is the height of the animal on the ground |
 
-Position is three numbers: a shade fraction, a height node and a depth node. They are held as the `current`
-values of three [`SteppedParameter`](@ref)s in [`EctothermBehavioralLimits`](@ref).
+Position is three numbers, a shade fraction, a height node and a depth node, held as the `current` values of
+three [`SteppedParameter`](@ref)s in [`EctothermBehavioralLimits`](@ref).
 
-Any object with the fields that are read will do in place of a `MicroResult`. The tests of the package build
-one from the output tables of NicheMapR.
+Any object with the fields that are read will do in place of a `MicroResult`. The tests build one from the
+output tables of NicheMapR.
 
 ## From a position to an environment
 
-[`interpolate_environment`](@ref) turns a position and an hour into the `EnvironmentalVars` that the heat
-budget needs. Here is July on the surface in the open, on the surface in half shade, and 20 cm down:
+[`interpolate_environment`](@ref) turns a position and an hour into the `EnvironmentalVars` the heat budget
+needs. Here is July on the surface in the open, in half shade, and 20 cm down:
 
 ```@example environments
 limits = example_ectotherm_behavioral_limits()
@@ -68,23 +66,24 @@ markdown_table(["Variable", "Open", "Half shade", "20 cm down"], # hide
     [("`$f`", (show_value(getfield(r, f)) for r in rows)...) for f in fields]) # hide
 ```
 
-Above the ground the air temperature, wind speed and the temperatures of the sky and the ground are
-interpolated linearly between the two runs, according to where the current shade lies between the two shade
-fractions. Solar radiation is passed on as it is in the open, with the shade fraction beside it, and
-HeatExchange.jl applies the shade. Relative humidity is recomputed so that the vapour pressure of the air is
-the same in the shade as in the open.
+- **Above the ground**, air temperature, wind speed and the temperatures of sky and ground are interpolated
+  linearly between the two runs, by where the current shade lies between the two shade fractions. Solar
+  radiation is passed on as in the open, with the shade fraction beside it, and HeatExchange.jl applies the
+  shade. Relative humidity is recomputed so the vapour pressure of the air is the same in shade as in the open.
+- **Below the ground** there is no sun and almost no wind, and air, sky and ground are all at the temperature
+  of the soil at that depth. Shade underground is not interpolated: a [`BurrowShadeMode`](@ref) says whether the
+  burrow is in the open ([`MinShadeOnly`](@ref)), in the shade ([`MaxShadeOnly`](@ref)) or wherever is
+  tolerable ([`AdaptiveBurrowShade`](@ref)).
 
-Below the ground there is no sun and almost no wind, and the air, sky and ground are all at the temperature of
-the soil at that depth. Shade underground is not interpolated: a [`BurrowShadeMode`](@ref) says whether the
-burrow is in the open ([`MinShadeOnly`](@ref)), in the shade ([`MaxShadeOnly`](@ref)) or wherever is tolerable
-([`AdaptiveBurrowShade`](@ref)).
+Moving between positions changes the potentials around the organism, see
+[Gradients and control](gradients.md#Three-ways-to-act).
 
 ## From gridded climate data
 
 [MicroclimateMapper.jl](https://github.com/BiophysicalEcology/MicroclimateMapper.jl) runs Microclimate.jl from
-gridded climate and terrain datasets, for a list of points or a whole raster. Its output is a stack of rasters
-with dimensions for point, depth and height. A small adapter turns the output for one point into the object
-that [`AvailableEnvironments`](@ref) reads:
+gridded climate and terrain data, for a list of points or a whole raster. Its output is a stack of rasters with
+dimensions for point, depth and height. A small adapter turns the output for one point into the object that
+[`AvailableEnvironments`](@ref) reads:
 
 ```julia
 using MicroclimateMapper, Microclimate, RasterDataSources, Dates
@@ -134,13 +133,13 @@ environments = AvailableEnvironments(point_environment(open_output), point_envir
 ```
 
 This block is not run here, since it downloads climate data. Changing `weather_source` runs the same animal at
-the same place against another dataset, and a raster in place of the points gives an environment, and so an
+the same place against another dataset, and a raster in place of the points gives an environment, and an
 animal, for every cell.
 
 ## The thermal landscape
 
-Solving the heat budget of the same lizard at every position gives the body temperatures available to it. This
-is the map that the controller searches:
+Solving the heat budget of the same lizard at every position gives the body temperatures available to it, the
+map that the controller searches:
 
 ```@example environments
 lizard = Organism(Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked()), example_ectotherm_organism_traits())
@@ -170,7 +169,7 @@ animal can forage. Outside them it must be somewhere else, and the lower panel s
 ## When to be active
 
 Whether an organism is abroad at a given hour is decided first by its [`ActivityPeriod`](@ref), from the
-zenith angle of the sun and the solar radiation, and not by its state. This is open-loop control, see
+zenith angle of the sun and the solar radiation, not by its state. This is open-loop control, see
 [Behaviour as control](control.md#Open-and-closed-loops).
 
 | Type | Active when |
@@ -199,20 +198,19 @@ ylims!(ax, 0.4, 3.6) # hide
 fig # hide
 ```
 
-Outside its activity period the animal is at rest in its retreat. Within it, the animal may still be at rest,
-if no position within reach brings its body temperature into range.
+Outside its activity period the animal rests in its retreat. Within it, it may still rest, if no position
+within reach brings its body temperature into range.
 
 ## The state of the organism
 
-The outcome for each hour is an [`OrganismState`](@ref), decided by where the body temperature lies between the
-[threshold traits](states_traits.md):
+The outcome for each hour is an [`OrganismState`](@ref), decided by where the body temperature lies between
+the [threshold traits](states_traits.md#Threshold-traits-of-an-ectotherm):
 
 | State | Condition | NicheMapR `ACT` |
 |:--|:--|:--|
-| [`Resting`](@ref) | outside the activity period, underground, or above ground with a body temperature outside the basking and activity ranges | 0 |
+| [`Resting`](@ref) | outside the activity period, underground, or above ground outside the basking and activity ranges | 0 |
 | [`Basking`](@ref) | body temperature from `basking_temperature_min` up to `active_temperature_min` | 1 |
 | [`Active`](@ref) | body temperature from `active_temperature_min` to `active_temperature_max` | 2 |
 
-Hours in the `Active` state are the time available for feeding and for everything else that needs the animal
-to be out and moving. They are the link from this package to models of energy and water budgets and of
-population growth.
+Hours `Active` are the time available for feeding and anything else that needs the animal out and moving. They
+are the link from this package to models of energy and water budgets and of population growth.

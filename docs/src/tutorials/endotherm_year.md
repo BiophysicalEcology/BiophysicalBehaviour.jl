@@ -2,8 +2,8 @@
 
 [A mammal across air temperatures](mammal.md) puts an endotherm in a metabolic chamber. This tutorial puts one
 outdoors: a 1 kg mammal at Palm Springs, California, in the microclimates of [A lizard's day](lizard.md), hour
-by hour through the middle day of each month. It asks what the desert costs the animal in energy and water,
-first if it sits in the open and then if it chooses where to be.
+by hour through the middle day of each month. What does the desert cost it in energy and water, first sitting
+in the open and then choosing where to be?
 
 ```@setup endotherm_year
 using Main.FigureHelpers
@@ -14,8 +14,8 @@ using CairoMakie
 ## The animal
 
 A 1 kg ellipsoid three times as long as it is wide, with 2 mm of fur, defending 38 °C. Its core can rise by
-5 °C, it can pant to 15 times its resting ventilation, and all of its skin can be wet. It pants and sweats as
-its core warms, the mode `CorePantingSweatingFirst`.
+5 °C, it can pant to 15 times its resting ventilation, and all its skin can be wet. It pants and sweats as its
+core warms, the mode `CorePantingSweatingFirst`.
 
 ```@example endotherm_year
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -84,20 +84,20 @@ year_maps(( # hide
 ```
 
 On winter nights the animal needs several times its basal rate. On summer days it is at the minimum, with its
-core above the setpoint, panting, and losing water at a rate that it could not sustain: a 1 kg animal has about
-650 g of water in it.
+core above the setpoint, panting, and losing water at a rate it could not sustain: a 1 kg animal holds about
+650 g of water.
 
 ## Choosing where to be
 
-An endotherm has the positions that an ectotherm has, and uses them for a different reason. Each degree
-avoided by moving is water not evaporated, and each degree gained by shelter on a cold night is food not
-burned. Given available environments and a set of positional limits, [`thermoregulate`](@ref) for an endotherm
-first selects a position and then thermoregulates physiologically there.
+An endotherm has the positions an ectotherm has, and uses them for a different reason: each degree avoided by
+moving is water not evaporated, and each degree gained by shelter on a cold night is food not burned. Given
+available environments and a set of positional limits, [`thermoregulate`](@ref) for an endotherm first selects
+a position and then thermoregulates physiologically there.
 
-The selection is on *operative temperature*, the temperature the animal would have as a passive object with no
-metabolism, compared with two thresholds. Above the upper one it tries shade, then height, then the burrow.
-Below the lower one it leaves shade, and retreats if it is colder than its critical minimum. Outside its
-activity period it is in its burrow.
+The selection is on *operative temperature*, the temperature of the animal as a passive object with no
+metabolism, against two thresholds. Above the upper one it tries shade, then height, then the burrow. Below the
+lower one it leaves shade, and retreats if colder than its critical minimum. Outside its activity period it is
+in its burrow. See [An endotherm that chooses where to be](../manual/ectotherm.md#An-endotherm-that-chooses-where-to-be).
 
 Here the animal is diurnal, comfortable at operative temperatures from 10 to 38 °C, with a burrow from 30 cm
 down:
@@ -173,22 +173,22 @@ markdown_table(["", "In the open", "Choosing where to be"], [ # hide
 ```
 
 The dashed line is the basal rate through a day. The burrow saves energy through the whole year, by keeping the
-animal out of the cold night air and from under the cold night sky, and shade and the burrow together save
-water through the summer.
+animal out of the cold night air and from under the cold night sky. Shade and the burrow together save water
+through the summer.
 
-The animal here is simple, and the result should be read as a demonstration of the calculation. Its burrow is
-ventilated soil air with no nest, it does not huddle or raise its fur, and its activity costs nothing. Each
-of those is a change to the organism or its limits.
+The animal is simple, and the result is a demonstration of the calculation. Its burrow is ventilated soil air
+with no nest, it does not huddle or raise its fur, and its activity costs nothing. Each is a change to the
+organism or its limits.
 
 ## From here to a map
 
-The same loop runs for any place for which there is a microclimate.
-[MicroclimateMapper.jl](https://github.com/BiophysicalEcology/MicroclimateMapper.jl) solves Microclimate.jl
-from gridded climate and terrain data, for a point or for every cell of a raster, see
-[Activity and available environments](../manual/environments.md#From-gridded-climate-data). Running an animal
-on each cell turns the figures above into maps of the energy and water that a place costs it.
+The same loop runs for any place with a microclimate.
+[MicroclimateMapper.jl](https://github.com/BiophysicalEcology/MicroclimateMapper.jl) solves Microclimate.jl from
+gridded climate and terrain data, for a point or every cell of a raster, see
+[From gridded climate data](../manual/environments.md#From-gridded-climate-data). Running an animal on each cell
+turns the figures above into maps of the energy and water a place costs it.
 
-The model here is at steady state in every hour. A 1 kg animal takes a good part of an hour to warm or cool,
-and a larger one much longer, so the peaks above are those of an animal with no thermal inertia. Heat budgets
-through time, in which the animal alternates bouts of activity and rest as its body temperature rises and
-falls, are in development.
+The model is at steady state in every hour. A 1 kg animal takes a good part of an hour to warm or cool, and a
+larger one much longer, so the peaks above are those of an animal with no thermal inertia. Behaviour during
+heat budgets through time, alternating bouts of activity and rest as body temperature rises and falls, is in
+development.

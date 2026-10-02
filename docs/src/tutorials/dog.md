@@ -1,8 +1,8 @@
 # A dog of many parts
 
-A dog is not an ellipsoid. Its legs are thin, with a large surface for their mass, and its lungs are in its
-trunk. This tutorial builds a dog of six parts, a trunk, a head and four legs, gives each part its own heat
-budget, and lets it thermoregulate. It is the behavioural counterpart of
+A dog is not an ellipsoid. Its legs are thin, with much surface for their mass, and its lungs are in its trunk.
+This tutorial builds a dog of six parts, trunk, head and four legs, each with its own heat budget, and lets it
+thermoregulate. It is the behavioural counterpart of
 [A human of many parts](https://biophysicalecology.github.io/HeatExchange.jl/dev/tutorials/human) in the
 documentation of HeatExchange.jl.
 
@@ -15,8 +15,7 @@ import BiophysicalGeometry: Sphere, Top, Bottom
 
 ## The body
 
-Each part is a cylinder with the same pelt, 2 mm deep, and no fat. The trunk is 18 kg, the head 2 kg and each
-leg 1 kg, 24 kg in all.
+Each part is a cylinder with the same 2 mm pelt and no fat: trunk 18 kg, head 2 kg, each leg 1 kg, 24 kg in all.
 
 ```@example dog
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -52,8 +51,7 @@ dog_body = CompositeBody(;
 composite_views(dog_body; views = (:oblique, :side, :front), titles = ["", "side", "front"], size = (720, 300)) # hide
 ```
 
-The joins say where each part meets the trunk and over what area. That area is hidden, and takes no part in
-the exchange of heat with the air.
+The joins say where each part meets the trunk and over what area. That area is hidden from the air.
 
 ```@example dog
 body_graph(dog_body) # hide
@@ -66,13 +64,15 @@ markdown_table(["Part", "Mass", "Surface area", "Area per unit mass"], [ # hide
     for (name, part) in pairs(dog_body.parts)]) # hide
 ```
 
-A leg has three times the surface of the trunk for each kilogram.
+A leg has three times the surface of the trunk per kilogram.
 
 ## The physiology
 
-Each part has its own `HeatExchangeTraits`. Here they differ only in shape. The trunk holds the lungs. All the
-joins are the default `SharedCore`, so the dog has one core temperature, 37 °C, and one minimum metabolic rate,
-77.6 W.
+Each part has its own `HeatExchangeTraits`, here differing only in shape. The trunk holds the lungs. All joins
+are the default `SharedCore`, so the dog has one core temperature, 37 °C, and one minimum metabolic rate,
+77.6 W. See [Bodies of many parts](../manual/multipart.md) and, for the couplings,
+[Bodies of many parts](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/multipart) in the
+documentation of HeatExchange.jl.
 
 ```@example dog
 part_traits(shape) = example_heat_exchange_traits(;
@@ -93,8 +93,8 @@ lung_part(ruled_dog), pant_selector(ruled_dog), organism_compartment_graph(ruled
 
 ## One air temperature
 
-The first guess of the surface temperature of the fur is put half way between skin and air. With the default
-guess, at air temperature, the surface solve of the trunk does not converge in the cold, see
+The first guess of the fur surface temperature is put half way between skin and air. With the default guess,
+air temperature, the trunk's surface solve does not converge in the cold, see
 [Bodies of many parts](../manual/multipart.md#Solving).
 
 ```@example dog
@@ -118,8 +118,8 @@ markdown_table(["Part", "Skin", "Fur surface", "Heat passed to the surface", "Pe
 (metabolic_rate = cold.metabolic_heat_flow, lung_temperature = celsius(cold.lung_temperature))
 ```
 
-At 5 °C the dog needs about twice its minimum metabolic rate. Its four legs are a sixth of its mass and lose
-two fifths of the heat that leaves through its surface.
+At 5 °C the dog needs about twice its minimum metabolic rate. Its legs are a sixth of its mass and lose two
+fifths of the heat that leaves through its surface.
 
 ```@example dog
 skin = NamedTuple{names}(map(part -> ustrip(u"°C", part.skin_temperature), cold.parts))
@@ -131,11 +131,10 @@ temperature_views(dog_body, skin; views = (:oblique, :side), titles = ["skin", "
 temperature_views(dog_body, surface; views = (:oblique, :side), titles = ["fur surface", ""], label = "Fur surface temperature (°C)") # hide
 ```
 
-Because the core is shared, every part has warm blood at 37 °C at its centre, and the skin temperature of a
-part is set by how far the skin is from the centre. The trunk, the thickest part, has the coolest skin. A real
-dog saves heat by letting its legs cool, with a heat exchange between the arteries and veins of the limb. That
-needs each leg to have its own core temperature, joined to the trunk by a `ConductiveCoupling`, which the
-controllers do not yet support.
+With a shared core, every part has blood at 37 °C at its centre, and its skin temperature is set by how far the
+skin is from the centre. The trunk, the thickest part, has the coolest skin. A real dog saves heat by letting
+its legs cool, with countercurrent exchange in the limbs. That needs each leg to have its own core temperature,
+joined by a `ConductiveCoupling`, which the controllers do not yet support.
 
 ## Across air temperatures
 
@@ -167,23 +166,23 @@ fig # hide
 ```
 
 The dashed line is the minimum metabolic rate. Below about 20 °C the dog makes extra heat. Above it the
-controller acts: vasodilation in every part, which is the step up in skin temperature, then a rise in core
-temperature, then panting.
+controller acts, as in [Endotherm thermoregulation by rules](../manual/endotherm_rules.md): vasodilation in
+every part (the step up in skin temperature), then a rise in core temperature, then panting.
 
-The panels on the right and below show where the heat goes. As the air warms, the heat that each part can pass
-to its surface falls, and above the temperature of the skin it is negative: the surface gains heat from the
-air. All of the dog's metabolic heat, and that gain, then leaves through its lungs. This is why
-the lung part matters: panting applies to the trunk alone, and it is the trunk's traits that set the cost.
+The panels on the right and below show where the heat goes. As the air warms, the heat each part can pass to
+its surface falls, and once the air is warmer than the skin it is negative: the surface gains heat from the air.
+All the metabolic heat, and that gain, then leaves through the lungs. Panting applies to the lung part alone,
+so the trunk's traits set its cost.
 
-This dog also cannot change its posture. A real one curls up in the cold, tucking its legs and nose against its
-trunk, and sprawls in the heat. For a body of parts that is a change of pose, which hides or exposes surface at
-the joins and changes what each part sees. It is planned, in place of the change of axis ratio that a single
-body uses, see [Bodies of many parts](../manual/multipart.md#Thermoregulating).
+The dog cannot change posture. A real one curls up in the cold and sprawls in the heat. For a body of parts
+that is a change of pose, which hides or exposes surface at the joins and changes what each part sees. It is
+planned, in place of the change of axis ratio a single body uses, see
+[Bodies of many parts](../manual/multipart.md#Thermoregulating).
 
 ## The same dog, by optimisation
 
 With [`IPOPTControl`](@ref), flesh conductivity and skin wetness are variables of each part, 27 variables in
-all for six parts.
+all, see [The nonlinear program](../manual/nlp.md).
 
 ```@example dog
 using Setfield: @set
@@ -199,17 +198,15 @@ markdown_table(["Part", "Flesh conductivity", "Skin wetness", "Skin temperature"
 (metabolic_rate = warm.metabolic_heat_flow, core_temperature = celsius(warm.core_temperature), panting = warm.panting_rate)
 ```
 
-The optimiser treats the parts differently. The cost of skin wetness is on the mean over the parts, so it puts
-the water where it does most good. The rules cannot do this: they move every part together. Whether a dog can
-is another matter, since dogs sweat only through their paws, and a model of a dog should set
-`skin_wetness_max` accordingly and let panting do the work. The point here is the mechanism: with parts, the
-question of *where* on the body a response is made can be asked.
+The optimiser treats the parts differently. The cost of skin wetness is on its mean over the parts, so the
+water goes where it does most good. The rules move every part together. Real dogs sweat only through their
+paws, so a model of a dog should lower `skin_wetness_max` and let panting do the work. The point is the
+mechanism: with parts, *where* on the body a response is made can be asked.
 
 ## Parts that shade each other
 
-In the sun, each part intercepts the direct beam according to its silhouette, and the parts hide some of the
-sky and the ground from each other. [`precompute_view_partition`](@ref) computes both for a given position of
-the sun:
+In the sun, each part intercepts the direct beam by its silhouette, and the parts hide sky and ground from each
+other. [`precompute_view_partition`](@ref) computes both for a position of the sun:
 
 ```@example dog
 sunny = example_environment_vars(; air_temperature = u"K"(20.0u"°C"), global_radiation = 800.0u"W/m^2", zenith_angle = 30.0u"°")
@@ -218,9 +215,9 @@ markdown_table(["Part", "Sky", "Ground", "Other parts", "Sunlit silhouette"], [ 
     (string(name), v.sky, v.ground, sum(values(v.neighbours)), uconvert(u"cm^2", v.lit_silhouette)) for (name, v) in pairs(view)]) # hide
 ```
 
-No part sees a full hemisphere of sky and of ground. A fifth of what a leg or the head sees is other parts of
-the dog, and a tenth of what the trunk sees. Passed to [`solve_multipart_metabolic_rate`](@ref), the
-partition replaces the view factors of each part:
+No part sees a full hemisphere of sky and ground: other parts fill a fifth of the view of a leg or the head and
+a tenth of the trunk's. Passed to [`solve_multipart_metabolic_rate`](@ref), the partition replaces each part's
+view factors:
 
 ```@example dog
 environment = (; environment_pars = example_environment_pars(), environment_vars = sunny)
@@ -232,5 +229,5 @@ markdown_table(["Part", "Solar heat, parts alone", "Solar heat, with shading", "
     for (name, a, b) in zip(names, alone.parts, together.parts)]) # hide
 ```
 
-With the sun 30° from overhead, the head is partly in the shadow of the trunk and absorbs little more than half
-of what it would alone, while the legs on the sunward side gain.
+With the sun 30° from overhead, the head is partly shaded by the trunk and absorbs little more than half what it
+would alone, while the sunward legs gain.

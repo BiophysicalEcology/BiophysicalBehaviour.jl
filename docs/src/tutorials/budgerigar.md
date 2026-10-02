@@ -13,7 +13,7 @@ using CairoMakie
 ## The bird
 
 An ellipsoid of 33.7 g, with feathers 23 mm long lying about 6 mm deep at rest, defending 38 °C. Its basal
-metabolic rate comes from the allometry of McKechnie and Wolf (2004).
+metabolic rate is from the allometry of McKechnie and Wolf (2004).
 
 ```@example budgerigar
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, FluidProperties, Unitful
@@ -41,9 +41,9 @@ bird_body = Body(shape, CompositeInsulation(feathers, FatLayer(0.0, 901.0u"kg/m^
 basal
 ```
 
-What it can do. Its feathers can be raised to 70 % of their length. It can stretch out, vasodilate, let its core
-warm by 5 °C and pant up to 15 times its resting ventilation. A bird has no sweat glands, but water does
-evaporate through its skin, and up to 5 % of the skin is allowed to be wet.
+What it can do: raise its feathers to 70 % of their length, stretch out, vasodilate, let its core warm by 5 °C,
+and pant up to 15 times its resting ventilation. A bird has no sweat glands, but water does evaporate through
+its skin, and up to 5 % of the skin is allowed to be wet.
 
 ```@example budgerigar
 function budgerigar(control; fluffing = true, weights...)
@@ -70,9 +70,9 @@ end
 nothing # hide
 ```
 
-`fluffing = false` gives a bird that cannot change its plumage or its posture. It is there because the
-optimiser cannot change them either, see [Thermoregulation by optimisation](../manual/optimisation.md), and a
-fair comparison of the two controllers needs a rule-based bird with the same abilities.
+`fluffing = false` gives a bird that cannot change its plumage or posture. The optimiser cannot change them
+either, see [Thermoregulation by optimisation](../manual/optimisation.md#Present-limits), so a fair comparison
+of the two controllers needs a rule-based bird with the same abilities.
 
 ## The chamber
 
@@ -92,7 +92,8 @@ nothing # hide
 
 ## By rules
 
-The mode is `CorePantingSweatingFirst`: the bird pants, and wets its skin, as its core temperature rises.
+The mode is `CorePantingSweatingFirst`: the bird pants, and wets its skin, as its core temperature rises, see
+[Endotherm thermoregulation by rules](../manual/endotherm_rules.md#Modes).
 
 ```@example budgerigar
 function sweep_rules(bird)
@@ -109,9 +110,9 @@ nothing # hide
 
 ## By optimisation
 
-The weights say what this bird minds. Its core temperature is allowed to drift, as it does in the data, so the
-weight on it is low. Panting is made costly relative to cutaneous evaporation, and a rise in metabolic rate
-more costly still.
+The weights say what this bird minds. Its core is allowed to drift, as it does in the data, so the weight on it
+is low. Panting is made costly relative to cutaneous evaporation, and a rise in metabolic rate more costly
+still. See [What the weights do](../manual/optimisation.md#What-the-weights-do).
 
 ```@example budgerigar
 weights = (; core_temperature_weight = 0.1, panting_weight = 5.0, skin_wetness_weight = 0.1,
@@ -175,33 +176,33 @@ lines!(ax, x, [r.panting_rate for r in optimised]; color = orange, linewidth = 2
 fig # hide
 ```
 
-For the optimiser, the water loss plotted is the latent heat lost from the skin and in breathing divided by the
+For the optimiser, the water loss plotted is the latent heat lost from the skin and in breathing, divided by the
 latent heat of vaporisation. Its heat lost in breathing includes a small sensible part, so the line is a slight
 overestimate.
 
-Three things can be read from the figure.
+What the figure shows:
 
-**In the cold, plumage is most of the answer.** The rule-based bird with its feathers raised to 16 mm needs
-about a quarter less heat than the bird whose feathers stay at 6 mm, and lies below the observations where the
-fixed plumage lies above them. Real budgerigars are between the two. The optimiser follows the fixed-plumage
-line, because it has the same plumage.
-
-**In the thermoneutral zone the controllers agree**, since there the minimum metabolic rate is the answer
-whatever is done to reach it.
-
-**In the heat they differ in how, not in how much.** The rules, in this mode, raise core temperature, panting
-and skin wetness in step, after going to full vasodilation. The optimiser lets the core rise sooner, to 39.6 °C in
-air at 30 °C where the rule-based bird is still near 38 °C, because the weight on core temperature is low. It
-vasodilates only part of the way and pants somewhat more. Both reproduce the observed rise in body temperature
-and in water loss above 30 °C, and the observed upturn of metabolic rate with the ``Q_{10}`` effect of a warmer
-core. Below 25 °C all three predict several times the water loss that was measured. One candidate cause, not
-tested here, is that the exhaled air of a small bird in the cold is cooler and drier than is assumed.
-
-**The optimiser changes its mind at 40 °C.** Between 39 and 40 °C its solution jumps: the core drops by 3 °C,
-vasodilation is abandoned and panting doubles. Nothing in the bird changes there. The problem has more than one
-local optimum, and the solver has moved from one to another, see
-[Thermoregulation by optimisation](../manual/optimisation.md#What-to-check). The rule-based solution has no such
-jumps, because its order is fixed.
+- **In the cold, plumage is most of the answer.** The rule-based bird with feathers raised to 16 mm needs about
+  a quarter less heat than the bird whose feathers stay at 6 mm, and lies below the observations where the
+  fixed plumage lies above them. Real budgerigars are between. The optimiser follows the fixed-plumage line,
+  because it has the same plumage.
+- **In the thermoneutral zone the controllers agree**, since the minimum metabolic rate is the answer whatever
+  is done to reach it.
+- **In the heat they differ in how, not in how much.** The rules, in this mode, go to full vasodilation and then
+  raise core temperature, panting and skin wetness in step. The optimiser lets the core rise sooner, to 39.6 °C
+  in air at 30 °C where the rule-based bird is still near 38 °C, because the weight on core temperature is low.
+  It vasodilates only part of the way and pants somewhat more. Both reproduce the observed rise in body
+  temperature and in water loss above 30 °C, and the upturn of metabolic rate with the ``Q_{10}`` effect of a
+  warmer core.
+- **Below 25 °C all three overestimate water loss**, by several times. One candidate cause, not tested here, is
+  that the exhaled air of a small bird in the cold is cooler and drier than is assumed, see
+  [Evaporation and respiration](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/evaporation_respiration#From-the-lungs)
+  in the documentation of HeatExchange.jl.
+- **The optimiser changes its mind at 40 °C.** Between 39 and 40 °C its solution jumps: the core drops by 3 °C,
+  vasodilation is abandoned and panting doubles. Nothing in the bird changes there. The problem has more than
+  one local optimum, and the solver has moved from one to another, see
+  [What to check](../manual/optimisation.md#What-to-check). The rule-based solution has no such jumps, because
+  its order is fixed.
 
 ## How the responses are used
 
@@ -221,14 +222,13 @@ axislegend(ax; position = :rt, labelsize = 10) # hide
 fig # hide
 ```
 
-The rule-based bird goes to full vasodilation before anything else, because vasodilation is early in the
-order. The optimiser uses a little, because the weights give it a small cost and the alternatives are cheap.
-Which is nearer the truth is a question about budgerigars. The value of having both is that the question can
-be put.
+The rule-based bird goes to full vasodilation before anything else, because vasodilation is early in the order.
+The optimiser uses a little, because the weights give it a small cost and the alternatives are cheap. Which is
+nearer the truth is a question about budgerigars. The value of having both is that the question can be put.
 
 ## The range of the comparison
 
-The sweep stops at 46 °C. In tests above that the optimiser did not return a usable solution for this bird: the
-solutions it found had a metabolic rate well above the rule-based one, and by 50 °C the heat budget was not
+The sweep stops at 46 °C. In tests above that, the optimiser did not return a usable solution for this bird:
+its solutions had a metabolic rate well above the rule-based one, and by 50 °C the heat budget was not
 satisfied at the point returned. The rule-based controller continues, to a panting multiplier above 9 at
-50 °C. See the limits listed in [Thermoregulation by optimisation](../manual/optimisation.md#Present-limits).
+50 °C. See [Present limits](../manual/optimisation.md#Present-limits).

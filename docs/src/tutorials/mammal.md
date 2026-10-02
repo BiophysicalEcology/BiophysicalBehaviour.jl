@@ -3,9 +3,9 @@
 The tutorial
 [An endotherm: metabolic rate](https://biophysicalecology.github.io/HeatExchange.jl/dev/tutorials/endotherm)
 in the documentation of HeatExchange.jl follows a 65 kg animal from 0 °C upward, and stops where the metabolic
-rate needed to hold its core temperature falls to the least it can produce. This tutorial carries on from
-there, through the thermoneutral zone and out the other side, and compares the result with `endoR_devel` of
-NicheMapR. It reproduces the calculation behind Fig. 2 of Kearney et al. (2021).
+rate needed to hold its core temperature falls to the least it can produce. This tutorial carries on through
+the thermoneutral zone and out the other side, and compares the result with `endoR_devel` of NicheMapR. It
+reproduces the calculation behind Fig. 2 of Kearney et al. (2021).
 
 ```@setup mammal
 using Main.FigureHelpers
@@ -15,7 +15,7 @@ using CairoMakie
 ## The animal
 
 The defaults of `endoR`: a 65 kg ellipsoid a little longer than it is wide, with 2 mm of fur, defending 37 °C
-with a basal metabolic rate of 77.6 W. That is roughly a resting, lightly clothed human.
+with a basal metabolic rate of 77.6 W. Roughly a resting, lightly clothed human.
 
 ```@example mammal
 using BiophysicalBehaviour, HeatExchange, BiophysicalGeometry, Unitful
@@ -45,12 +45,12 @@ markdown_table(["Response", "From", "To", "Step"], [ # hide
 ```
 
 Its fur is not raised or flattened: the depth has no range. The controller is the default,
-`RuleBasedSequentialControl` with `CoreFirst`, which is `TREGMODE = 1`.
+`RuleBasedSequentialControl` with `CoreFirst`, which is `TREGMODE = 1`, see
+[Endotherm thermoregulation by rules](../manual/endotherm_rules.md).
 
 ## The sweep
 
-The environment is a metabolic chamber: still air at 0.1 m/s and 5 % relative humidity, no sun, and walls at
-air temperature.
+A metabolic chamber: still air at 0.1 m/s and 5 % relative humidity, no sun, and walls at air temperature.
 
 ```@example mammal
 function respond(animal, air_temperature)
@@ -88,26 +88,23 @@ end # hide
 fig # hide
 ```
 
-The curve has the form that every textbook of thermal physiology draws, and here nothing about it was drawn.
-From the left:
+The curve has the form every textbook of thermal physiology draws, and here nothing about it was drawn. From
+the left:
 
-**Below the lower critical temperature** the animal is in its most heat-conserving state and the heat budget
-gives the metabolic rate directly. It falls in a straight line as the air warms, with a slope set by the
-insulation and the surface area.
-
-**The thermoneutral zone** begins where that line meets the basal rate. From there the controller holds the
-metabolic rate at the minimum by spending one response at a time. First posture: the animal uncurls, increasing
-its surface area. When it is fully stretched, vasodilation: flesh conductivity rises and the skin warms towards
-the core.
-
-**Above the upper critical temperature** those are exhausted. The core temperature is let rise by 2 °C, and
-with it the metabolic rate, by the ``Q_{10}`` effect. Then panting begins, and evaporative water loss climbs
-steeply. Sweating, last in the order, has only begun by 50 °C.
+- **Below the lower critical temperature** the animal is in its most heat-conserving state and the heat budget
+  gives the metabolic rate directly. It falls in a straight line as the air warms, with a slope set by the
+  insulation and surface area.
+- **The thermoneutral zone** begins where that line meets the basal rate. The controller holds the metabolic
+  rate at the minimum by spending one response at a time: first posture, as the animal uncurls and gains
+  surface; then vasodilation, as the skin warms towards the core.
+- **Above the upper critical temperature** those are exhausted. The core is let rise by 2 °C, and with it the
+  metabolic rate, by the ``Q_{10}`` effect. Then panting begins, and evaporative water loss climbs steeply.
+  Sweating, last in the order, has only begun by 50 °C.
 
 ## The critical temperatures are outputs
 
 The limits of the thermoneutral zone can be read from the sweep. They are properties of the animal *and* the
-chamber, see [States, thresholds and traits](../manual/states_traits.md):
+chamber, see [States, thresholds and traits](../manual/states_traits.md#What-is-not-a-threshold-trait):
 
 ```@example mammal
 function critical_temperatures(animal; kw...)
@@ -131,13 +128,12 @@ markdown_table(["Conditions", "Lower critical temperature", "Upper critical temp
 ]) # hide
 ```
 
-Wind moves both limits upward by several degrees, and humid air moves them down. Neither is a trait of the
-animal.
+Wind moves both limits up by several degrees, and humid air moves them down. Neither is a trait of the animal.
 
 ## Comparison with NicheMapR
 
 The points in the figure above are `endoR_devel(THERMOREG = 1, TREGMODE = 1)` with the same limits, written by
-`docs/src/data/nichemapr_reference.R`. At the air temperatures that both were run for:
+`docs/src/data/nichemapr_reference.R`. At the air temperatures both were run for:
 
 ```@example mammal
 at(T) = sweep[findfirst(==(T), air)]
@@ -158,11 +154,14 @@ difference = [100 * (watts(at(r.air_temperature_C).energy_flows.metabolic_heat_f
 (mean_absolute = sum(abs, difference) / length(difference), largest = maximum(abs, difference))
 ```
 
-The differences in metabolic rate, in per cent, have two sources. One is the heat budget itself, about 1 % in
-the cold, discussed in the documentation of HeatExchange.jl. The other is the loop: both stop at the first
-state in which the required rate exceeds the minimum less the tolerance, and since each step of a response
-changes the required rate by a few watts, two implementations that differ by a fraction of a watt before a step
-can stop one step apart.
+The differences in metabolic rate, in per cent, have two sources:
+
+- **the heat budget**, about 1 % in the cold, see
+  [For NicheMapR users](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/nichemapr#How-closely-the-numbers-agree)
+  in the documentation of HeatExchange.jl;
+- **the loop**: both stop at the first state in which the required rate exceeds the minimum less the tolerance.
+  Each step of a response changes the required rate by a few watts, so two implementations a fraction of a watt
+  apart before a step can stop one step apart.
 
 ## Changing the animal
 
@@ -195,6 +194,9 @@ axislegend(ax; position = :rt, labelsize = 10) # hide
 fig # hide
 ```
 
-A coat that can be raised extends the thermoneutral zone downward: the animal with 10 mm of fur that it can
-double has the lower critical temperature of the thicker coat and the upper critical temperature of the thinner
-one.
+A coat that can be raised extends the thermoneutral zone downward: in the cold the animal raises its coat to
+20 mm, and in the heat flattens it back to 10 mm before anything else.
+
+The same animal can be given an optimising controller in place of the rules, see
+[Thermoregulation by optimisation](../manual/optimisation.md), or put outdoors, see
+[A desert mammal through the year](endotherm_year.md).
