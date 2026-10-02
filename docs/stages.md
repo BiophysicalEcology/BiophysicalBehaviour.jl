@@ -115,10 +115,10 @@ blend of stage-specific numeric/array/`Unitful` data across a graded transition.
 `StageSequence` computes stage identity fresh from current controller levels on every call — it
 holds no latch/history state. `stage_weights`/`current_stage` therefore already recompute
 correctly if a driving level decreases and later recovers (DEB theory's "rejuvenation": maturity
-can decrease under starvation). What this design does **not** support: a genuinely
-history-dependent query like "has this individual ever reached puberty, even if maturity has
-since regressed" — that needs additional latch state, added externally by the host; it is not
-part of `StageSequence`'s contract.
+can decrease under starvation). What this design does **not** support: a history-dependent
+query like "has this individual ever reached puberty, even if maturity has since regressed"
+— that needs additional latch state, added externally by the host; it is not part of
+`StageSequence`'s contract.
 
 Interpreting the result as *ordered life-cycle milestones* (stage `N` implies stages `1..N-1` were
 already passed) requires the host to ensure monotonic, biologically-ordered controller levels —

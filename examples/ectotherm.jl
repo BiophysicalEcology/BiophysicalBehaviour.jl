@@ -235,7 +235,7 @@ state      = [r.state          for r in results]
 air_temperature = low_shade_result.profile.air_temperature[:, 1]
 
 # Combined position: climbing = +cm, active at surface = 0, underground = −cm.
-# heights[1] is the ground node (1 cm); treat it as 0 so only genuine climbing
+# heights[1] is the ground node (1 cm); treat it as 0 so only climbing
 # (heights[2]+) appears as positive.
 _ground_ht = ustrip(u"cm", heights[1])
 pos_cm = [depth_node[i] > 1 ?
