@@ -28,7 +28,11 @@ struct LungPart{Physiology,PantingCapacity}
 end
 LungPart(physiology; panting_capacity=nothing) = LungPart(physiology, panting_capacity)
 
-# Peel the wrapper off to reach the underlying physiology; a no-op for plain parts.
+"""
+    unwrap_physiology(part) -> physiology
+
+The physiology wrapped by a `LungPart`, or `part` itself if it is not wrapped.
+"""
 unwrap_physiology(part::LungPart) = part.physiology
 unwrap_physiology(part) = part
 
@@ -147,9 +151,9 @@ The name of the lung-hosting part. Stored as a `Val` in the traits (the name is 
 type parameter), so this returns a compile-time-constant `Symbol` and the routing
 built on it stays type-stable.
 """
-@inline _lung_symbol(::Val{N}) where {N} = N
 lung_part(t::OrganismTraits) = _lung_symbol(t.lung_part)
 lung_part(o::Organism) = lung_part(HeatExchange.traits(o))
+@inline _lung_symbol(::Val{N}) where {N} = N
 
 """
     lung_physiology(organism) -> physiology

@@ -129,21 +129,59 @@ cooler air or moving underground into a warmer/cooler retreat.
 """
 abstract type AbstractMovementBehavior <: AbstractBehavior end
 
+"""
+    AbstractTemperatureRegulation
+
+Abstract supertype for temperature-regulation behaviors.
+"""
 abstract type AbstractTemperatureRegulation end
 
+"""
+    NullBehavior <: AbstractBehavior
+
+No behavior: the organism does not respond to its state or environment.
+"""
 struct NullBehavior <: AbstractBehavior end
 
 initialise_state(::NullBehavior) = ()
 
+"""
+    BurrowTemperatureRegulation(burrowat, emergeat)
+
+Temperature regulation by retreat to a burrow at the temperature `burrowat` and emergence at `emergeat`.
+"""
 struct BurrowTemperatureRegulation{T} <: AbstractTemperatureRegulation
     burrowat::T
     emergeat::T
 end
 
+"""
+    ActivityPeriod
+
+Abstract supertype for the times of day at which an organism may be active: `Diurnal`, `Nocturnal`,
+`Crepuscular`, `CombinedActivity` or `ResponsiveActivity`. Tested with `is_active`.
+"""
 abstract type ActivityPeriod end
 
+"""
+    Diurnal <: ActivityPeriod
+
+Active when the sun is above the horizon and there is sunlight.
+"""
 struct Diurnal <: ActivityPeriod end
+
+"""
+    Nocturnal <: ActivityPeriod
+
+Active when the sun is below the horizon or there is no sunlight.
+"""
 struct Nocturnal <: ActivityPeriod end
+
+"""
+    Crepuscular <: ActivityPeriod
+
+Active at twilight, when the sun is within 5° of the horizon.
+"""
 struct Crepuscular <: ActivityPeriod end
 
 # =============================================================================
