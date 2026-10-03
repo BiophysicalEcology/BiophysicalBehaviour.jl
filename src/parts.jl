@@ -71,12 +71,47 @@ Supertype for thermoregulatory effector tags. Dispatch target for
 """
 abstract type Effector end
 
-struct Piloerect    <: Effector end
-struct Uncurl       <: Effector end
-struct Vasodilate   <: Effector end
+"""
+    Piloerect <: Effector
+
+Raise or flatten fur or feathers: changes insulation depth. Applies to each part.
+"""
+struct Piloerect <: Effector end
+
+"""
+    Uncurl <: Effector
+
+Change posture between curled and stretched out: changes the axis ratio of the body. Applies to each part.
+"""
+struct Uncurl <: Effector end
+
+"""
+    Vasodilate <: Effector
+
+Send blood to the skin: raises flesh conductivity. Applies to each compartment.
+"""
+struct Vasodilate <: Effector end
+
+"""
+    Hyperthermia <: Effector
+
+Let the regulated core temperature rise. Applies to each compartment.
+"""
 struct Hyperthermia <: Effector end
-struct Pant         <: Effector end
-struct Sweat        <: Effector end
+
+"""
+    Pant <: Effector
+
+Raise the ventilation rate for respiratory evaporative cooling. Routed to the lung part.
+"""
+struct Pant <: Effector end
+
+"""
+    Sweat <: Effector
+
+Wet the skin for cutaneous evaporative cooling: raises skin wetness. Applies to each part.
+"""
+struct Sweat <: Effector end
 
 """
     effect(op::Effector, selector::PartSelector, organism, limits) -> (new_limits, new_organism)
