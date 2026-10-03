@@ -11,17 +11,68 @@ using Main.FigureHelpers
 using CairoMakie
 ```
 
+## The formulation
+
+The problem is a control loop around a steady-state model. The environment acts on the organism. Steady-state relations give the organism's condition. A *performance measure*
+scores that condition, and the organism adjusts its controls to improve the score. Decision making is then
+*hypothesised* to be the solution of
+
+```math
+\begin{aligned}
+\min_{\xi} \quad & J(\xi;\, \theta, \nu) \
+\text{subject to} \quad & M(\xi;\, \theta, \nu) = 0 \qquad C(\xi;\, \theta, \nu) \ge 0 \qquad \xi \in \Xi
+\end{aligned}
+```
+
+| Symbol | Term | Here |
+|:--|:--|:--|
+| ``u`` | **controls**: quantities hypothesised to be set independently by the organism | metabolic heat production, panting rate, and each part's flesh conductivity and skin wetness |
+| ``x`` | **states**: quantities that take their values as a consequence of the controls | core temperature, and each part's skin and insulation surface temperatures |
+| ``\xi = [u;\, x]`` | the decision variables, controls and states together | the variables of [The problem](optimisation.md#The-problem) |
+| ``\theta`` | **parameters**: constant during a solve, and belonging to the organism | the traits: shape, fur, fat, resting physiology |
+| ``\nu`` | **environment**: constant during a solve, and imposed from outside | `environment_vars`: radiation, air temperature, wind, humidity |
+| ``J`` | **performance measure**: what the organism is hypothesised to base its response on | the weighted objective, see [Objective: the costs](optimisation.md#Objective:-the-costs) |
+| ``M = 0`` | **steady-state relations** | the heat budget of each part, and of the whole organism |
+| ``C \ge 0`` | further constraints | the ``Q_{10}`` floor on metabolic heat production |
+| ``\Xi`` | the admissible set: the physiological limits of each variable | [`ThermoregulationLimits`](@ref) |
+
+Three points of terminology follow.
+
+**"States" is used loosely.** In control theory a state has memory: it is what must be known now to predict
+what comes next, such as a temperature that stores heat. Here the temperatures have no memory. At steady state
+they are fixed by the controls, the parameters and the environment through ``M``, so they are unknowns of an
+algebraic problem that the solver finds alongside the controls. With heat storage they become true states, with
+an update ``x^+ = F(x, u;\, \theta, \nu)`` in place of ``M = 0``, see
+[Where the dynamics are](control.md#Where-the-dynamics-are).
+
+**The performance measure is a hypothesis.** ``J`` is not known to be what an animal minimises. It may be a
+weighted sum of terms, each a departure from something the animal is supposed to prefer: a target core
+temperature, or a target *gradient* between core and skin. Each choice of terms and weights is a hypothesis about
+the organism, to be tested by how well the responses it predicts match those observed. See
+[Gradients and control](gradients.md#A-gradient-of-information).
+
+**Costs and limits are different things.** A control that costs the organism something appears in ``J``. A
+control that cannot pass a value is bounded in ``\Xi``. Metabolic heat production is both: costly to raise, and
+bounded below by the least the organism can produce, its unavoidable production of heat and entropy. Water is not
+yet costed directly. Panting and sweating are penalised in ``J`` as its proxies until the water budget is
+connected. Piloerection and posture belong among the controls, but are not yet variables, see
+[What is not yet done](#What-is-not-yet-done).
+
+The steady-state relations are the heat budget of HeatExchange.jl, for any shape of BiophysicalGeometry.jl, a
+body of many parts, and insulation as a stack of radial layers, see
+[Solving a heat balance](https://biophysicalecology.github.io/HeatExchange.jl/dev/manual/heat_balance).
+
 ## What an interior-point solver needs
 
-IPOPT minimises an objective ``f(x)`` subject to constraints ``g_L \le g(x) \le g_U`` and bounds
-``x_L \le x \le x_U``. At each iteration it asks for:
+IPOPT minimises an objective ``f(\xi)`` subject to constraints ``g_L \le g(\xi) \le g_U`` and bounds
+``\xi_L \le \xi \le \xi_U``. At each iteration it asks for:
 
 | Callback | Returns | Here |
 |:--|:--|:--|
-| objective | ``f(x)`` | the weighted sum of squared departures from the targets |
-| constraints | ``g(x)`` | the residuals of the heat budget |
+| objective | ``f(\xi)`` | ``J``, the weighted sum of squared departures from the targets |
+| constraints | ``g(\xi)`` | ``M`` and ``C``, the residuals of the heat budget and the ``Q_{10}`` floor |
 | objective gradient | ``\nabla f`` | Enzyme, reverse mode |
-| constraint Jacobian | ``\partial g_i / \partial x_j`` | Enzyme, reverse mode, one row for each constraint |
+| constraint Jacobian | ``\partial g_i / \partial \xi_j`` | Enzyme, reverse mode, one row for each constraint |
 | Hessian of the Lagrangian | ``\nabla^2 (\sigma f + \lambda \cdot g)`` | Enzyme, forward mode over reverse mode, one column for each variable |
 
 The Lagrangian combines objective and constraints, each constraint weighted by a multiplier ``\lambda_i``. The
@@ -177,7 +228,8 @@ Passing `verbose = true` to `thermoregulate` prints IPOPT's iteration log.
 ## What is not yet done
 
 - Fur depth and posture are not variables. They rebuild the body, and with it the setup of each part, inside the
-  function to be differentiated.
+  function to be differentiated. One proposal for posture is to bound the length and radius of a part directly,
+  related through its fixed volume, in place of an aspect ratio.
 - The status with which IPOPT stopped is not returned.
 - The Jacobian and Hessian are passed as dense. With many parts they are sparse, since a part's residuals do not
   depend on another part's surface.

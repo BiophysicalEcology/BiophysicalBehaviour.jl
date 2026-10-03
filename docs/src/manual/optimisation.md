@@ -20,7 +20,8 @@ using CairoMakie
 
 ## The problem
 
-In the terms of [Behaviour as control](control.md#Kinds-of-controller), the variables are of two kinds.
+In the terms of [Behaviour as control](control.md#Kinds-of-controller), the variables are of two kinds, the
+controls ``u`` and states ``x`` of [The formulation](nlp.md#The-formulation).
 
 **Control variables** are what the animal sets:
 
