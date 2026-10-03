@@ -96,6 +96,8 @@ This documentation describes steady-state thermoregulation. Planned or in develo
 - **Transients.** Behaviour while body temperature is changing. The transient heat budget itself is to be part
   of HeatExchange.jl.
 - **Control primitives, life stages and the arrest of development**, on another branch of this package.
+- **Dynamic programming.** Behaviour chosen to maximise expected fitness given reserves of energy and water and
+  the risks of each place (Mangel and Clark 1988), see [Gradients and control](gradients.md#Ways-to-decide).
 
 ## The ecosystem
 

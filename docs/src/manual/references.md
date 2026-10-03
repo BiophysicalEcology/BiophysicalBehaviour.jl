@@ -7,6 +7,9 @@ Campbell, G. S. and Norman, J. M. (1998). *An Introduction to Environmental Biop
 
 Cannon, W. B. (1932). *The Wisdom of the Body*. W. W. Norton, New York.
 
+Clark, C. W. and Mangel, M. (2000). *Dynamic State Variable Models in Ecology: Methods and Applications*.
+Oxford University Press, New York.
+
 Friston, K. (2010). The free-energy principle: a unified brain theory? *Nature Reviews Neuroscience* 11: 127–138.
 
 Gates, D. M. (1980). *Biophysical Ecology*. Springer, New York.
@@ -26,6 +29,9 @@ come from? The role of theory and models. *Functional Ecology* 35: 1385–1396.
 Kearney, M. R., Mitchell, D. and Maloney, S. K. (2026). HomoTherm: an open-source approach to modelling heat exchange
 in humans and other hominins in diverse environments. *Global Change Biology* 32: e70830.
 https://doi.org/10.1111/gcb.70830
+
+Mangel, M. and Clark, C. W. (1988). *Dynamic Modeling in Behavioral Ecology*. Princeton University Press,
+Princeton.
 
 McKechnie, A. E. and Wolf, B. O. (2004). The allometry of avian basal metabolic rate: good predictions need good
 data. *Physiological and Biochemical Zoology* 77: 502–521.

@@ -59,6 +59,7 @@ This is why the lower critical temperature of an endotherm needs no controller a
 | **stepped** | moves a graded actuator one step at a time until the error is gone or the actuator saturates. Integral control at its simplest | every [`SteppedParameter`](@ref): shade by 3 %, flesh conductivity by 0.1 W/m/K, panting by 0.1 |
 | **sequential** | with several actuators, moves them in a fixed order, exhausting each before the next | [`RuleBasedSequentialControl`](@ref), the scheme of NicheMapR, see [Ectotherm thermoregulation](ectotherm.md) and [Endotherm thermoregulation by rules](endotherm_rules.md) |
 | **optimal** | states what the organism is trying to achieve and lets a solver find the actions, all actuators at once | [`IPOPTControl`](@ref), see [Thermoregulation by optimisation](optimisation.md) |
+| **dynamic programming** | chooses the action at each time that maximises expected fitness over a horizon, given internal state such as energy reserve and water | planned, after Mangel and Clark (1988), see [Gradients and control](gradients.md#Ways-to-decide) |
 
 Three points on these.
 
@@ -111,4 +112,5 @@ the metabolic rate of an endotherm.
 
 For a large ectotherm, or on any time scale shorter than the thermal time constant, the plant has dynamics, and
 the controller must act on a body temperature that is still changing. Controllers for transient heat budgets,
-including proportional control, are in development.
+including proportional control, are in development. A slower dynamics, of reserves of energy and water over days,
+is that of the planned dynamic programming controller.
