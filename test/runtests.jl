@@ -16,4 +16,5 @@ end
 @safetestset "multipart_solve" begin include("multipart_solve.jl") end
 @safetestset "multipart_nlp" begin include("multipart_nlp.jl") end
 @safetestset "endotherm" begin include("endotherm.jl") end
+@safetestset "reference" begin include("reference.jl") end
 @safetestset "ectotherm" begin include("ectotherm.jl") end
