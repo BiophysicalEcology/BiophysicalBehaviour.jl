@@ -86,7 +86,7 @@ function thermoregulate(
     if !behavioral_limits.can_solar_orient
         organism_current = @set organism_current.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
         organism_current = @set organism_current.traits.heat_exchange.radiation_pars.silhouette_area =
-            _silhouette_area(organism_current.body, Intermediate())
+            silhouette_area(organism_current.body, Intermediate())
     end
 
     # -------------------------------------------------------------------------

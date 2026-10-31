@@ -11,6 +11,7 @@ using Unitful
 using UnitfulMoles
 
 using BiophysicalGeometry: AbstractBody, shape
+using BiologicalScaling: AllometricShape, DesertIguana
 
 using Enzyme
 import Ipopt

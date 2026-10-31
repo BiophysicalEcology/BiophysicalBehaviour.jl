@@ -339,7 +339,7 @@ The `init!` step for multi-part surface radiation: bake the geometry-dependent,
 occlusion-aware view of each part for the organism's current pose and sun position.
 Returns a `NamedTuple` keyed like the parts, each `(; sky, ground, neighbours,
 lit_silhouette)` — the sky/ground view fractions and per-neighbour occlusion from
-`silhouette_factors`, plus the direct-beam lit silhouette from `silhouette`.
+`silhouette_factors`, plus the direct-beam lit silhouette from `silhouette_area`.
 
 `solve` then consumes these numbers unchanged (via `part_surface_setups(...; view=…)`);
 they are a pure function of pose + sun, so they are computed once per configuration,
@@ -354,7 +354,7 @@ function precompute_view_partition(organism::Organism, environment_vars;
     # Flat-ground horizon (sky and ground each a hemisphere). A sloped or occluded
     # site would pass its own `Sky`/`Ground`/`Horizon` here instead.
     partition = BiophysicalGeometry.silhouette_factors(body, BiophysicalGeometry.Sky(0.5); ndirections, resolution)
-    lit = BiophysicalGeometry.silhouette(body, BiophysicalGeometry.Beam(sun); resolution)
+    lit = BiophysicalGeometry.silhouette_area(body, BiophysicalGeometry.Beam(sun); resolution)
     names = keys(partition)
     return NamedTuple{names}(map(names) do n
         (; partition[n].sky, partition[n].ground, partition[n].neighbours, lit_silhouette = lit[n])
@@ -408,7 +408,7 @@ function part_surface_setups(
     part_phys = physiology(organism)
     covered = _part_covered_areas(body)
     cache_entries = _cache_entries(cache, part_names(body))
-    # Per-part occlusion-aware view (sky/ground/neighbours + lit silhouette) from
+    # Per-part occlusion-aware view (sky/ground/neighbours + lit silhouette_area) from
     # `precompute_view_partition`, or `nothing` per part when not supplied — in which
     # case each part falls back to its own naive view factors / silhouette.
     view_entries = view === nothing ? ntuple(_ -> nothing, length(part_bodies)) : values(view)
@@ -491,7 +491,7 @@ function _part_surface_setup(
     solar_view_factors = ViewFactors(sky_factor, ground_factor, 0.0, 0.0)
     solar_conditions = SolarConditions(environment_vars)
     solar_flow = solar(
-        part_body, absorptivities, solar_view_factors, solar_conditions, silhouette, conduction_area,
+        part_body, absorptivities, solar_view_factors, solar_conditions, silhouette_area, conduction_area,
     ).solar_flow
 
     # Ground contact: a part touching the substrate loses heat by conduction;
@@ -545,12 +545,12 @@ function _part_surface_setup(
     )
 end
 
-# Per-part geometry (total surface area, silhouette, characteristic dimension):
+# Per-part geometry (total surface area, silhouette_area, characteristic dimension):
 # read straight from the Tier-1 cache entry, or compute from the body when no
 # cache is threaded through. Both paths return identical values.
 @inline _part_geometry(part_body, rad_pars, ::Nothing) = (
     BiophysicalGeometry.total_area(part_body),
-    BiophysicalGeometry.silhouette(part_body, rad_pars.solar_orientation),
+    BiophysicalGeometry.silhouette_area(part_body, rad_pars.solar_orientation),
     characteristic_dimension(VolumeCubeRoot(), part_body),
 )
 @inline _part_geometry(_, _rad_pars, cache_entry::NamedTuple) =
@@ -835,7 +835,7 @@ function _assemble_endotherm_output(organism::Organism, environment, out;
         area_evaporation = BiophysicalGeometry.evaporation_area(body),
         area_convection,
         area_conduction = total_area * cond_frac,
-        area_silhouette = HeatExchange.silhouette(body, rad_pars.solar_orientation),
+        area_silhouette = HeatExchange.silhouette_area(body, rad_pars.solar_orientation),
         sky_view_factor = sky_factor,
         ground_view_factor = ground_factor,
         volume = body.geometry.volume,

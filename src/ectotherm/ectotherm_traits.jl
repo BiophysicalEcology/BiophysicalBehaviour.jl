@@ -95,8 +95,8 @@ Hierarchy: `critical_temperature_min` ≤ `emerge_temperature_min` ≤ `basking_
 
 # Fields – posture state
 - `sun_orientation::Float64`: Angle (degrees) between body axis and sun direction.
-  45.0 = `Intermediate` (neutral/active start); 90.0 = `NormalToSun` (maximum silhouette,
-  too-cold/basking response); 0.0 = `ParallelToSun` (minimum silhouette, too-hot response).
+  45.0 = `Intermediate` (neutral/active start); 90.0 = `NormalToSun` (maximum silhouette_area,
+  too-cold/basking response); 0.0 = `ParallelToSun` (minimum silhouette_area, too-hot response).
   Reset to 45.0 each hour by `reset_position`.
 
 # Fields – conduction state

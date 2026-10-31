@@ -49,7 +49,7 @@ function solar_heat_flows(body, rad_pars, environment_pars, environment_vars,
                           view_factors, conduction_fraction)
     total_area      = BiophysicalGeometry.total_area(body)
     conduction_area = total_area * conduction_fraction
-    area_silhouette = silhouette(body, rad_pars.solar_orientation)
+    area_silhouette = silhouette_area(body, rad_pars.solar_orientation)
     absorptivities  = Absorptivities(rad_pars, environment_pars)
     solar_view_fac  = ViewFactors(view_factors.sky, view_factors.ground, 0.0, 0.0)
     solar_conds     = SolarConditions(environment_vars)

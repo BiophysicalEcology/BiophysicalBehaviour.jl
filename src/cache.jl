@@ -1,7 +1,7 @@
 # =============================================================================
 # Precomputed per-part geometry cache (plan §3.5, Phase 5).
 #
-# The multi-part solve recomputes each part's surface area, silhouette, and
+# The multi-part solve recomputes each part's surface area, silhouette_area, and
 # characteristic dimension every outer-loop iteration inside `part_surface_setups`
 # — pure functions of shape + insulation (+ the constant solar orientation).
 # Across a thermoregulation loop these are invariant unless an effector reshapes
@@ -31,7 +31,7 @@ end
 # silhouette (its only dependency beyond the body) is cacheable.
 @inline _shape_cache_entry(body, solar_orientation) = (;
     total_area         = BiophysicalGeometry.total_area(body),
-    silhouette_area    = BiophysicalGeometry.silhouette(body, solar_orientation),
+    silhouette_area    = BiophysicalGeometry.silhouette_area(body, solar_orientation),
     characteristic_dim = characteristic_dimension(VolumeCubeRoot(), body),
 )
 
