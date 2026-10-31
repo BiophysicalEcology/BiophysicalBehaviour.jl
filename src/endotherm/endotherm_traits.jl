@@ -65,25 +65,31 @@ tissue conductivity, core temperature, panting, and skin wetness.
 - `core_temperature::SteppedParameter`: Core temperature limits (hyperthermia)
 - `panting::PantingLimits`: Panting limits and costs
 - `skin_wetness::SteppedParameter`: Sweating/cutaneous evaporation limits
-- `core_temperature_penalty::Float64`: IPOPT objective penalty for core temperature deviation from setpoint. Default 1.0.
-- `metabolic_heat_penalty::Float64`: Regularisation weight on metabolic heat generation. A small value
+The `*_weight` fields are the weights of the IPOPT objective's `RegulationTarget` terms
+(one weighted squared normalised deviation each); their *relative* magnitudes set which
+effectors the solver reaches for first.
+- `core_temperature_weight::Float64`: weight on the core-temperature-toward-setpoint term. Default 1.0.
+- `metabolic_heat_weight::Float64`: weight on the metabolic-heat-toward-minimum term. A small value
   (default 0.1) prevents high-panting/high-metabolic_heat_flow degeneracy in cold conditions. In hot
   conditions the Q10 inequality constraint overrides this and forces metabolic_heat_flow up with
   core_temperature, so this value does not impede thermogenesis.
-- `panting_penalty::Float64`: IPOPT objective penalty for panting (normalised to [0,1] range).
-  Relative to `skin_wetness_penalty` this controls which activates first. Default 1.0.
-- `skin_wetness_penalty::Float64`: IPOPT objective penalty for skin wetness (normalised to [0,1] range).
-  Set `skin_wetness_penalty > panting_penalty` for panting-first (rabbits, birds);
-  `skin_wetness_penalty < panting_penalty` for sweating-first (humans);
+- `panting_weight::Float64`: weight on the panting term (normalised to [0,1] range).
+  Relative to `skin_wetness_weight` this controls which activates first. Default 1.0.
+- `skin_wetness_weight::Float64`: weight on the skin-wetness term (normalised to [0,1] range).
+  Set `skin_wetness_weight > panting_weight` for panting-first (rabbits, birds);
+  `skin_wetness_weight < panting_weight` for sweating-first (humans);
   equal for parallel activation. Default 1.0.
-- `gradient_penalty::Float64`: IPOPT objective penalty for deviation from `target_core_skin_gradient`.
+- `flesh_conductivity_weight::Float64`: weight on the flesh-conductivity-toward-reference term
+  (vasodilation), normalised to the `[reference, max]` range. Default 0.0.
+- `gradient_weight::Float64`: weight on the core–skin gradient term (deviation from `target_core_skin_gradient`).
   Zero (default) disables the term. Non-zero values bias the solution toward maintaining the
   specified core–skin temperature difference, which can activate vasodilation and evaporation
   before absolute core_temperature deviation becomes the primary signal.
-- `target_core_skin_gradient::Float64`: Target core_temperature − skin_temperature difference (K).
-  Only used when `gradient_penalty > 0`. Typical resting value is ~3 K. Default 2.0.
+- `target_core_skin_gradient`: Target core_temperature − skin_temperature difference,
+  a temperature `Quantity`. Only used when `gradient_weight > 0`. Typical resting
+  value is ~3 K. Default `2.0u"K"`.
 """
-Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw} <: AbstractBehaviourParameters
+Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc,P,Sw,Tu} <: AbstractBehaviourParameters
     control::C = RuleBasedSequentialControl()
     minimum_heat_flow::Q
     insulation::I
@@ -92,10 +98,20 @@ Base.@kwdef struct ThermoregulationLimits{C<:AbstractControlStrategy,Q,I,Sh,K,Tc
     core_temperature::Tc
     panting::P
     skin_wetness::Sw
-    core_temperature_penalty::Float64  = 1.0
-    metabolic_heat_penalty::Float64    = 0.1
-    panting_penalty::Float64           = 1.0
-    skin_wetness_penalty::Float64      = 1.0
-    gradient_penalty::Float64          = 0.0
-    target_core_skin_gradient::Float64 = 2.0
+    core_temperature_weight::Float64  = 1.0
+    metabolic_heat_weight::Float64    = 0.1
+    panting_weight::Float64           = 1.0
+    skin_wetness_weight::Float64      = 1.0
+    flesh_conductivity_weight::Float64 = 0.0
+    gradient_weight::Float64          = 0.0
+    # A core→skin temperature difference: carries K, not a bare Float64 (so no
+    # consumer has to attach a unit to it).
+    target_core_skin_gradient::Tu      = 2.0u"K"
+    # Named replacements for the inline NLP magic numbers (§3.7). Consumed by the
+    # multi-part NLP template/objective builders (Phase 7.5).
+    skin_temperature_undershoot::Tu        = 5.0u"K"
+    skin_temperature_core_overshoot::Tu    = 5.0u"K"
+    metabolic_heat_flow_max_multiplier::Float64 = 20.0
+    minimum_normalisation_range::Float64        = 1e-6
 end
+

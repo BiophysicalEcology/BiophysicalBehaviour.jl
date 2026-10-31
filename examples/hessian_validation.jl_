@@ -58,7 +58,7 @@ thermo_limits = BiophysicalBehaviour.ThermoregulationLimits(;
         pant = BiophysicalBehaviour.SteppedParameter(; current = 1.0, max = 15.0, step = 0.01),
         cost = 0.0u"W", multiplier = 1.0, core_temperature_ref = core_T_ref),
     skin_wetness = BiophysicalBehaviour.SteppedParameter(; current = evaporation_pars.skin_wetness, max = 0.05, step = 0.0025),
-    core_temperature_penalty = 0.1, panting_penalty = 5.0, skin_wetness_penalty = 0.1, metabolic_heat_penalty = 10.0,
+    core_temperature_weight = 0.1, panting_weight = 5.0, skin_wetness_weight = 0.1, metabolic_heat_weight = 10.0,
 )
 organism = BiophysicalBehaviour.Organism(geometry,
     BiophysicalBehaviour.OrganismTraits(BiophysicalBehaviour.Endotherm(), physiology_traits,

@@ -1,24 +1,4 @@
 # =============================================================================
-# Internal silhouette-area helper
-# =============================================================================
-
-# Prefer the direct shape+orientation dispatch (e.g. DesertIguana has
-# silhouette_area(shape, ::ParallelToSun) → scalar) over the body-level
-# NamedTuple route (silhouette_area(body) → (; normal, parallel)) which
-# requires the 3-arg silhouette_area(shape, insulation, body) form that some
-# shapes (notably DesertIguana in the installed package) do not implement.
-function _silhouette_area(body, o)
-    sh = shape(body)
-    if hasmethod(silhouette_area, (typeof(sh), typeof(o)))
-        return silhouette_area(sh, o)
-    end
-    areas = silhouette_area(body)   # → (; normal, parallel)
-    o isa NormalToSun   ? areas.normal   :
-    o isa ParallelToSun ? areas.parallel :
-    (areas.normal + areas.parallel) * 0.5
-end
-
-# =============================================================================
 # Activity period checks
 # =============================================================================
 
@@ -223,7 +203,7 @@ function orient_parallel(organism::Organism, limits::EctothermBehavioralLimits)
     limits   = @set limits.sun_orientation = 0.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = ParallelToSun()
     organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area =
-               _silhouette_area(organism.body, ParallelToSun())
+               silhouette_area(organism.body, ParallelToSun())
     return limits, organism
 end
 
@@ -242,7 +222,7 @@ function orient_perpendicular(organism::Organism, limits::EctothermBehavioralLim
     limits   = @set limits.sun_orientation = 90.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = NormalToSun()
     organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area =
-               _silhouette_area(organism.body, NormalToSun())
+               silhouette_area(organism.body, NormalToSun())
     return limits, organism
 end
 
@@ -261,11 +241,10 @@ or TC ≤ TPREF (from parallel).
 Returns updated limits and organism.
 """
 function orient_intermediate(organism::Organism, limits::EctothermBehavioralLimits)
-    A_intermediate = (_silhouette_area(organism.body, NormalToSun()) +
-                      _silhouette_area(organism.body, ParallelToSun())) * 0.5
     limits   = @set limits.sun_orientation = 45.0
     organism = @set organism.traits.heat_exchange.radiation_pars.solar_orientation = Intermediate()
-    organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area = A_intermediate
+    organism = @set organism.traits.heat_exchange.radiation_pars.silhouette_area =
+               silhouette_area(organism.body, Intermediate())
     return limits, organism
 end
 

@@ -86,9 +86,10 @@ equality constraints, with all physiological effectors (flesh_conductivity,
 pant, skin_wetness) as continuous decision variables.
 
 # Fields
-- `nlp_strategy`: NLP formulation — `WeightedMeanNLP()` (default, dorsal/ventral
-  weighted-mean single body, 9 variables, 4 constraints) or `MultiSidedNLP()`
-  (explicit per-side heat balance, 11 variables, 7 constraints).
+- `nlp_strategy`: NLP formulation. `MultipartNLP()` (default) solves a genuine
+  multi-part organism — one regulated core shared across all parts, per-part surface
+  temperatures and effectors, a single whole-organism respiration balance. A single
+  `Body` is handled as the one-part case.
 - `smoothing`: smoothing policy passed to the heat-balance physics so autodiff (AD)
   sees differentiable kinks. Defaults to `SmoothBound(1.0e-5)`; pass `HardBound()`
   to match the rule-based path's exact `abs`/`max`/`step` behaviour.
@@ -96,7 +97,7 @@ pant, skin_wetness) as continuous decision variables.
 Requires `Ipopt.jl`.
 """
 Base.@kwdef struct IPOPTControl{S<:HeatExchange.SmoothingStrategy} <: AbstractControlStrategy
-    nlp_strategy::HeatExchange.NLPStrategy = HeatExchange.WeightedMeanNLP()
+    nlp_strategy::HeatExchange.NLPStrategy = MultipartNLP()
     smoothing::S = HeatExchange.SmoothBound(1.0e-5)
 end
 
@@ -267,6 +268,11 @@ in a single traits object.
 - `thermal_strategy::S`: Thermal strategy (Endotherm, Ectotherm, Heterotherm)
 - `heat_exchange::P`: Heat exchange traits (HeatExchangeTraits) — morphology and physiology
 - `behavior::B`: Behavioral traits (BehavioralTraits)
+- `lung_part::L`: `Val` of the lung-hosting part name (§3.9)
+- `couplings::C`: per-join heat couplings, a tuple parallel to `body.joins`
+  (values `<: HeatExchange.HeatCoupling`). An empty tuple (the default) means
+  every join is a `SharedCore` — all parts share one regulated core, reproducing
+  the single-body / dorsal-ventral behaviour.
 
 # Example
 ```julia
@@ -280,34 +286,60 @@ organism = Organism(body, traits)
 """
 struct OrganismTraits{
     S<:AbstractThermalStrategy,
-    P<:HeatExchange.AbstractFunctionalTraits,
+    P,
     B<:BehavioralTraits,
+    L,
+    C<:Tuple,
 } <: HeatExchange.AbstractFunctionalTraits
     thermal_strategy::S
     heat_exchange::P
     behavior::B
+    lung_part::L
+    couplings::C
 end
+
+# Backwards-compatible constructor: a single lumped `HeatExchangeTraits` is the
+# physiology of the sole `:body` part, which hosts the lung (§3.9). Multi-part
+# organisms pass a per-part physiology NamedTuple as `heat_exchange` and name the
+# lung part explicitly.
+# The lung part name is stored as a `Val` (its type parameter `L === Val{name}`), so
+# the name lives in the *type*, not as a runtime `Symbol` field. Physiology routing
+# (`_wrap_lung`, `pant_selector`, `_lung_mass`) then infers concretely — the sole
+# runtime→type step is this one `Val(lung_part)` at construction.
+# `couplings` is a tuple parallel to `body.joins`; the default `()` resolves to
+# all-`SharedCore` at compartment-graph construction (see `organism_compartment_graph`).
+OrganismTraits(thermal_strategy::AbstractThermalStrategy, heat_exchange, behavior::BehavioralTraits;
+               lung_part::Symbol=SINGLE_PART_NAME, couplings::Tuple=()) =
+    OrganismTraits(thermal_strategy, heat_exchange, behavior, Val(lung_part), couplings)
 
 # =============================================================================
 # Forwarding methods for physiology accessors
 # =============================================================================
 
-# Forward all HeatExchange accessor methods to the heat_exchange field
-HeatExchange.shape_pars(t::OrganismTraits) = HeatExchange.shape_pars(t.heat_exchange)
-HeatExchange.insulation_pars(t::OrganismTraits) = HeatExchange.insulation_pars(t.heat_exchange)
+# Whole-organism physiology for the single-valued forwarding accessors. A single
+# lumped `HeatExchangeTraits` is returned directly (single-body path — the common,
+# hot case, fully type-stable). When per-part physiology is stored, whole-organism
+# queries (metabolism, respiration, options) resolve through the lung part.
+_whole_physiology(t::OrganismTraits) = _whole_physiology(t.heat_exchange, lung_part(t))
+_whole_physiology(heat_exchange, lung_part) = heat_exchange
+_whole_physiology(heat_exchange::NamedTuple, lung_part) = unwrap_physiology(heat_exchange[lung_part])
+
+# Forward all HeatExchange accessor methods to the whole-organism physiology
+HeatExchange.shape_pars(t::OrganismTraits) = HeatExchange.shape_pars(_whole_physiology(t))
+HeatExchange.insulation_pars(t::OrganismTraits) = HeatExchange.insulation_pars(_whole_physiology(t))
 function HeatExchange.conduction_pars_external(t::OrganismTraits)
-    HeatExchange.conduction_pars_external(t.heat_exchange)
+    HeatExchange.conduction_pars_external(_whole_physiology(t))
 end
 function HeatExchange.conduction_pars_internal(t::OrganismTraits)
-    HeatExchange.conduction_pars_internal(t.heat_exchange)
+    HeatExchange.conduction_pars_internal(_whole_physiology(t))
 end
-HeatExchange.convection_pars(t::OrganismTraits) = HeatExchange.convection_pars(t.heat_exchange)
-HeatExchange.radiation_pars(t::OrganismTraits) = HeatExchange.radiation_pars(t.heat_exchange)
-HeatExchange.evaporation_pars(t::OrganismTraits) = HeatExchange.evaporation_pars(t.heat_exchange)
-HeatExchange.hydraulic_pars(t::OrganismTraits) = HeatExchange.hydraulic_pars(t.heat_exchange)
-HeatExchange.respiration_pars(t::OrganismTraits) = HeatExchange.respiration_pars(t.heat_exchange)
-HeatExchange.metabolism_pars(t::OrganismTraits) = HeatExchange.metabolism_pars(t.heat_exchange)
-HeatExchange.options(t::OrganismTraits) = HeatExchange.options(t.heat_exchange)
+HeatExchange.convection_pars(t::OrganismTraits) = HeatExchange.convection_pars(_whole_physiology(t))
+HeatExchange.radiation_pars(t::OrganismTraits) = HeatExchange.radiation_pars(_whole_physiology(t))
+HeatExchange.evaporation_pars(t::OrganismTraits) = HeatExchange.evaporation_pars(_whole_physiology(t))
+HeatExchange.hydraulic_pars(t::OrganismTraits) = HeatExchange.hydraulic_pars(_whole_physiology(t))
+HeatExchange.respiration_pars(t::OrganismTraits) = HeatExchange.respiration_pars(_whole_physiology(t))
+HeatExchange.metabolism_pars(t::OrganismTraits) = HeatExchange.metabolism_pars(_whole_physiology(t))
+HeatExchange.options(t::OrganismTraits) = HeatExchange.options(_whole_physiology(t))
 
 # =============================================================================
 # OrganismTraits accessors
@@ -339,6 +371,17 @@ Get the `HeatExchangeTraits` (morphology + physiology) from an OrganismTraits or
 """
 heat_exchange(t::OrganismTraits) = t.heat_exchange
 heat_exchange(o::Organism) = heat_exchange(HeatExchange.traits(o))
+
+"""
+    couplings(t::OrganismTraits)
+    couplings(o::Organism)
+
+Get the per-join heat couplings — a tuple parallel to `body.joins`. An empty
+tuple (the default) means every join is a `SharedCore` (all parts share one
+regulated core). See [`organism_compartment_graph`](@ref).
+"""
+couplings(t::OrganismTraits) = t.couplings
+couplings(o::Organism) = couplings(HeatExchange.traits(o))
 
 # =============================================================================
 # BehavioralTraits accessors

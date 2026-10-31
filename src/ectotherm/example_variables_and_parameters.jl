@@ -173,13 +173,13 @@ end
 Create example `OrganismTraits` for an ectotherm organism.
 
 Uses `Ectotherm()` as the thermal strategy. Physical traits default to a naked
-40 g lizard using `DesertIguana` as the shape, matching NicheMapR's `shape=3`
-(desert iguana) default. Surface areas are computed from allometric functions
-(Porter and Tracy 1984); body dimensions for convection and conduction use the
-cylinder approximation from the original NicheMapR Fortran (see `DesertIguana`).
+40 g lizard using `AllometricShape(DesertIguana(), ...)` from BiologicalScaling,
+matching NicheMapR's `shape=3` (desert iguana) default. Surface areas are computed
+from allometric functions (Porter and Tracy 1984); body dimensions for convection
+and conduction use the cylinder approximation from the original NicheMapR Fortran.
 
 Pass `shape_pars` explicitly to use a different shape (e.g. `Ellipsoid` or
-`LeopardFrog`).
+`AllometricShape(LeopardFrog(), ...)`).
 
 Keyword arguments are forwarded to `example_ectotherm_behavioral_traits`
 (e.g. `can_climb`, `can_retreat_underground`, thermal thresholds). To customise heat exchange traits,
@@ -189,7 +189,7 @@ function example_ectotherm_organism_traits(;
     thermal_strategy = Ectotherm(),
     heat_exchange    = nothing,
     behavior         = nothing,
-    shape_pars       = DesertIguana(40.0u"g", 1000.0u"kg/m^3"),
+    shape_pars       = AllometricShape(DesertIguana(), 40.0u"g", 1000.0u"kg/m^3"),
     kwargs...,
 )
     he    = isnothing(heat_exchange) ? example_ectotherm_heat_exchange_traits(; shape_pars) : heat_exchange
