@@ -32,7 +32,10 @@ solar radiation together identify day, night, and twilight.
 
 - `Diurnal`: active when the sun is above the horizon (sunlight > 0, zenith < 90°)
 - `Nocturnal`: active at night (sunlight == 0 or zenith ≥ 90°)
-- `Crepuscular`: active at twilight (zenith within ±5° of 90°)
+- `Crepuscular`: active at dawn and dusk: sun within 5° above the horizon (85° ≤ zenith < 90°),
+  or below the horizon while there is still light (zenith ≥ 90°, sunlight > 0; NicheMapR
+  CREPUS). Microclimate models usually report zenith = 90° for every hour the sun is down,
+  so a zenith-only test (e.g. zenith ≤ 95°) would make the animal active all night.
 - `CombinedActivity`: active if active in any of its constituent periods
 - `ResponsiveActivity`: delegates to the user-supplied function
 """
@@ -43,7 +46,7 @@ is_active(::Nocturnal, zenith, sunlight) =
     zenith >= 90u"°" || sunlight <= zero(sunlight)
 
 is_active(::Crepuscular, zenith, sunlight) =
-    85u"°" <= zenith <= 95u"°"
+    (85u"°" <= zenith < 90u"°") || (zenith >= 90u"°" && sunlight > zero(sunlight))
 
 is_active(a::CombinedActivity, zenith, sunlight) =
     any(p -> is_active(p, zenith, sunlight), a.periods)

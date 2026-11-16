@@ -124,7 +124,7 @@ active    = is_active(activity_period(organism), zenith, sunlight)
 |---|---|
 | `Diurnal` | zenith < 90° **and** sunlight > 0 |
 | `Nocturnal` | zenith ≥ 90° **or** sunlight ≤ 0 |
-| `Crepuscular` | 85° ≤ zenith ≤ 95° |
+| `Crepuscular` | 85° ≤ zenith < 90°, **or** zenith ≥ 90° **and** sunlight > 0 (twilight; zenith is usually reported as 90° all night, so a zenith-only window would cover the whole night) |
 | `CombinedActivity` | active in any constituent period |
 | `ResponsiveActivity` | user-supplied function |
 
