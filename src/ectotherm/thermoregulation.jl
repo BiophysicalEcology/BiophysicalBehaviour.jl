@@ -31,8 +31,12 @@ Ported from ECTOTHERM.f (DAYACT/NOCTURN/CREPUS flags). The zenith angle and
 solar radiation together identify day, night, and twilight.
 
 - `Diurnal`: active when the sun is above the horizon (sunlight > 0, zenith < 90°)
-- `Nocturnal`: active at night (sunlight == 0 or zenith ≥ 90°)
-- `Crepuscular`: active at twilight (zenith within ±5° of 90°)
+- `Nocturnal`: active when there is no light at all (sunlight == 0; NicheMapR NOCTURN)
+- `Crepuscular`: active when the sun has set but there is still skylight (zenith ≥ 90°,
+  sunlight > 0; NicheMapR CREPUS)
+
+The three periods do not overlap. Microclimate models usually report zenith = 90° for every
+hour the sun is down, so night and twilight are told apart by the radiation, not the zenith.
 - `CombinedActivity`: active if active in any of its constituent periods
 - `ResponsiveActivity`: delegates to the user-supplied function
 """
@@ -40,10 +44,10 @@ is_active(::Diurnal, zenith, sunlight) =
     zenith < 90u"°" && sunlight > zero(sunlight)
 
 is_active(::Nocturnal, zenith, sunlight) =
-    zenith >= 90u"°" || sunlight <= zero(sunlight)
+    sunlight <= zero(sunlight)
 
 is_active(::Crepuscular, zenith, sunlight) =
-    85u"°" <= zenith <= 95u"°"
+    zenith >= 90u"°" && sunlight > zero(sunlight)
 
 is_active(a::CombinedActivity, zenith, sunlight) =
     any(p -> is_active(p, zenith, sunlight), a.periods)

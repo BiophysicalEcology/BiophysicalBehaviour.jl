@@ -15,6 +15,21 @@ using Unitful
 using Test
 using CSV, DataFrames
 
+@testset "activity periods" begin
+    is_active = BiophysicalBehaviour.is_active
+    W = u"W/m^2"
+    # Microclimate models report zenith = 90° for every hour the sun is down
+    # night (no light), twilight (sun set, skylight), low sun, day
+    for (zenith, light, day, twilight, night) in ((90.0, 0.0, false, false, true),
+                                                   (90.0, 5.0, false, true, false),
+                                                   (87.0, 40.0, true, false, false),
+                                                   (60.0, 600.0, true, false, false))
+        @test is_active(Diurnal(), zenith * u"°", light * W) == day
+        @test is_active(Crepuscular(), zenith * u"°", light * W) == twilight
+        @test is_active(Nocturnal(), zenith * u"°", light * W) == night
+    end
+end
+
 @testset "ectotherm thermoregulation (vs NicheMapR)" begin
 
     # ── Location and time (matching R script) ─────────────────────────────────
