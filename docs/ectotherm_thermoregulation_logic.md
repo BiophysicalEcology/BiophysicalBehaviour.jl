@@ -123,8 +123,11 @@ active    = is_active(activity_period(organism), zenith, sunlight)
 | Type | Active when |
 |---|---|
 | `Diurnal` | zenith < 90° **and** sunlight > 0 |
-| `Nocturnal` | zenith ≥ 90° **or** sunlight ≤ 0 |
-| `Crepuscular` | 85° ≤ zenith < 90°, **or** zenith ≥ 90° **and** sunlight > 0 (twilight; zenith is usually reported as 90° all night, so a zenith-only window would cover the whole night) |
+| `Nocturnal` | sunlight ≤ 0 (no light at all; NicheMapR NOCTURN) |
+| `Crepuscular` | zenith ≥ 90° **and** sunlight > 0 (sun set, skylight remains; NicheMapR CREPUS) |
+
+The periods do not overlap. Zenith is usually reported as 90° for every hour the sun is
+down, so night and twilight are distinguished by radiation, not by zenith.
 | `CombinedActivity` | active in any constituent period |
 | `ResponsiveActivity` | user-supplied function |
 

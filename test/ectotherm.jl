@@ -19,12 +19,15 @@ using CSV, DataFrames
     is_active = BiophysicalBehaviour.is_active
     W = u"W/m^2"
     # Microclimate models report zenith = 90° for every hour the sun is down
-    @test !is_active(Crepuscular(), 90.0u"°", 0.0W)     # dark night
-    @test  is_active(Crepuscular(), 90.0u"°", 5.0W)     # twilight
-    @test  is_active(Crepuscular(), 87.0u"°", 40.0W)    # sun just above the horizon
-    @test !is_active(Crepuscular(), 60.0u"°", 600.0W)   # day
-    @test  is_active(Nocturnal(), 90.0u"°", 0.0W)
-    @test !is_active(Diurnal(), 90.0u"°", 5.0W)
+    # night (no light), twilight (sun set, skylight), low sun, day
+    for (zenith, light, day, twilight, night) in ((90.0, 0.0, false, false, true),
+                                                   (90.0, 5.0, false, true, false),
+                                                   (87.0, 40.0, true, false, false),
+                                                   (60.0, 600.0, true, false, false))
+        @test is_active(Diurnal(), zenith * u"°", light * W) == day
+        @test is_active(Crepuscular(), zenith * u"°", light * W) == twilight
+        @test is_active(Nocturnal(), zenith * u"°", light * W) == night
+    end
 end
 
 @testset "ectotherm thermoregulation (vs NicheMapR)" begin
