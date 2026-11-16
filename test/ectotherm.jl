@@ -5,10 +5,11 @@
 # test/data/ectotherm/<scenario>/environ.csv and enbal.csv.
 #
 # Scenarios vary shade_seek and can_solar_orient; all other parameters are fixed to match
-# the R script defaults (Ww_g=40, shape=3/DesertIguana, epsilon=0.95, pantmax=3, etc.).
+# the R script defaults (Ww_g=40, shape=3/AllometricShape(DesertIguana()), epsilon=0.95, pantmax=3, etc.).
 
 using BiophysicalBehaviour
 using BiophysicalGeometry
+using BiologicalScaling: AllometricShape, DesertIguana
 using HeatExchange
 using FluidProperties
 using Unitful
@@ -121,7 +122,7 @@ using CSV, DataFrames
             mouth_fraction = 0.0),                    # R: pct_mouth default=0
     )
 
-    body = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())  # R: Ww_g=40, shape=3
+    body = Body(AllometricShape(DesertIguana(), 40.0u"g", 1000.0u"kg/m^3"), Naked())  # R: Ww_g=40, shape=3
 
     # ── Scenario loop ─────────────────────────────────────────────────────────
     # Each scenario varies shade_seek and can_solar_orient (matching R live/postur flags).
