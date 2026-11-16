@@ -2,11 +2,11 @@
 # Internal silhouette-area helper
 # =============================================================================
 
-# Prefer the direct shape+orientation dispatch (e.g. DesertIguana has
+# Prefer the direct shape+orientation dispatch (e.g. AllometricShape has
 # silhouette_area(shape, ::ParallelToSun) → scalar) over the body-level
 # NamedTuple route (silhouette_area(body) → (; normal, parallel)) which
 # requires the 3-arg silhouette_area(shape, insulation, body) form that some
-# shapes (notably DesertIguana in the installed package) do not implement.
+# shapes do not implement.
 function _silhouette_area(body, o)
     sh = shape(body)
     if hasmethod(silhouette_area, (typeof(sh), typeof(o)))

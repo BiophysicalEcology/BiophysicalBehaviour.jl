@@ -11,6 +11,7 @@
 
 using BiophysicalBehaviour
 using BiophysicalGeometry
+using BiologicalScaling: AllometricShape, DesertIguana
 using HeatExchange
 using Microclimate
 using SolarRadiation
@@ -155,7 +156,7 @@ available_environments = AvailableEnvironments(
 #   active_temperature_max = 43°C (maximum voluntary Tb, p. 20)
 #   target_temperature     = 38.5°C (preferred temperature from DeWitt 1967, cited p. 19)
 #   can_climb = true (paper explicitly models climbing into creosote bushes to 200 cm)
-body            = Body(DesertIguana(40.0u"g", 1000.0u"kg/m^3"), Naked())
+body            = Body(AllometricShape(DesertIguana(), 40.0u"g", 1000.0u"kg/m^3"), Naked())
 organism_traits = example_ectotherm_organism_traits(
     activity_period         = CombinedActivity(Diurnal(), Crepuscular()), #Diurnal(),
     target_temperature       = u"K"(38.5u"°C"),

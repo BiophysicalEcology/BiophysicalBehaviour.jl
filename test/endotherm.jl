@@ -1,6 +1,7 @@
 using BiophysicalBehaviour
 using HeatExchange
 using BiophysicalGeometry
+using BiologicalScaling: BasalMetabolicRate, EutherianMammal
 using FluidProperties: GasFractions
 using ConstructionBase
 using ModelParameters
@@ -138,7 +139,7 @@ for shape_number in 1:4
             core_temperature=u"K"((endo_input.TC)u"°C"),
             metabolic_heat_flow=(endo_input.QBASAL)u"W",
             q10=endo_input.Q10,
-            model=Kleiber(),
+            model=(BasalMetabolicRate(), EutherianMammal()),   # Kleiber's law (HeatExchange main)
         )
 
         insulation_pars = InsulationParameters(;
