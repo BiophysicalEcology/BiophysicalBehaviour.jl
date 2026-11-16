@@ -208,11 +208,16 @@ solver fails (e.g., no root in bracket), it returns `air_temperature` as a fallb
 active_temperature_min ≤ core_temperature ≤ target_temperature.current  →  break
 ```
 
-**Special case — revert perpendicular→intermediate (NicheMapR THERMO.f phase 2, first sub-case):**
+**Special case — try the foraging posture after basking (NicheMapR THERMO.f phase 2, first sub-case):**
 If `can_solar_orient = true` and the organism is fully perpendicular (`sun_orientation = 90.0`)
-and `core_temperature` is now in `[active_temperature_min, target_temperature]`, orient back to `Intermediate()` first,
-recompute `core_temperature`, then break. This ensures the animal does not remain in a basking
-posture once it has warmed to its target.
+and `core_temperature` is now in `[active_temperature_min, target_temperature]`, try the
+foraging posture: orient to `Intermediate()` and recompute `core_temperature`.
+- If it is still `≥ active_temperature_min`, keep `Intermediate()` (the animal forages).
+- Otherwise go back to perpendicular (and its warmer `core_temperature`) and bask.
+
+Then break. The animal cannot forage while perpendicular, so it does not stay in the basking
+posture once it is warm enough to forage, but a basking animal keeps the benefit of the
+perpendicular posture when the intermediate posture would be too cool to forage.
 
 ---
 
@@ -317,8 +322,10 @@ After the loop exits:
    and `available_environments.heights`.
 5. **Activity state classification** (mirrors NicheMapR ACT column):
    - `Resting()` (ACT=0): not in active period, or underground, or `core_temperature < basking_temperature_min` or `core_temperature > active_temperature_max`
-   - `Basking()` (ACT=1): `basking_temperature_min ≤ core_temperature < active_temperature_min`
-   - `Active()` (ACT=2): `active_temperature_min ≤ core_temperature ≤ active_temperature_max`
+   - `Basking()` (ACT=1): `basking_temperature_min ≤ core_temperature < active_temperature_min`, or
+     perpendicular to the sun (`can_solar_orient` and `sun_orientation = 90.0`) with
+     `basking_temperature_min ≤ core_temperature ≤ active_temperature_max` (no foraging in the basking posture)
+   - `Active()` (ACT=2): `active_temperature_min ≤ core_temperature ≤ active_temperature_max`, not perpendicular
 
 ---
 
@@ -417,7 +424,8 @@ Each hour:
   │    │
   │    └─ Above-ground thermoregulation loop (max_iterations):
   │         │
-  │         ├─ [revert perpendicular → intermediate if core_temperature now in acceptance window] → break
+  │         ├─ [perpendicular and core_temperature in acceptance window: try intermediate;
+  │         │   keep it if still ≥ active_temperature_min, else stay perpendicular and bask] → break
   │         ├─ active_temperature_min ≤ core_temperature ≤ target_temperature? → break
   │         │
   │         ├─ core_temperature > target_temperature? (too hot)
