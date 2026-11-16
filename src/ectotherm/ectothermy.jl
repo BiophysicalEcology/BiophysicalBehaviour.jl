@@ -273,11 +273,17 @@ function thermoregulate(
         # animal always relaxes its posture once it has warmed to active_temperature_min.
         # After reverting, recalculate core_temperature (now lower with intermediate area) and break;
         # no further actions are attempted (matches THERMO.f phase 4 no-action → return).
+        # Warm enough when perpendicular to the sun: try the foraging (intermediate) posture.
+        # Forage only if still warm enough; otherwise stay perpendicular and bask (warmer, but
+        # cannot forage while perpendicular).
         if limits.can_solar_orient && limits.sun_orientation == 90.0 &&
                core_temperature >= limits.active_temperature_min && core_temperature <= limits.target_temperature.current
-            limits, organism_current = orient_intermediate(organism_current, limits)
-            env              = interpolate_environment(available_environments, step, limits, environmental_params)
-            core_temperature = solve_body_temperature(organism_current, env, environmental_params, limits.basking_temperature_min, limits.active_temperature_max)
+            limits_try, organism_try = orient_intermediate(organism_current, limits)
+            env_try = interpolate_environment(available_environments, step, limits_try, environmental_params)
+            core_temperature_try = solve_body_temperature(organism_try, env_try, environmental_params, limits.basking_temperature_min, limits.active_temperature_max)
+            if core_temperature_try >= limits.active_temperature_min
+                limits, organism_current, env, core_temperature = limits_try, organism_try, env_try, core_temperature_try
+            end
             break
         end
 
@@ -396,8 +402,12 @@ function _build_ectotherm_output(organism, env_vars, env_pars, limits, in_active
     #   ACT=0 (Resting):  Tc < T_B_min (TBASK=17.5°C) OR Tc > T_F_max (TMAXPR=34°C)
     #   ACT=1 (Basking):  T_B_min <= Tc < T_F_min (TMINPR=24°C)
     #   ACT=2 (Active):   T_F_min <= Tc <= T_F_max
+    # Perpendicular to the sun = basking posture: cannot forage, even if in the active range.
+    basking_posture = limits.can_solar_orient && limits.sun_orientation == 90.0
     state = if !in_active_period || is_underground
         Resting()
+    elseif basking_posture && limits.basking_temperature_min <= core_temperature <= limits.active_temperature_max
+        Basking()
     elseif limits.active_temperature_min <= core_temperature <= limits.active_temperature_max
         Active()
     elseif limits.basking_temperature_min <= core_temperature < limits.active_temperature_min
